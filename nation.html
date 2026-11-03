@@ -374,7 +374,7 @@ function render() {
     <div class="logo" style="color:var(--nation-color)">${nation.name} <span>· ${nation.fullName}</span></div>
     <div class="top-controls">
       <div class="turn-badge"><span style="color:var(--fg-3)">ХОД</span><span class="t-num">${turnNumber}</span></div>
-      ${isGM ? '<a href="index.html" class="btn btn-sm">← Панель ГМ</a>' : ''}
+      ${isGM ? '<a href="gm.html" class="btn btn-sm">← Панель ГМ</a>' : '<a href="index.html" class="btn btn-sm">← Главная</a>'}
     </div>
   `;
   root.appendChild(topbar);
