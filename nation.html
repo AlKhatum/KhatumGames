@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Тейват AU — Государство</title>
+  <style>
+    :root {
+      --bg-0: #0c0f14;
+      --bg-1: #12161e;
+      --bg-2: #1a1f2b;
+      --bg-3: #232a38;
+      --border: #2a3144;
+      --fg: #d8dde8;
+      --fg-2: #8892a4;
+      --fg-3: #556078;
+      --accent: #5b9cf5;
+      --accent-dim: rgba(91,156,245,0.12);
+      --gold: #e0b44c;
+      --red: #e85454;
+      --red-dim: rgba(232,84,84,0.12);
+      --orange: #d4913a;
+      --orange-dim: rgba(212,145,58,0.12);
+      --green: #47b86c;
+      --purple: #a57aed;
+      --nation-color: var(--accent);
+      --radius: 8px;
+      --radius-sm: 5px;
+      color-scheme: dark;
+    }
+
+    @media (prefers-color-scheme: light) {
+      :root:not([data-theme="dark"]) {
+        --bg-0: #f0f2f5; --bg-1: #f8f9fb; --bg-2: #ffffff; --bg-3: #ebeef3;
+        --border: #d4d9e2; --fg: #1a1f2b; --fg-2: #556078; --fg-3: #8892a4;
+        --accent: #3b7cdc; --accent-dim: rgba(59,124,220,0.1);
+        --gold: #b38a2e; --red: #c83a3a; --red-dim: rgba(200,58,58,0.1);
+        --orange: #b07428; --orange-dim: rgba(176,116,40,0.1);
+        --green: #2e8f4e; --purple: #7a52c9;
+        color-scheme: light;
+      }
+    }
+    :root[data-theme="light"] {
+      --bg-0: #f0f2f5; --bg-1: #f8f9fb; --bg-2: #ffffff; --bg-3: #ebeef3;
+      --border: #d4d9e2; --fg: #1a1f2b; --fg-2: #556078; --fg-3: #8892a4;
+      --accent: #3b7cdc; --accent-dim: rgba(59,124,220,0.1);
+      --gold: #b38a2e; --red: #c83a3a; --red-dim: rgba(200,58,58,0.1);
+      --orange: #b07428; --orange-dim: rgba(176,116,40,0.1);
+      --green: #2e8f4e; --purple: #7a52c9;
+      color-scheme: light;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg-0); color: var(--fg); line-height: 1.5; padding: 0 16px; }
+
+    /* ─── Top Bar ─── */
+    .topbar {
+      position: sticky; top: 0; z-index: 100;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 0; background: var(--bg-0); border-bottom: 1px solid var(--border);
+      flex-wrap: wrap; gap: 8px;
+    }
+    .logo { font-size: 1rem; font-weight: 700; color: var(--nation-color); letter-spacing: 0.5px; }
+    .logo span { color: var(--fg-3); font-weight: 400; font-size: 0.82rem; }
+    .top-controls { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+    .turn-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 4px 10px; background: var(--bg-2); border: 1px solid var(--border);
+      border-radius: var(--radius); font-family: 'Cascadia Code', monospace; font-size: 0.8rem;
+    }
+    .turn-badge .t-num { color: var(--accent); font-weight: 700; }
+
+    .btn {
+      padding: 5px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+      background: var(--bg-2); color: var(--fg); cursor: pointer; font-size: 0.8rem;
+      transition: background 0.12s; white-space: nowrap;
+    }
+    .btn:hover { border-color: var(--fg-3); }
+    .btn-accent { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+    .btn-accent:hover { opacity: 0.88; border-color: var(--accent); }
+    .btn-danger { border-color: var(--red); color: var(--red); }
+    .btn-danger:hover { background: var(--red); color: #fff; }
+    .btn-sm { padding: 3px 8px; font-size: 0.75rem; }
+    .btn-icon { background: none; border: none; color: var(--fg-3); cursor: pointer; padding: 2px 5px; }
+    .btn-icon:hover { color: var(--red); }
+
+    /* ─── Nation Card ─── */
+    .nation-card {
+      display: grid; grid-template-columns: auto 1fr; gap: 20px;
+      padding: 20px; margin: 16px 0;
+      background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius);
+      border-top: 3px solid var(--nation-color);
+    }
+    @media (max-width: 700px) { .nation-card { grid-template-columns: 1fr; } }
+
+    .card-visuals {
+      display: flex; flex-direction: column; gap: 12px; align-items: center;
+      min-width: 160px;
+    }
+    .emblem-frame, .ruler-frame {
+      width: 140px; height: 140px;
+      border: 2px solid var(--border); border-radius: var(--radius);
+      background: var(--bg-3);
+      display: flex; align-items: center; justify-content: center;
+      overflow: hidden; position: relative;
+    }
+    .emblem-frame { border-color: var(--nation-color); }
+    .emblem-frame img, .ruler-frame img { width: 100%; height: 100%; object-fit: cover; }
+    .placeholder-icon { font-size: 2.4rem; opacity: 0.25; }
+    .frame-label {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      background: rgba(0,0,0,0.6); color: var(--fg-2);
+      font-size: 0.65rem; text-align: center; padding: 2px 4px;
+      text-transform: uppercase; letter-spacing: 0.3px;
+    }
+
+    .card-info { display: flex; flex-direction: column; gap: 8px; }
+    .card-info h1 { font-size: 1.6rem; color: var(--nation-color); line-height: 1.2; }
+    .card-subtitle { color: var(--fg-2); font-size: 0.85rem; }
+    .card-desc { color: var(--fg-2); font-size: 0.88rem; line-height: 1.6; margin-top: 4px; }
+
+    .card-stats {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px;
+      margin-top: 6px;
+    }
+    .stat-item {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 4px 10px; background: var(--bg-1); border-radius: var(--radius-sm);
+      font-size: 0.8rem;
+    }
+    .stat-label { color: var(--fg-3); }
+    .stat-value { font-weight: 600; }
+
+    .tags { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 4px; }
+    .tag {
+      padding: 2px 9px; border-radius: 14px;
+      font-size: 0.7rem; border: 1px solid var(--border); color: var(--fg-2);
+    }
+    .tag-era { border-color: var(--gold); color: var(--gold); }
+    .tag-course { border-color: var(--accent); color: var(--accent); }
+    .tag-element { border-color: var(--nation-color); color: var(--nation-color); }
+
+    /* ─── GM Edit Fields inside card ─── */
+    .gm-edit-group { margin-top: 8px; }
+    .gm-edit-group label { display: block; font-size: 0.7rem; color: var(--fg-3); text-transform: uppercase; margin-bottom: 2px; }
+    .gm-edit-group input, .gm-edit-group textarea {
+      width: 100%; padding: 5px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+      background: var(--bg-0); color: var(--fg); font-family: inherit; font-size: 0.82rem;
+    }
+    .gm-edit-group textarea { resize: vertical; min-height: 60px; }
+    .gm-img-upload { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+    .gm-img-upload input[type="file"] { font-size: 0.75rem; }
+
+    /* ─── Warnings ─── */
+    .warns { margin-bottom: 10px; display: flex; flex-direction: column; gap: 5px; }
+    .warn-item {
+      display: flex; align-items: flex-start; gap: 7px;
+      padding: 7px 10px; border-radius: var(--radius-sm); font-size: 0.8rem;
+    }
+    .warn-item p { margin-top: 2px; color: var(--fg-2); font-size: 0.75rem; }
+    .warn-danger { background: var(--red-dim); border: 1px solid rgba(232,84,84,0.3); }
+    .warn-critical { background: var(--red-dim); border: 1px solid rgba(232,84,84,0.5); animation: pulse 2s infinite; }
+    .warn-warning { background: var(--orange-dim); border: 1px solid rgba(212,145,58,0.3); }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.65} }
+
+    /* ─── Layout ─── */
+    .shell { display: grid; grid-template-columns: 1fr 300px; gap: 0; min-height: 50vh; }
+    .shell.player-mode { grid-template-columns: 1fr; }
+    .main { padding: 0 12px 14px 0; min-width: 0; }
+    .side {
+      border-left: 1px solid var(--border); padding: 14px 0 14px 12px;
+      display: flex; flex-direction: column; gap: 10px; min-width: 0;
+    }
+    @media (max-width: 800px) {
+      .shell { grid-template-columns: 1fr; }
+      .side { border-left: none; border-top: 1px solid var(--border); padding: 14px 0 0; }
+      .main { padding-right: 0; }
+    }
+
+    /* ─── Metrics Grid ─── */
+    .mgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
+    .mcard { background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    .mcard-hdr {
+      display: flex; align-items: center; gap: 5px;
+      padding: 6px 10px; background: var(--bg-1); border-bottom: 1px solid var(--border);
+      font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--fg-2);
+    }
+    .mcard-avg { margin-left: auto; font-family: 'Cascadia Code', monospace; font-size: 0.78rem; color: var(--fg-3); }
+    .mcard-body { padding: 4px 10px 8px; }
+    .mrow { display: grid; grid-template-columns: 1fr 70px 26px; align-items: center; gap: 5px; padding: 2px 0; }
+    .mrow-name { font-size: 0.76rem; color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bar-wrap { height: 5px; background: var(--bg-3); border-radius: 3px; overflow: hidden; }
+    .bar { height: 100%; border-radius: 3px; transition: width 0.35s ease; }
+    .mval { font-family: 'Cascadia Code', monospace; font-size: 0.8rem; font-weight: 700; text-align: right; }
+
+    .c-crit { color: var(--red); }   .bar.c-crit { background: var(--red); }
+    .c-low  { color: var(--orange); } .bar.c-low  { background: var(--orange); }
+    .c-mid  { color: var(--fg); }     .bar.c-mid  { background: var(--fg-3); }
+    .c-high { color: var(--green); }  .bar.c-high { background: var(--green); }
+    .c-top  { color: var(--purple); } .bar.c-top  { background: var(--purple); }
+
+    /* ─── Panels ─── */
+    .pnl { background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    .pnl-hdr {
+      padding: 6px 10px; font-size: 0.7rem; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.5px;
+      color: var(--accent); background: var(--bg-1); border-bottom: 1px solid var(--border);
+    }
+    .pnl-body { padding: 8px 10px; }
+    .pnl-body label { display: block; font-size: 0.68rem; color: var(--fg-3); text-transform: uppercase; margin-bottom: 2px; }
+    .pnl-body select, .pnl-body input[type="number"], .pnl-body input[type="text"] {
+      width: 100%; padding: 5px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+      background: var(--bg-0); color: var(--fg); font-size: 0.82rem;
+    }
+    .pnl-body select:focus, .pnl-body input:focus { outline: none; border-color: var(--accent); }
+    .gm-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
+    .gm-acts { display: flex; gap: 5px; margin-top: 8px; }
+
+    .pend-item {
+      display: flex; align-items: center; gap: 5px;
+      padding: 3px 7px; background: var(--bg-1); border-radius: var(--radius-sm); margin-bottom: 3px; font-size: 0.76rem;
+    }
+    .pend-reason { color: var(--fg-3); font-size: 0.68rem; margin-left: auto; }
+    .empty-hint { color: var(--fg-3); font-size: 0.76rem; text-align: center; padding: 8px; }
+
+    /* ─── Modal ─── */
+    .modal-ov {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.65);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 1000; opacity: 0; pointer-events: none; transition: opacity 0.15s;
+    }
+    .modal-ov.vis { opacity: 1; pointer-events: all; }
+    .modal {
+      background: var(--bg-1); border: 1px solid var(--border); border-radius: var(--radius);
+      width: 92%; max-width: 600px; max-height: 80vh; overflow-y: auto; padding: 16px;
+    }
+    .modal h3 { margin-bottom: 8px; color: var(--accent); font-size: 1rem; }
+    .modal-foot { display: flex; justify-content: flex-end; margin-top: 12px; }
+    .res-sec { margin-bottom: 10px; }
+    .res-sec h4 { color: var(--fg-2); margin-bottom: 4px; font-size: 0.78rem; }
+    .res-sec ul { list-style: none; font-family: 'Cascadia Code', monospace; font-size: 0.76rem; }
+    .res-sec li { padding: 1.5px 0; }
+    .res-casc { color: var(--accent); padding-left: 10px; }
+    .res-warn { color: var(--orange); }
+
+    .error-page {
+      text-align: center; padding: 60px 20px;
+    }
+    .error-page h2 { color: var(--red); margin-bottom: 12px; }
+    .error-page a { color: var(--accent); }
+
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  </style>
+</head>
+<body>
+
+<div id="app-root"></div>
+
+<!-- Result Modal -->
+<div class="modal-ov" id="result-modal" onclick="if(event.target===this)closeModal()">
+  <div class="modal"><h3>Результат</h3><div id="result-body"></div><div class="modal-foot"><button class="btn btn-accent" onclick="closeModal()">Закрыть</button></div></div>
+</div>
+
+<script src="js/engine.js"></script>
+<script>
+// ═══ URL Params ═══
+const params = new URLSearchParams(location.search);
+const nationId = params.get('id');
+const isGM = params.get('gm') === '1';
+const STORAGE_KEY = 'teyvat_au_state';
+const CARD_STORAGE_KEY = 'teyvat_au_cards';
+
+let nationsData = null;
+let rulesData = null;
+let engine = null;
+let nation = null;
+let pending = [];
+let turnNumber = 1;
+
+const CAT_ORDER = ['economy','diplomacy','politics','military_general','military_ground','military_air','military_naval','culture'];
+
+async function init() {
+  if (!nationId) {
+    showError('Нация не указана', 'Добавьте параметр ?id=mondstadt к URL');
+    return;
+  }
+
+  try {
+    const [nResp, rResp] = await Promise.all([fetch('data/nations.json'), fetch('data/rules.json')]);
+    nationsData = await nResp.json();
+    rulesData = await rResp.json();
+    engine = new CascadeEngine(rulesData, nationsData.metricsMeta);
+  } catch(e) {
+    showError('Ошибка загрузки данных', e.message);
+    return;
+  }
+
+  // Restore metrics from localStorage
+  try {
+    const s = localStorage.getItem(STORAGE_KEY);
+    if (s) {
+      const st = JSON.parse(s);
+      if (st.nations) for (const n of nationsData.nations) {
+        const sn = st.nations.find(x => x.id === n.id);
+        if (sn?.metrics) n.metrics = sn.metrics;
+      }
+      if (st.turnNumber) turnNumber = st.turnNumber;
+    }
+  } catch(e) {}
+
+  // Restore card customizations
+  try {
+    const cs = localStorage.getItem(CARD_STORAGE_KEY);
+    if (cs) {
+      const cards = JSON.parse(cs);
+      for (const n of nationsData.nations) {
+        const c = cards[n.id];
+        if (!c) continue;
+        if (c.description) n.description = c.description;
+        if (c.capital) n.capital = c.capital;
+        if (c.motto) n.motto = c.motto;
+        if (c.ruler) n.ruler = { ...n.ruler, ...c.ruler };
+        if (c.emblemDataUrl) n.emblemDataUrl = c.emblemDataUrl;
+        if (c.rulerDataUrl) n.rulerDataUrl = c.rulerDataUrl;
+      }
+    }
+  } catch(e) {}
+
+  nation = nationsData.nations.find(n => n.id === nationId);
+  if (!nation) {
+    showError('Нация не найдена', `ID "${nationId}" не существует. <a href="index.html">Вернуться</a>`);
+    return;
+  }
+
+  document.title = `${nation.name} — Тейват AU`;
+  document.documentElement.style.setProperty('--nation-color', nation.color);
+  render();
+}
+
+function showError(title, msg) {
+  document.getElementById('app-root').innerHTML = `<div class="error-page"><h2>${title}</h2><p>${msg}</p><p style="margin-top:12px"><a href="index.html">← Панель ГМ</a></p></div>`;
+}
+
+function render() {
+  const root = document.getElementById('app-root');
+  root.innerHTML = '';
+
+  // Top bar
+  const topbar = el('div', 'topbar');
+  topbar.innerHTML = `
+    <div class="logo" style="color:var(--nation-color)">${nation.name} <span>· ${nation.fullName}</span></div>
+    <div class="top-controls">
+      <div class="turn-badge"><span style="color:var(--fg-3)">ХОД</span><span class="t-num">${turnNumber}</span></div>
+      ${isGM ? '<a href="index.html" class="btn btn-sm">← Панель ГМ</a>' : ''}
+    </div>
+  `;
+  root.appendChild(topbar);
+
+  // Nation Card
+  root.appendChild(buildNationCard());
+
+  // Warnings
+  const warns = engine.getActiveWarnings(nation);
+  if (warns.length) {
+    const wd = el('div', 'warns');
+    wd.innerHTML = warns.map(w => `<div class="warn-item warn-${w.severity}"><span>${w.severity==='critical'?'🔴':'⚠️'}</span><div><strong>${w.label}</strong><p>${w.desc}</p></div></div>`).join('');
+    root.appendChild(wd);
+  }
+
+  // Shell: metrics + optional GM sidebar
+  const shell = el('div', isGM ? 'shell' : 'shell player-mode');
+
+  // Main: metrics
+  const main = el('div', 'main');
+  const mgrid = el('div', 'mgrid');
+  for (const cat of CAT_ORDER) {
+    const ci = nationsData.categories[cat];
+    const mets = Object.entries(nationsData.metricsMeta).filter(([,m]) => m.category === cat);
+    const st = engine.getCategoryTotal(nation.metrics, cat);
+    let rows = '';
+    for (const [k, meta] of mets) {
+      const v = nation.metrics[k], cls = mcolor(v), pct = (v/12*100).toFixed(0);
+      rows += `<div class="mrow"><span class="mrow-name" title="${meta.name}">${meta.name}</span><div class="bar-wrap"><div class="bar ${cls}" style="width:${pct}%"></div></div><span class="mval ${cls}">${v}</span></div>`;
+    }
+    const card = el('div', 'mcard');
+    card.innerHTML = `<div class="mcard-hdr"><span>${ci.icon}</span><span style="color:${ci.color}">${ci.name}</span><span class="mcard-avg">${st.avg}</span></div><div class="mcard-body">${rows}</div>`;
+    mgrid.appendChild(card);
+  }
+  main.appendChild(mgrid);
+  shell.appendChild(main);
+
+  // GM Sidebar
+  if (isGM) {
+    const side = el('div', 'side');
+    side.innerHTML = `
+      <div class="pnl">
+        <div class="pnl-hdr">Изменения — ${nation.name}</div>
+        <div class="pnl-body">
+          <label>Показатель</label>
+          <select id="gm-metric"></select>
+          <div class="gm-row">
+            <div><label>Дельта (+/-)</label><input type="number" id="gm-delta" min="-12" max="12" placeholder="-2 или +3"></div>
+            <div><label>Причина</label><input type="text" id="gm-reason" placeholder="голод..."></div>
+          </div>
+          <div class="gm-acts">
+            <button class="btn" onclick="addChange()">Добавить</button>
+            <button class="btn btn-accent" onclick="applyChanges()">Применить</button>
+          </div>
+        </div>
+      </div>
+      <div class="pnl">
+        <div class="pnl-hdr">Ожидающие</div>
+        <div class="pnl-body" id="pending-list"><p class="empty-hint">Пусто</p></div>
+      </div>
+    `;
+    shell.appendChild(side);
+  }
+
+  root.appendChild(shell);
+
+  // Populate GM select
+  if (isGM) populateSelect();
+}
+
+function buildNationCard() {
+  const n = nation;
+  const card = el('div', 'nation-card');
+
+  // Visuals column
+  const visuals = el('div', 'card-visuals');
+
+  // Emblem
+  const embFrame = el('div', 'emblem-frame');
+  if (n.emblemDataUrl) {
+    embFrame.innerHTML = `<img src="${n.emblemDataUrl}" alt="Герб ${n.name}">`;
+  } else {
+    embFrame.innerHTML = `<span class="placeholder-icon">🛡️</span><span class="frame-label">Герб / Флаг</span>`;
+  }
+  visuals.appendChild(embFrame);
+
+  // Ruler portrait
+  const rulerFrame = el('div', 'ruler-frame');
+  if (n.rulerDataUrl) {
+    rulerFrame.innerHTML = `<img src="${n.rulerDataUrl}" alt="${n.ruler?.name}">`;
+  } else {
+    rulerFrame.innerHTML = `<span class="placeholder-icon">👤</span><span class="frame-label">Правитель</span>`;
+  }
+  visuals.appendChild(rulerFrame);
+
+  // GM: image uploads
+  if (isGM) {
+    const imgUp = el('div', '');
+    imgUp.style.cssText = 'margin-top:6px;display:flex;flex-direction:column;gap:6px;width:100%';
+    imgUp.innerHTML = `
+      <label style="font-size:0.68rem;color:var(--fg-3)">ЗАГРУЗИТЬ ГЕРБ</label>
+      <input type="file" accept="image/*" id="emblem-upload" style="font-size:0.72rem">
+      <label style="font-size:0.68rem;color:var(--fg-3)">ЗАГРУЗИТЬ ПОРТРЕТ</label>
+      <input type="file" accept="image/*" id="ruler-upload" style="font-size:0.72rem">
+    `;
+    visuals.appendChild(imgUp);
+    setTimeout(() => {
+      document.getElementById('emblem-upload')?.addEventListener('change', e => handleImageUpload(e, 'emblemDataUrl'));
+      document.getElementById('ruler-upload')?.addEventListener('change', e => handleImageUpload(e, 'rulerDataUrl'));
+    }, 0);
+  }
+
+  card.appendChild(visuals);
+
+  // Info column
+  const info = el('div', 'card-info');
+
+  if (isGM) {
+    // Editable card
+    info.innerHTML = `
+      <h1>${n.name}</h1>
+      <div class="card-subtitle">${n.fullName}</div>
+      <div class="tags">
+        <span class="tag tag-era">${n.eraName}</span>
+        <span class="tag tag-course">${n.courseName}</span>
+        <span class="tag tag-element">${n.element}</span>
+      </div>
+      <div class="gm-edit-group">
+        <label>Описание государства</label>
+        <textarea id="edit-desc" rows="3">${n.description || ''}</textarea>
+      </div>
+      <div class="card-stats">
+        <div class="gm-edit-group"><label>Столица</label><input id="edit-capital" value="${n.capital || ''}"></div>
+        <div class="gm-edit-group"><label>Девиз</label><input id="edit-motto" value="${n.motto || ''}"></div>
+        <div class="gm-edit-group"><label>Имя правителя</label><input id="edit-ruler-name" value="${n.ruler?.name || ''}"></div>
+        <div class="gm-edit-group"><label>Титул правителя</label><input id="edit-ruler-title" value="${n.ruler?.title || ''}"></div>
+      </div>
+      <button class="btn btn-accent btn-sm" style="margin-top:8px" onclick="saveCardEdits()">💾 Сохранить карточку</button>
+    `;
+  } else {
+    // Read-only card
+    info.innerHTML = `
+      <h1>${n.name}</h1>
+      <div class="card-subtitle">${n.fullName}</div>
+      <div class="tags">
+        <span class="tag tag-era">${n.eraName}</span>
+        <span class="tag tag-course">${n.courseName}</span>
+        <span class="tag tag-element">${n.element}</span>
+      </div>
+      ${n.description ? `<div class="card-desc">${n.description}</div>` : ''}
+      <div class="card-stats">
+        ${n.capital ? `<div class="stat-item"><span class="stat-label">Столица</span><span class="stat-value">${n.capital}</span></div>` : ''}
+        ${n.ruler ? `<div class="stat-item"><span class="stat-label">Правитель</span><span class="stat-value">${n.ruler.name}</span></div>` : ''}
+        ${n.ruler?.title ? `<div class="stat-item"><span class="stat-label">Титул</span><span class="stat-value">${n.ruler.title}</span></div>` : ''}
+        ${n.motto ? `<div class="stat-item"><span class="stat-label">Девиз</span><span class="stat-value" style="font-style:italic">«${n.motto}»</span></div>` : ''}
+        <div class="stat-item"><span class="stat-label">Архонт</span><span class="stat-value">${n.archon}</span></div>
+        <div class="stat-item"><span class="stat-label">Элемент</span><span class="stat-value">${n.element}</span></div>
+        <div class="stat-item"><span class="stat-label">Религия</span><span class="stat-value">${n.religion}</span></div>
+      </div>
+    `;
+  }
+  card.appendChild(info);
+  return card;
+}
+
+// ─── GM Functions ───
+
+function handleImageUpload(event, field) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    nation[field] = e.target.result;
+    saveCardData();
+    render();
+  };
+  reader.readAsDataURL(file);
+}
+
+function saveCardEdits() {
+  const desc = document.getElementById('edit-desc')?.value.trim();
+  const capital = document.getElementById('edit-capital')?.value.trim();
+  const motto = document.getElementById('edit-motto')?.value.trim();
+  const rName = document.getElementById('edit-ruler-name')?.value.trim();
+  const rTitle = document.getElementById('edit-ruler-title')?.value.trim();
+
+  if (desc) nation.description = desc;
+  if (capital) nation.capital = capital;
+  if (motto) nation.motto = motto;
+  if (!nation.ruler) nation.ruler = {};
+  if (rName) nation.ruler.name = rName;
+  if (rTitle) nation.ruler.title = rTitle;
+
+  saveCardData();
+  render();
+}
+
+function saveCardData() {
+  try {
+    const existing = JSON.parse(localStorage.getItem(CARD_STORAGE_KEY) || '{}');
+    existing[nation.id] = {
+      description: nation.description,
+      capital: nation.capital,
+      motto: nation.motto,
+      ruler: nation.ruler,
+      emblemDataUrl: nation.emblemDataUrl || null,
+      rulerDataUrl: nation.rulerDataUrl || null
+    };
+    localStorage.setItem(CARD_STORAGE_KEY, JSON.stringify(existing));
+  } catch(e) {}
+}
+
+function populateSelect() {
+  const sel = document.getElementById('gm-metric');
+  if (!sel) return;
+  sel.innerHTML = '';
+  for (const cat of CAT_ORDER) {
+    const ci = nationsData.categories[cat];
+    const grp = document.createElement('optgroup');
+    grp.label = ci.name;
+    for (const [k, m] of Object.entries(nationsData.metricsMeta).filter(([,m]) => m.category === cat)) {
+      const o = document.createElement('option');
+      o.value = k; o.textContent = `${m.name} [${nation.metrics[k]}]`;
+      grp.appendChild(o);
+    }
+    sel.appendChild(grp);
+  }
+}
+
+function addChange() {
+  const m = document.getElementById('gm-metric').value;
+  const d = parseInt(document.getElementById('gm-delta').value, 10);
+  const r = document.getElementById('gm-reason').value.trim();
+  if (!m || isNaN(d) || d === 0) return;
+  pending.push({ metric: m, delta: d, reason: r });
+  renderPending();
+  document.getElementById('gm-delta').value = '';
+  document.getElementById('gm-reason').value = '';
+}
+
+function removePend(i) { pending.splice(i, 1); renderPending(); }
+
+function renderPending() {
+  const el = document.getElementById('pending-list');
+  if (!pending.length) { el.innerHTML = '<p class="empty-hint">Пусто</p>'; return; }
+  el.innerHTML = pending.map((c, i) => {
+    const nm = nationsData.metricsMeta[c.metric]?.name || c.metric;
+    return `<div class="pend-item"><span>${nm}: <strong>${c.delta>0?'+':''}${c.delta}</strong></span>${c.reason?`<span class="pend-reason">${c.reason}</span>`:''}<button class="btn-icon" onclick="removePend(${i})">✕</button></div>`;
+  }).join('');
+}
+
+function applyChanges() {
+  if (!pending.length) return;
+  const res = engine.applyTurnChanges(nation, pending);
+  nation.metrics = res.newMetrics;
+  pending = [];
+  saveMetrics();
+  render();
+  showResult(res);
+}
+
+function saveMetrics() {
+  try {
+    const existing = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+    if (!existing.nations) existing.nations = [];
+    const idx = existing.nations.findIndex(n => n.id === nation.id);
+    const entry = { id: nation.id, metrics: nation.metrics };
+    if (idx >= 0) existing.nations[idx] = entry; else existing.nations.push(entry);
+    existing.turnNumber = turnNumber;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
+  } catch(e) {}
+}
+
+function showResult(res) {
+  const el = document.getElementById('result-body');
+  let h = '<div class="res-sec"><h4>Изменения:</h4><ul>';
+  for (const l of res.log) {
+    const w = l.includes('⚠'), c = l.startsWith('  ↳');
+    h += `<li class="${w?'res-warn':''} ${c?'res-casc':''}">${l}</li>`;
+  }
+  h += '</ul></div>';
+  if (res.warnings.length) {
+    h += '<div class="res-sec"><h4>Предупреждения:</h4>';
+    for (const w of res.warnings) h += `<div class="warn-item warn-${w.severity}"><strong>${w.label}</strong>: ${w.desc}</div>`;
+    h += '</div>';
+  }
+  el.innerHTML = h;
+  document.getElementById('result-modal').classList.add('vis');
+}
+
+function closeModal() { document.getElementById('result-modal').classList.remove('vis'); }
+
+// ─── Helpers ───
+function el(tag, cls) { const e = document.createElement(tag); if (cls) e.className = cls; return e; }
+function mcolor(v) { return v <= 2 ? 'c-crit' : v <= 4 ? 'c-low' : v <= 6 ? 'c-mid' : v <= 9 ? 'c-high' : 'c-top'; }
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>

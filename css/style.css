@@ -193,6 +193,15 @@ body {
   flex-shrink: 0;
 }
 
+.tab-link {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 3px;
+  font-size: 0.7rem; text-decoration: none;
+  color: var(--text-muted); background: transparent;
+  margin-left: 2px; transition: all 0.12s;
+}
+.tab-link:hover { color: var(--accent); background: rgba(88,166,255,0.12); }
+
 /* ─── Nation Header ─── */
 
 .nation-header {

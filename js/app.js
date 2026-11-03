@@ -73,7 +73,7 @@ function renderNationTabs() {
     tab.className = 'nation-tab';
     tab.dataset.id = nation.id;
     tab.style.setProperty('--nation-color', nation.color);
-    tab.innerHTML = `<span class="tab-dot" style="background:${nation.color}"></span>${nation.name}`;
+    tab.innerHTML = `<span class="tab-dot" style="background:${nation.color}"></span>${nation.name}<a href="nation.html?id=${nation.id}&gm=1" class="tab-link" title="Страница нации (ГМ)" onclick="event.stopPropagation()">↗</a>`;
     tab.onclick = () => selectNation(nation.id);
     container.appendChild(tab);
   }
