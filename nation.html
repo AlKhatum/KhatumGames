@@ -555,21 +555,29 @@ function handleImageUpload(event, field) {
 }
 
 function saveCardEdits() {
-  const desc = document.getElementById('edit-desc')?.value.trim();
-  const capital = document.getElementById('edit-capital')?.value.trim();
-  const motto = document.getElementById('edit-motto')?.value.trim();
-  const rName = document.getElementById('edit-ruler-name')?.value.trim();
-  const rTitle = document.getElementById('edit-ruler-title')?.value.trim();
+  try {
+    const desc = document.getElementById('edit-desc')?.value.trim();
+    const capital = document.getElementById('edit-capital')?.value.trim();
+    const motto = document.getElementById('edit-motto')?.value.trim();
+    const rName = document.getElementById('edit-ruler-name')?.value.trim();
+    const rTitle = document.getElementById('edit-ruler-title')?.value.trim();
 
-  if (desc) nation.description = desc;
-  if (capital) nation.capital = capital;
-  if (motto) nation.motto = motto;
-  if (!nation.ruler) nation.ruler = {};
-  if (rName) nation.ruler.name = rName;
-  if (rTitle) nation.ruler.title = rTitle;
+    nation.description = desc || nation.description || '';
+    nation.capital = capital || nation.capital || '';
+    nation.motto = motto || nation.motto || '';
+    if (!nation.ruler) nation.ruler = {};
+    nation.ruler.name = rName || nation.ruler.name || '';
+    nation.ruler.title = rTitle || nation.ruler.title || '';
 
-  saveCardData();
-  render();
+    saveCardData();
+    render();
+    // Visual confirmation
+    const btn = document.querySelector('[onclick="saveCardEdits()"]');
+    if (btn) { btn.textContent = '✅ Сохранено!'; setTimeout(() => { btn.textContent = '💾 Сохранить карточку'; }, 1500); }
+  } catch(e) {
+    console.error('saveCardEdits error:', e);
+    alert('Ошибка сохранения: ' + e.message);
+  }
 }
 
 function saveCardData() {
@@ -627,13 +635,22 @@ function renderPending() {
 }
 
 function applyChanges() {
-  if (!pending.length) return;
-  const res = engine.applyTurnChanges(nation, pending);
-  nation.metrics = res.newMetrics;
-  pending = [];
-  saveMetrics();
-  render();
-  showResult(res);
+  try {
+    if (!pending.length) {
+      const btn = document.querySelector('[onclick="applyChanges()"]');
+      if (btn) { btn.textContent = '⚠ Нет изменений'; setTimeout(() => { btn.textContent = 'Применить'; }, 1500); }
+      return;
+    }
+    const res = engine.applyTurnChanges(nation, pending);
+    nation.metrics = res.newMetrics;
+    pending = [];
+    saveMetrics();
+    render();
+    showResult(res);
+  } catch(e) {
+    console.error('applyChanges error:', e);
+    alert('Ошибка применения: ' + e.message);
+  }
 }
 
 function saveMetrics() {
