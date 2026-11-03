@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Тейват AU — Панель ГМ</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- ═══ Top Bar ═══ -->
+  <div class="top-bar">
+    <h1>ТЕЙВАТ AU <span>· Панель Мастера</span></h1>
+    <div class="top-controls">
+      <div class="turn-display">
+        <span class="turn-label">ХОД</span>
+        <span class="turn-num" id="turn-number">1</span>
+      </div>
+      <button class="btn btn-primary" onclick="nextTurn()">Следующий ход</button>
+      <button class="btn" onclick="showCompare()">Сравнение</button>
+      <button class="btn" onclick="exportJSON()">Экспорт</button>
+      <button class="btn" onclick="importJSON()">Импорт</button>
+      <button class="btn btn-danger btn-sm" onclick="resetAll()">Сброс</button>
+    </div>
+  </div>
+
+  <div class="main-layout">
+
+    <!-- ═══ Dashboard ═══ -->
+    <div class="dashboard-area" id="app">
+
+      <!-- Nation Tabs -->
+      <div class="nation-tabs-wrap" id="nation-tabs"></div>
+
+      <!-- Nation Header -->
+      <div class="nation-header" id="nation-header"></div>
+
+      <!-- Warnings -->
+      <div id="warnings"></div>
+
+      <!-- Metrics Grid -->
+      <div class="metrics-grid" id="metrics-grid"></div>
+
+    </div>
+
+    <!-- ═══ Sidebar ═══ -->
+    <div class="sidebar">
+
+      <!-- GM Input Panel -->
+      <div class="panel">
+        <div class="panel-header">Панель ГМ — Изменения</div>
+        <div class="panel-body">
+          <div class="gm-form">
+            <label>Показатель</label>
+            <select id="gm-metric-select"></select>
+
+            <div class="gm-row">
+              <div>
+                <label>Изменение (+/-)</label>
+                <input type="number" id="gm-delta" placeholder="напр. -2 или +3" min="-12" max="12">
+              </div>
+              <div>
+                <label>Причина</label>
+                <input type="text" id="gm-reason" placeholder="голод, война...">
+              </div>
+            </div>
+
+            <div class="gm-actions">
+              <button class="btn" onclick="addChange()">Добавить</button>
+              <button class="btn btn-primary" onclick="applyChanges()">Применить все</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pending Changes -->
+      <div class="panel">
+        <div class="panel-header">Ожидающие изменения</div>
+        <div class="panel-body" id="pending-changes">
+          <p class="empty-hint">Добавьте изменения через панель выше</p>
+        </div>
+      </div>
+
+      <!-- Turn Log -->
+      <div class="panel" style="flex:1; min-height:200px;">
+        <div class="panel-header">История ходов</div>
+        <div class="panel-body" id="turn-log-body" style="max-height:400px; overflow-y:auto;">
+          <p class="empty-hint">История ходов пуста</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ═══ Result Modal ═══ -->
+  <div class="modal-overlay" id="result-modal" onclick="if(event.target===this)closeModal()">
+    <div class="modal">
+      <h3>Результат применения</h3>
+      <div id="result-body"></div>
+      <div class="modal-actions">
+        <button class="btn btn-primary" onclick="closeModal()">Закрыть</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ Compare Modal ═══ -->
+  <div class="modal-overlay" id="compare-modal" onclick="if(event.target===this)closeCompare()">
+    <div class="modal" style="max-width:900px">
+      <h3>Сравнение наций</h3>
+      <div id="compare-body"></div>
+      <div class="modal-actions">
+        <button class="btn btn-primary" onclick="closeCompare()">Закрыть</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="js/engine.js"></script>
+  <script src="js/app.js"></script>
+
+</body>
+</html>

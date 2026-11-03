@@ -1,0 +1,122 @@
+{
+  "influences": [
+    { "source": "econ_power", "target": "treasury", "type": "+", "weight": 0.3, "label": "Налоговая база" },
+    { "source": "econ_power", "target": "popular_support", "type": "+", "weight": 0.2, "label": "Благосостояние" },
+    { "source": "industrial_power", "target": "econ_power", "type": "+", "weight": 0.2, "label": "Производство товаров" },
+    { "source": "industrial_power", "target": "infantry", "type": "+", "weight": 0.15, "label": "Производство вооружений" },
+    { "source": "industrial_power", "target": "cavalry", "type": "+", "weight": 0.1, "label": "Производство вооружений" },
+    { "source": "industrial_power", "target": "artillery", "type": "+", "weight": 0.15, "label": "Производство вооружений" },
+    { "source": "industrial_power", "target": "surface_fleet", "type": "+", "weight": 0.1, "label": "Производство вооружений" },
+    { "source": "industrial_power", "target": "fortification", "type": "+", "weight": 0.1, "label": "Производство вооружений" },
+    { "source": "food_security", "target": "morale", "type": "+", "weight": 0.2, "label": "Сытая армия" },
+    { "source": "food_security", "target": "popular_support", "type": "+", "weight": 0.25, "label": "Сытое население" },
+    { "source": "elementalium", "target": "industrial_power", "type": "+", "weight": 0.15, "label": "Энергоноситель (Эра III+)", "eraMin": 3 },
+    { "source": "elementalium", "target": "elemental_corps", "type": "+", "weight": 0.25, "label": "Усиление Носителей" },
+    { "source": "trade_volume", "target": "econ_power", "type": "+", "weight": 0.2, "label": "Торговая прибыль" },
+    { "source": "trade_volume", "target": "diplo_influence", "type": "+", "weight": 0.15, "label": "Торговая зависимость" },
+    { "source": "intl_authority", "target": "diplo_influence", "type": "+", "weight": 0.25, "label": "Репутация" },
+    { "source": "diplo_influence", "target": "alliance_network", "type": "+", "weight": 0.2, "label": "Переговорная сила" },
+    { "source": "intelligence", "target": "command_quality", "type": "+", "weight": 0.15, "label": "Информированность" },
+    { "source": "internal_stability", "target": "econ_power", "type": "+", "weight": 0.15, "label": "Порядок = производство" },
+    { "source": "internal_stability", "target": "infantry", "type": "+", "weight": 0.1, "label": "Мобилизация" },
+    { "source": "popular_support", "target": "internal_stability", "type": "+", "weight": 0.2, "label": "Легитимность" },
+    { "source": "ideology", "target": "morale", "type": "+", "weight": 0.2, "label": "Мотивация" },
+    { "source": "ideology", "target": "internal_stability", "type": "+", "weight": 0.15, "label": "Когезия" },
+    { "source": "cultural_influence", "target": "intl_authority", "type": "+", "weight": 0.2, "label": "Мягкая сила" },
+    { "source": "cultural_influence", "target": "diplo_influence", "type": "+", "weight": 0.15, "label": "Привлекательность" },
+    { "source": "education", "target": "command_quality", "type": "+", "weight": 0.15, "label": "Военная наука" },
+    { "source": "religious_devotion", "target": "ideology", "type": "+", "weight": 0.2, "label": "Скрепа" }
+  ],
+  "cascades": [
+    {
+      "id": "famine",
+      "trigger": "food_security",
+      "condition": "lt",
+      "threshold": 3,
+      "label": "Голод",
+      "desc": "Продовольственная безопасность < 3",
+      "effects": [
+        { "target": "morale", "delta": -2 },
+        { "target": "popular_support", "delta": -2 },
+        { "target": "internal_stability", "delta": -1 }
+      ]
+    },
+    {
+      "id": "bankruptcy",
+      "trigger": "treasury",
+      "condition": "eq",
+      "threshold": 0,
+      "label": "Банкротство",
+      "desc": "Казна = 0",
+      "effects": [
+        { "target": "infantry", "delta": -1 },
+        { "target": "cavalry", "delta": -1 },
+        { "target": "artillery", "delta": -1 },
+        { "target": "surface_fleet", "delta": -1 },
+        { "target": "morale", "delta": -1 },
+        { "target": "industrial_power", "delta": -1 }
+      ]
+    },
+    {
+      "id": "unrest",
+      "trigger": "internal_stability",
+      "condition": "lt",
+      "threshold": 3,
+      "label": "Мятежи и бунты",
+      "desc": "Внутренняя стабильность < 3",
+      "effects": [
+        { "target": "econ_power", "delta": -1 },
+        { "target": "industrial_power", "delta": -1 }
+      ]
+    },
+    {
+      "id": "civil_war",
+      "trigger": "internal_stability",
+      "condition": "eq",
+      "threshold": 0,
+      "label": "ГРАЖДАНСКАЯ ВОЙНА",
+      "desc": "Внутренняя стабильность = 0. Все показатели −3. Вассалы могут отделиться.",
+      "effects": "all_minus_3"
+    },
+    {
+      "id": "desertion",
+      "trigger": "morale",
+      "condition": "eq",
+      "threshold": 0,
+      "label": "Массовое дезертирство",
+      "desc": "Боевой дух = 0. Пехота, Конница −50%.",
+      "effects": [
+        { "target": "infantry", "delta": "half" },
+        { "target": "cavalry", "delta": "half" }
+      ]
+    },
+    {
+      "id": "diplomatic_collapse",
+      "trigger": "intl_authority",
+      "condition": "eq",
+      "threshold": 0,
+      "label": "Дипломатический коллапс",
+      "desc": "Международный авторитет = 0. Дипломатическое Влияние = 0. Союзники разрывают договоры.",
+      "effects": [
+        { "target": "diplo_influence", "delta": "zero" },
+        { "target": "alliance_network", "delta": "zero" }
+      ]
+    },
+    {
+      "id": "tech_regression",
+      "trigger": "education",
+      "condition": "lt",
+      "threshold": 2,
+      "label": "Технологический регресс",
+      "desc": "Образование < 2. При провале проверки — эра понижается.",
+      "effects": []
+    }
+  ],
+  "elementaliumBonuses": [
+    { "min": 0, "max": 0, "label": "Критический дефицит", "effects": "Элементальный Корпус неэффективен. Промышленность (Эра III+) −2." },
+    { "min": 1, "max": 3, "label": "Дефицит", "effects": "Хватает на базовые нужды. Нет экспортного потенциала." },
+    { "min": 4, "max": 6, "label": "Достаток", "effects": "Покрывает внутренние нужды, есть экспортный излишек." },
+    { "min": 7, "max": 9, "label": "Изобилие", "effects": "+2 к Экономической Мощи." },
+    { "min": 10, "max": 12, "label": "Сверхизбыток", "effects": "+3 к Экономической Мощи, +1 к Элементальному Корпусу." }
+  ]
+}
