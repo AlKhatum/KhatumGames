@@ -258,6 +258,20 @@
 
 <div id="app-root"></div>
 
+<!-- Password Modal -->
+<div class="modal-ov" id="pw-modal" onclick="if(event.target===this)closePw()">
+  <div class="modal" style="max-width:340px;text-align:center">
+    <h3 style="color:var(--gold)">🔒 Доступ ГМ</h3>
+    <p style="color:var(--fg-2);font-size:0.85rem;margin-bottom:12px">Введите пароль для режима Гейм-Мастера</p>
+    <input type="password" id="pw-input" placeholder="Пароль..." style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-0);color:var(--fg);font-size:0.9rem;font-family:inherit;text-align:center" onkeydown="if(event.key==='Enter')checkPw()">
+    <p id="pw-err" style="color:var(--red);font-size:0.78rem;margin-top:6px;display:none">Неверный пароль</p>
+    <div style="display:flex;gap:8px;justify-content:center;margin-top:14px">
+      <button class="btn" onclick="closePw()">Отмена</button>
+      <button class="btn btn-accent" onclick="checkPw()">Войти</button>
+    </div>
+  </div>
+</div>
+
 <!-- Result Modal -->
 <div class="modal-ov" id="result-modal" onclick="if(event.target===this)closeModal()">
   <div class="modal"><h3>Результат</h3><div id="result-body"></div><div class="modal-foot"><button class="btn btn-accent" onclick="closeModal()">Закрыть</button></div></div>
@@ -268,7 +282,10 @@
 // ═══ URL Params ═══
 const params = new URLSearchParams(location.search);
 const nationId = params.get('id');
-const isGM = params.get('gm') === '1';
+let isGM = false;
+const gmRequested = params.get('gm') === '1';
+const GM_PASSWORD = 'profoboszero';
+let gmUnlocked = false;
 const STORAGE_KEY = 'teyvat_au_state';
 const CARD_STORAGE_KEY = 'teyvat_au_cards';
 
@@ -337,6 +354,10 @@ async function init() {
   document.title = `${nation.name} — Тейват AU`;
   document.documentElement.style.setProperty('--nation-color', nation.color);
   render();
+  if (gmRequested) {
+    document.getElementById('pw-modal').classList.add('vis');
+    setTimeout(() => document.getElementById('pw-input')?.focus(), 100);
+  }
 }
 
 function showError(title, msg) {
@@ -645,6 +666,19 @@ function showResult(res) {
 }
 
 function closeModal() { document.getElementById('result-modal').classList.remove('vis'); }
+
+function checkPw() {
+  const v = document.getElementById('pw-input').value;
+  if (v === GM_PASSWORD) {
+    gmUnlocked = true; isGM = true;
+    document.getElementById('pw-modal').classList.remove('vis');
+    render();
+  } else {
+    document.getElementById('pw-err').style.display = 'block';
+    document.getElementById('pw-input').value = '';
+  }
+}
+function closePw() { document.getElementById('pw-modal').classList.remove('vis'); }
 
 // ─── Helpers ───
 function el(tag, cls) { const e = document.createElement(tag); if (cls) e.className = cls; return e; }
