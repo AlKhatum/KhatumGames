@@ -33,6 +33,7 @@
     { id: "paint", kind: "canvas", internal: true },
     { id: "labels", name: "Страны", kind: "svg", vis: true, glow: "#ff7fd8" },
     { id: "cities", name: "Города", kind: "svg", vis: true },
+    { id: "measure", kind: "svg", internal: true },
     { id: "over", kind: "svg", internal: true }
   ];
   const L = {};
@@ -241,6 +242,7 @@
     ty = mh < vh ? (vh - mh) / 2 : Math.min(0, Math.max(vh - mh, nty));
     world.style.transform = `translate(${tx}px, ${ty}px) scale(${s})`;
     L.cities.style.visibility = s < 0.85 ? "hidden" : "";
+    if (typeof renderMeasure === "function") renderMeasure();
     frame.style.setProperty("--s", s);
   }
   function fit() {
@@ -266,9 +268,9 @@
     const r = viewport.getBoundingClientRect();
     zoomAt(Math.pow(1.0015, -e.deltaY), e.clientX - r.left, e.clientY - r.top);
   }, { passive: false });
-  $("zoomIn").onclick = () => zoomAt(1.4, viewport.clientWidth / 2, viewport.clientHeight / 2);
-  $("zoomOut").onclick = () => zoomAt(1 / 1.4, viewport.clientWidth / 2, viewport.clientHeight / 2);
-  $("zoomFit").onclick = fit;
+  $("zoomIn").onclick = () => (viewMode === "globe" ? globeZoom(1.4) : zoomAt(1.4, viewport.clientWidth / 2, viewport.clientHeight / 2));
+  $("zoomOut").onclick = () => (viewMode === "globe" ? globeZoom(1 / 1.4) : zoomAt(1 / 1.4, viewport.clientWidth / 2, viewport.clientHeight / 2));
+  $("zoomFit").onclick = () => (viewMode === "globe" ? globeZoom(0) : fit());
   window.addEventListener("resize", () => { const was = Math.abs(s - fitS) < 1e-6; const vw = viewport.clientWidth, vh = viewport.clientHeight; fitS = Math.min(vw / W, vh / H); if (was) fit(); else setView(s, tx, ty); });
   window.addEventListener("tabchange", e => { if (e.detail === "map") requestAnimationFrame(fit); });
 
@@ -282,6 +284,7 @@
       if (map && map[sel.id]) map[sel.id].classList.add("is-sel");
     }
     selPath.setAttribute("d", sel && sel.col === "countries" ? paths.get(sel.id) || "" : "");
+    if (globe) { globe.sel = sel && sel.col === "countries" ? +sel.id : 0; globeDirty(); }
     updateCard();
     markListSelection();
   }
@@ -394,7 +397,7 @@
     if (val == null) delete state[col][id]; else state[col][id] = val;
     RENDER[col](id);
     if (sel && sel.col === col && sel.id === id) { if (val == null) select(null); else { select(sel); } }
-    if (col === "countries") { buildCountryList(); fillBrushSelect(); }
+    if (col === "countries") { buildCountryList(); fillBrushSelect(); if (globe && viewMode === "globe") syncGlobe(false); }
   }
   function commit(col, id, before, after) {
     pushUndo({ kind: "entity", col, id: String(id), before: clone(before), after: clone(after) });
@@ -595,16 +598,21 @@
     picker: "Пипетка: кликните по стране, чтобы рисовать ей.",
     city: "Кликните по карте, чтобы добавить город.",
     label: "Кликните по карте, чтобы добавить подпись.",
-    erase: "Кликните по городу, подписи или стране, чтобы удалить (Ctrl+Z — вернуть)."
+    erase: "Кликните по городу, подписи или стране, чтобы удалить (Ctrl+Z — вернуть).",
+    ruler: "Линейка: кликайте по точкам маршрута — расстояние считается по поверхности Земли. Двойной клик или Enter — закончить, Esc — отменить.",
+    compass: "Циркуль: нажмите в центре и тяните — окружность заданного радиуса на поверхности Земли. Esc — отменить."
   };
   const PAINT = ["brush", "pencil", "eraser", "fill", "picker"];
+  const MEASURE = ["ruler", "compass"];
   function setTool(t) {
-    if (!gm) t = "pan";
+    if (!gm && !MEASURE.includes(t)) t = "pan";
+    if (viewMode === "globe" && t !== "pan") t = "pan";
+    if (tool === "ruler" && t !== "ruler") finishRuler();
     tool = t;
-    document.querySelectorAll("#toolbar [data-tool]").forEach(b => b.classList.toggle("active", b.dataset.tool === t));
+    frame.querySelectorAll("[data-tool]").forEach(b => b.classList.toggle("active", b.dataset.tool === t));
     viewport.className = "viewport tool-" + t;
     $("brushBar").classList.toggle("hidden", !gm || !PAINT.includes(t) || t === "picker");
-    $("hint").textContent = gm ? HINTS[t] || "" : "Перетаскивайте карту, колесо — масштаб. Клик по стране — её флаг и название в легенде. Слои — во вкладке «Слои».";
+    $("hint").textContent = viewMode === "globe" ? HINT_GLOBE : MEASURE.includes(t) ? HINTS[t] : gm ? HINTS[t] || "" : "Перетаскивайте карту, колесо — масштаб. Клик по стране — её флаг и название в легенде. Слои — во вкладке «Слои».";
     const sz = $("bbSize");
     if (t === "pencil") { sz.max = 4; sz.value = pencilSize; } else { sz.max = 120; sz.value = brushSize; }
     $("bbSizeVal").textContent = sz.value;
@@ -612,7 +620,7 @@
     cursorEl.style.display = gm && ["brush", "pencil", "eraser"].includes(t) ? "" : "none";
     updateCursorSize();
   }
-  document.querySelectorAll("#toolbar [data-tool]").forEach(b => b.addEventListener("click", () => setTool(b.dataset.tool)));
+  frame.querySelectorAll("[data-tool]").forEach(b => b.addEventListener("click", () => setTool(tool === b.dataset.tool && MEASURE.includes(tool) ? "pan" : b.dataset.tool)));
   $("undoBtn").onclick = undo; $("redoBtn").onclick = redo;
   let brushSize = 24;
   $("bbSize").addEventListener("input", e => {
@@ -751,6 +759,8 @@
   const uid = p => p + Date.now().toString(36) + Math.floor(Math.random() * 1e3);
 
   async function handleClick(ent, p) {
+    if (tool === "ruler") { rulerAdd(p); return; }
+    if (tool === "compass") return;
     if (!gm || tool === "pan") { select(ent && ent.col ? ent : null); return; }
     if (tool === "fill") { doFill(p); return; }
     if (tool === "picker") { if (pick(p)) setTool("brush"); return; }
@@ -795,6 +805,7 @@
     }
     const p = toMap(e), ent = entOf(e.target);
     const panButton = e.button === 1 || e.button === 2 || spaceDown;
+    if (!panButton && tool === "compass") { compassStart(p); drag = { kind: "compass" }; return; }
     if (gm && !panButton && ["brush", "pencil", "eraser"].includes(tool)) {
       if (e.altKey) { pick(p); return; }
       if (startStroke(p)) drag = { kind: "paint" };
@@ -810,12 +821,14 @@
     if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     const p = toMap(e);
     if (gm && cursorEl.style.display !== "none") { cursorEl.setAttribute("cx", p[0]); cursorEl.setAttribute("cy", p[1]); }
+    if (tool === "ruler" && ruler && !drag) { ruler.cursor = p; renderMeasure(); }
     if (pinch && pointers.size === 2) {
       const [a, b] = [...pointers.values()], r = viewport.getBoundingClientRect();
       zoomAt((pinch.s * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d) / s, (a.x + b.x) / 2 - r.left, (a.y + b.y) / 2 - r.top);
       return;
     }
     if (!drag) return;
+    if (drag.kind === "compass") { compassMove(p); return; }
     if (drag.kind === "paint") { if (stroke) moveStroke(p); return; }
     if (drag.kind === "pan") {
       const dx = e.clientX - drag.sx, dy = e.clientY - drag.sy;
@@ -841,12 +854,14 @@
     const d = drag; drag = null; viewport.classList.remove("panning");
     if (!d) return;
     if (d.kind === "paint") { if (stroke) endStroke(); return; }
+    if (d.kind === "compass") { compassEnd(); return; }
     if (d.kind === "move" && d.moved) { commit(d.ent.col, d.ent.id, d.before, state[d.ent.col][d.ent.id]); return; }
     if (e.type === "pointercancel" || (d.kind === "pan" && (d.moved || d.panOnly))) return;
     const ent = d.ent, p = d.p || toMap(e);
     const key = ent ? ent.col + ":" + ent.id : "none", now = performance.now();
     const dbl = now - lastClick.t < 380 && lastClick.key === key && Math.hypot(e.clientX - lastClick.x, e.clientY - lastClick.y) < 8;
     lastClick = { t: dbl ? 0 : now, key, x: e.clientX, y: e.clientY };
+    if (dbl && tool === "ruler") { finishRuler(); return; }
     if (dbl && gm && ent && (tool === "pan")) { rename(ent); return; }
     if (dbl) return;
     handleClick(ent, p);
@@ -860,6 +875,10 @@
     if (e.target.matches && e.target.matches("input, textarea, select")) return;
     if (!$("modal").classList.contains("hidden")) return;
     if (e.code === "Space") { spaceDown = true; if (gm) e.preventDefault(); }
+    if (MEASURE.includes(tool)) {
+      if (e.key === "Enter") { finishRuler(); return; }
+      if (e.key === "Escape") { ruler = null; circleDraft = null; renderMeasure(); return; }
+    }
     if (!gm) return;
     const k = e.key.toLowerCase();
     if ((e.ctrlKey || e.metaKey) && (k === "z" || k === "я")) { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
@@ -876,6 +895,146 @@
     if (map[k]) setTool(map[k]);
   });
   window.addEventListener("keyup", e => { if (e.code === "Space") spaceDown = false; });
+
+
+  // ---------- линейка и циркуль (расстояния по поверхности Земли) ----------
+  const Geo = window.KGGeo;
+  const measures = { lines: [], circles: [] };
+  let ruler = null, circleDraft = null, lastKind = "line";
+  const mOut = $("measureOut");
+  function rulerAdd(p) {
+    const ll = Geo.toLL(p[0], p[1]);
+    if (!ruler) ruler = { pts: [] };
+    ruler.pts.push(ll);
+    renderMeasure();
+  }
+  function finishRuler() {
+    if (ruler && ruler.pts.length >= 2) { measures.lines.push({ pts: ruler.pts }); lastKind = "line"; }
+    ruler = null; renderMeasure();
+  }
+  function compassStart(p) { circleDraft = { c: Geo.toLL(p[0], p[1]), r: 0 }; renderMeasure(); }
+  function compassMove(p) { if (!circleDraft) return; circleDraft.r = Geo.dist(circleDraft.c, Geo.toLL(p[0], p[1])); renderMeasure(); }
+  function compassEnd() { if (circleDraft && circleDraft.r > 0.5) { measures.circles.push(circleDraft); lastKind = "circle"; } circleDraft = null; renderMeasure(); }
+  $("measureClear").onclick = () => { measures.lines = []; measures.circles = []; ruler = null; circleDraft = null; renderMeasure(); };
+  function lineLen(pts) { let d = 0; for (let i = 1; i < pts.length; i++) d += Geo.dist(pts[i - 1], pts[i]); return d; }
+  function geoPolyline(pts) {
+    const all = [];
+    for (let i = 1; i < pts.length; i++) {
+      const n = Math.max(2, Math.min(96, Math.ceil(Geo.dist(pts[i - 1], pts[i]) / 60)));
+      const seg = Geo.arc(pts[i - 1], pts[i], n);
+      if (i > 1) seg.shift();
+      all.push(...seg);
+    }
+    return all;
+  }
+  function circlePts(c, r) { const pts = []; for (let a = 0; a <= 360; a += 2) pts.push(Geo.dest(c, a, r)); return pts; }
+  function renderMeasure() {
+    const svg = L.measure; if (!svg) return;
+    const fs = (12 / s).toFixed(2), dot = (3.5 / s).toFixed(2), sw = (3 / s).toFixed(2);
+    let h = "";
+    const label = (ll, text) => {
+      const [x, y] = Geo.toXY(ll[0], ll[1]);
+      return '<text x="' + x.toFixed(1) + '" y="' + (y - 7 / s).toFixed(1) + '" font-size="' + fs + '" stroke-width="' + sw + '" class="m-lbl">' + esc(text) + "</text>";
+    };
+    const drawLine = (pts, live) => {
+      if (pts.length >= 2) h += '<path class="m-line' + (live ? " live" : "") + '" d="' + Geo.pathLL(geoPolyline(pts), false) + '"/>';
+      let acc = 0;
+      pts.forEach((p, i) => {
+        if (i) acc += Geo.dist(pts[i - 1], p);
+        const [x, y] = Geo.toXY(p[0], p[1]);
+        h += '<circle class="m-dot" cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' + dot + '"/>';
+        if (i) h += label(p, Geo.fmt(acc));
+      });
+    };
+    const drawCircle = (c, live) => {
+      if (!c.r) return;
+      h += '<path class="m-circle' + (live ? " live" : "") + '" d="' + Geo.pathLL(circlePts(c.c, c.r), false) + '"/>';
+      const e = Geo.dest(c.c, 90, c.r);
+      h += '<path class="m-line" d="' + Geo.pathLL(Geo.arc(c.c, e, 24), false) + '"/>';
+      const [x, y] = Geo.toXY(c.c[0], c.c[1]);
+      h += '<circle class="m-dot" cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' + dot + '"/>';
+      h += label(Geo.dest(c.c, 90, c.r / 2), "R " + Geo.fmt(c.r));
+    };
+    measures.lines.forEach(l => drawLine(l.pts, false));
+    measures.circles.forEach(c => drawCircle(c, false));
+    let out = "";
+    if (ruler) {
+      const pts = ruler.cursor ? ruler.pts.concat([Geo.toLL(ruler.cursor[0], ruler.cursor[1])]) : ruler.pts;
+      drawLine(pts, true);
+      out = "Линейка: " + Geo.fmt(lineLen(pts));
+    } else if (circleDraft) { drawCircle(circleDraft, true); out = "Циркуль: радиус " + Geo.fmt(circleDraft.r); }
+    else if (measures.lines.length && (lastKind === "line" || !measures.circles.length)) out = "Линейка: " + Geo.fmt(lineLen(measures.lines[measures.lines.length - 1].pts));
+    else if (measures.circles.length) out = "Циркуль: радиус " + Geo.fmt(measures.circles[measures.circles.length - 1].r);
+    svg.innerHTML = h;
+    mOut.textContent = out;
+    mOut.classList.toggle("hidden", !out);
+  }
+
+  // ---------- глобус ----------
+  const HINT_GLOBE = "Глобус: тяните — вращать, колесо — масштаб, клик по стране — легенда. Редактирование и измерения — на плоской карте.";
+  let viewMode = "flat", globe = null, globeRaf = 0;
+  function globeDirty() { if (viewMode !== "globe" || !globe || globeRaf) return; globeRaf = requestAnimationFrame(() => { globeRaf = 0; globe.render(); }); }
+  function syncGlobe(withIds) {
+    if (withIds) globe.setIds(T.ids, T.W, T.H);
+    const pal = {}, labels = [];
+    const cx = document.createElement("canvas").getContext("2d");
+    for (const id in state.countries) {
+      const c = state.countries[id];
+      cx.fillStyle = c.color; pal[id] = cx.fillStyle;
+      const ll = Geo.toLL(c.label[0], c.label[1]);
+      labels.push({ id, name: c.name, lat: ll[0], lon: ll[1], size: c.size });
+    }
+    globe.setPalette(pal);
+    globe.setLabels(labels);
+    globeDirty();
+  }
+  function globeZoom(f) { if (!globe) return; globe.zoom = f ? Math.min(8, Math.max(0.5, globe.zoom * f)) : 1; globeDirty(); }
+  function setView3(mode) {
+    if (mode === "globe" && !globe) {
+      try { globe = new window.KGGlobe($("globeCanvas"), $("globeLabels")); } catch (e) { console.error(e); globe = null; }
+      if (!globe || !globe.ok()) { globe = null; toast("Не удалось запустить глобус (нужен WebGL)"); return; }
+      const land = L.relief;
+      const ready = land.complete ? Promise.resolve() : new Promise(r => land.addEventListener("load", r, { once: true }));
+      ready.then(() => { globe.setLand(land); globeDirty(); });
+    }
+    viewMode = mode;
+    frame.classList.toggle("globe-mode", mode === "globe");
+    $("globeWrap").classList.toggle("hidden", mode !== "globe");
+    document.querySelectorAll("#viewSwitch button").forEach(b => b.classList.toggle("active", b.dataset.view === mode));
+    if (mode === "globe") {
+      // центрируем глобус на том месте, куда смотрела плоская карта
+      const c = Geo.toLL((viewport.clientWidth / 2 - tx) / s, (viewport.clientHeight / 2 - ty) / s);
+      globe.lat = Math.max(-60, Math.min(70, c[0])) * Math.PI / 180; globe.lon = c[1] * Math.PI / 180;
+      globe.sel = sel && sel.col === "countries" ? +sel.id : 0;
+      syncGlobe(true);
+    }
+    setTool(mode === "globe" ? "pan" : tool);
+  }
+  document.querySelectorAll("#viewSwitch button").forEach(b => b.addEventListener("click", () => setView3(b.dataset.view)));
+  (function globeInput() {
+    const cv = $("globeCanvas");
+    let g = null;
+    cv.addEventListener("pointerdown", e => { cv.setPointerCapture(e.pointerId); g = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, moved: false }; });
+    cv.addEventListener("pointermove", e => {
+      if (!g || !globe) return;
+      const dx = e.clientX - g.x, dy = e.clientY - g.y, r = globe.radius();
+      if (Math.hypot(e.clientX - g.sx, e.clientY - g.sy) > 4) g.moved = true;
+      globe.lon -= dx / r; globe.lat = Math.max(-1.5, Math.min(1.5, globe.lat + dy / r));
+      g.x = e.clientX; g.y = e.clientY; globeDirty();
+    });
+    cv.addEventListener("pointerup", e => {
+      const was = g; g = null;
+      if (!was || was.moved || !globe) return;
+      const rc = cv.getBoundingClientRect();
+      const ll = globe.unproject(e.clientX - rc.left - rc.width / 2, e.clientY - rc.top - rc.height / 2);
+      if (!ll) { select(null); return; }
+      const [x, y] = Geo.toXY(ll[0], ll[1]);
+      const id = T.at(x, y);
+      select(id && state.countries[String(id)] ? { col: "countries", id: String(id) } : null);
+    });
+    cv.addEventListener("wheel", e => { e.preventDefault(); globeZoom(Math.pow(1.0015, -e.deltaY)); }, { passive: false });
+    window.addEventListener("resize", globeDirty);
+  })();
 
   // ---------- загрузка ----------
   function rebuildAll(keepPaths) {
@@ -921,5 +1080,5 @@
   setTool("pan");
   requestAnimationFrame(fit);
   load();
-  window.KGMap = { get state() { return state; }, select, setTool, fit, T, get view() { return { s, tx, ty }; }, get gm() { return gm; } };
+  window.KGMap = { get state() { return state; }, select, setTool, fit, T, setView3, measures, get globe() { return globe; }, get view() { return { s, tx, ty }; }, get gm() { return gm; } };
 })();

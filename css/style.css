@@ -319,3 +319,37 @@ body.is-gm .country-title { display: none; }
 }
 body.is-gm .map-title { display: none; }
 .flag-ph { letter-spacing: 1px; }
+
+/* ---------- вид: карта / глобус ---------- */
+.view-switch { position: absolute; z-index: 8; top: 10px; left: 10px; display: flex; border: 1px solid var(--line-dim); border-radius: 3px; overflow: hidden; background: rgba(4, 18, 40, .85); }
+.view-switch button { background: transparent; border: none; padding: 6px 12px; font-size: 12px; letter-spacing: .5px; color: var(--muted); }
+.view-switch button.active { color: #06101f; background: var(--line); }
+.globe-wrap { position: absolute; inset: 0; z-index: 5; background: radial-gradient(ellipse at center, #071a33 0%, #030a18 75%); overflow: hidden; }
+.globe-wrap canvas { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+.globe-wrap canvas:active { cursor: grabbing; }
+.g-labels { position: absolute; inset: 0; pointer-events: none; }
+.g-label {
+  position: absolute; left: 0; top: 0; white-space: nowrap; font-family: var(--font-wide); font-weight: 400; text-transform: uppercase; letter-spacing: .12em;
+  background: linear-gradient(180deg, #fff4fd, #ffc3ef 55%, #ff74d4); -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 0 1px rgba(28, 12, 44, .95)) drop-shadow(0 0 2px rgba(28, 12, 44, .8));
+}
+.map-frame.globe-mode .toolbar, .map-frame.globe-mode .brushbar, .map-frame.globe-mode .measure { display: none !important; }
+
+/* ---------- линейка и циркуль ---------- */
+.measure { position: absolute; z-index: 7; left: 10px; bottom: 10px; display: flex; align-items: center; gap: 3px; padding: 4px; }
+.measure button {
+  display: flex; flex-direction: column; align-items: center; gap: 1px; width: 62px; padding: 4px 2px;
+  background: transparent; border: 1px solid transparent; border-radius: 3px; font-size: 15px; line-height: 1.1;
+}
+.measure button span { font-size: 10px; color: var(--muted); }
+.measure button:hover { border-color: var(--line-dim); }
+.measure button.active { border-color: var(--line); background: rgba(24, 217, 245, .14); box-shadow: 0 0 8px rgba(24, 217, 245, .4); }
+.m-out { padding: 0 10px; font-family: var(--font-wide); font-weight: 300; font-size: 12px; letter-spacing: .05em; color: #ffe14d; white-space: nowrap; }
+.viewport.tool-ruler, .viewport.tool-compass { cursor: crosshair; }
+#measureLayer .m-line { fill: none; stroke: #ffe14d; stroke-width: 2px; vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 2px rgba(0, 0, 0, .9)); }
+#measureLayer .m-line.live { stroke-dasharray: 6 4; }
+#measureLayer .m-circle { fill: none; stroke: #ffe14d; stroke-width: 2px; stroke-dasharray: 8 4; vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 2px rgba(0, 0, 0, .9)); }
+#measureLayer .m-dot { fill: #ffe14d; stroke: #1a1400; stroke-width: 1px; vector-effect: non-scaling-stroke; }
+#measureLayer .m-lbl { font-family: var(--font-wide); font-weight: 400; fill: #ffe14d; stroke: rgba(10, 8, 0, .9); paint-order: stroke; text-anchor: middle; }
+.hint { bottom: 64px; }
+@media (max-width: 900px) { .measure button { width: 50px; } .view-switch { top: 6px; left: 6px; } }

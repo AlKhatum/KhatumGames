@@ -47,7 +47,25 @@
         <div class="viewport" id="viewport">
           <div class="world" id="world"><!-- слои создаёт js/map.js --></div>
         </div>
+        <div class="globe-wrap hidden" id="globeWrap">
+          <canvas id="globeCanvas"></canvas>
+          <div class="g-labels" id="globeLabels"></div>
+        </div>
         <div class="map-loading" id="mapLoading">Загрузка карты…</div>
+
+        <!-- Вид: плоская карта / глобус -->
+        <div class="view-switch" id="viewSwitch">
+          <button data-view="flat" class="active">Карта</button>
+          <button data-view="globe">Глобус</button>
+        </div>
+
+        <!-- Измерения (для всех) -->
+        <div class="measure panel" id="measureBar">
+          <button data-tool="ruler" title="Линейка: расстояние по маршруту">📏<span>Линейка</span></button>
+          <button data-tool="compass" title="Циркуль: окружность заданного радиуса">◎<span>Циркуль</span></button>
+          <button id="measureClear" title="Убрать все измерения">✕<span>Очистить</span></button>
+          <div class="m-out hidden" id="measureOut"></div>
+        </div>
         <h1 class="map-title">Карта мира после Великого Потопа</h1>
 
         <!-- Вход ГМа / панель ГМа -->
@@ -181,7 +199,9 @@
 </div>
 
 <script src="js/app.js"></script>
+<script src="js/geo.js"></script>
 <script src="js/territory.js"></script>
+<script src="js/globe.js"></script>
 <script src="js/github.js"></script>
 <script src="js/map.js"></script>
 </body>
