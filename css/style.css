@@ -465,3 +465,19 @@ body.moon-mode .map-frame::before, body.moon-mode .map-frame::after { z-index: 1
 .moon-vp, .moon-globe-wrap { right: 320px; }
 @media (max-width: 900px) { .moon-vp, .moon-globe-wrap { right: 0; bottom: 40%; } }
 .moon-wrap.moon-globe .moon-measure, .moon-wrap.moon-globe .moon-toolbar, .moon-wrap.moon-globe #mBrushBar { display: none !important; }
+
+/* ---------- Луна: названия по категориям и масштабу ---------- */
+.m-feat { display: none; }
+.m-feat.z0 { display: inline; }
+.moon-wrap[data-mz="1"] .m-feat.z1, .moon-wrap[data-mz="2"] .m-feat.z1, .moon-wrap[data-mz="3"] .m-feat.z1,
+.moon-wrap[data-mz="2"] .m-feat.z2, .moon-wrap[data-mz="3"] .m-feat.z2,
+.moon-wrap[data-mz="3"] .m-feat.z3 { display: inline; }
+.m-feat.sea { fill: rgba(205, 220, 255, .85); font-style: normal; letter-spacing: .12em; }
+.m-feat.bay { fill: rgba(175, 200, 255, .8); }
+.m-feat.crater { fill: rgba(255, 236, 190, .85); }
+.m-feat.relief { fill: rgba(255, 200, 140, .85); }
+.m-feat.site { fill: #9dff8a; font-style: normal; text-anchor: start; }
+.m-site-ico { fill: #7dff6a; stroke: rgba(5, 20, 5, .9); stroke-width: .8px; vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 2px #7dff6a); }
+.m-site-sc { transform: scale(calc(1 / var(--ms, 1))); }
+.m-feat { font-size: calc(var(--fs, 6px) * var(--mk, 1)); }
+.m-feat.site { font-size: calc(var(--fs, 6px) * var(--mk, 1) * 1.1); }

@@ -50,16 +50,10 @@
   }
   const fmt = km => (km < 100 ? km.toFixed(1).replace(".", ",") : Math.round(km).toLocaleString("ru-RU")) + " км";
 
-  // реальные моря и кратеры (неизменяемый слой подписей)
-  const FEATURES = [
-    ["Океан Бурь", 18.4, -57.4, 16], ["Море Дождей", 32.8, -15.6, 13], ["Море Ясности", 28, 17.5, 11], ["Море Спокойствия", 8.5, 31.4, 11],
-    ["Море Кризисов", 17, 59.1, 9], ["Море Изобилия", -7.8, 51.3, 9], ["Море Нектара", -15.2, 35.5, 8], ["Море Облаков", -21.3, -16.6, 9],
-    ["Море Влажности", -24.4, -38.6, 8], ["Море Холода", 56, 1.4, 9], ["Море Паров", 13.3, 3.6, 7], ["Море Познанное", -10.5, -22.3, 7],
-    ["Море Москвы", 27.3, 147.9, 8], ["Море Восточное", -19.4, -92.8, 9], ["Бассейн Южный полюс — Эйткен", -53, -169, 12],
-    ["кратер Тихо", -43.3, -11.2, 6], ["кратер Коперник", 9.6, -20.1, 6], ["кратер Кеплер", 8.1, -38, 5], ["кратер Аристарх", 23.7, -47.4, 5],
-    ["кратер Платон", 51.6, -9.4, 5], ["кратер Циолковский", -20.4, 129.1, 6], ["кратер Королёв", -4, -157.4, 7], ["кратер Аполлон", -36.1, -151.8, 7],
-    ["кратер Гагарин", -20.2, 149.2, 6], ["кратер Клавий", -58.4, -14.4, 6], ["кратер Шеклтон", -89.7, 129.8, 5]
-  ];
+  // реальные названия (moon-names.js): моря, заливы, кратеры, рельеф, места посадок
+  const FEATURES = window.KGMoonNames || [];
+  const CATS = window.KGMoonNameCats || [];
+  const bucket = sz => (sz >= 8 ? 0 : sz >= 5.5 ? 1 : sz >= 4 ? 2 : 3);
 
   // ---------- состояние ----------
   let st = null, loaded = false, loading = null, active = false, sub = "flat";
@@ -95,6 +89,8 @@
     ty = mh < vh ? (vh - mh) / 2 : Math.min(0, Math.max(vh - mh, nty));
     world.style.transform = `translate(${tx}px, ${ty}px) scale(${s})`;
     wrap.style.setProperty("--ms", s);
+    wrap.dataset.mz = s >= 2.4 ? 3 : s >= 1.2 ? 2 : s >= 0.6 ? 1 : 0;
+    wrap.style.setProperty("--mk", Math.min(1, 1.8 / s).toFixed(3)); // подписи не раздуваются при приближении
     renderMarks(); renderMeasure(); renderVertices();
   }
   function fit() { const vw = vp.clientWidth, vh = vp.clientHeight; if (!vw) return; fitS = Math.min(vw / MW, vh / MH); setView(fitS, 0, 0); }
@@ -125,7 +121,17 @@
     el.t.textContent = t.name;
   }
   function renderFeatures() {
-    Lfeat.innerHTML = FEATURES.map(([n, la, lo, sz]) => { const [x, y] = toXY(la, lo); return `<text class="m-feat" x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-size="${(sz * 1.6).toFixed(1)}">${esc(n)}</text>`; }).join("");
+    let h = "";
+    for (const [n, la, lo, sz, cat] of FEATURES) {
+      if (!visOf("cat:" + cat)) continue;
+      const [x, y] = toXY(la, lo), fs = (sz * 1.5).toFixed(1), z = bucket(sz);
+      if (cat === "site") {
+        // место посадки: значок виден всегда, подпись — при приближении
+        h += `<g class="m-site" transform="translate(${x.toFixed(1)} ${y.toFixed(1)})"><g class="m-site-sc"><path class="m-site-ico" d="M0-5 4.4 3H-4.4Z"/></g>` +
+          `<text class="m-feat site z${Math.max(2, z)}" x="4" y="0" style="--fs:${fs}px">${esc(n)}</text></g>`;
+      } else h += `<text class="m-feat ${cat} z${z}" x="${x.toFixed(1)}" y="${y.toFixed(1)}" style="--fs:${fs}px">${esc(n)}</text>`;
+    }
+    Lfeat.innerHTML = h;
   }
   // дорога: сглаженная кривая (Катмулл — Ром) через точки
   function smoothD(pts) {
@@ -179,7 +185,7 @@
     Lfill.style.display = visOf("fills") ? "" : "none";
     Lborder.style.display = visOf("borders") ? "" : "none";
     Lnames.style.display = visOf("tnames") ? "" : "none";
-    Lfeat.style.display = visOf("features") ? "" : "none";
+    renderFeatures();
     Lborder.classList.toggle("hl", !!mui.hl.borders);
     Lnames.classList.toggle("hl", !!mui.hl.tnames);
     renderRoads(); renderMarks();
@@ -188,7 +194,7 @@
   function renderAll() {
     for (const id of Object.keys(tEls)) if (!st.territories[id]) renderTerr(id);
     for (const id in st.territories) renderTerr(id);
-    renderFeatures(); applyLayers(); buildLists(); updateCard();
+    applyLayers(); buildLists(); updateCard();
   }
 
   // ---------- выбор, карточка, списки ----------
@@ -270,7 +276,8 @@
     Object.values(st.markTypes).forEach(t => row("mark:" + t.id, t.name, { sub: true, color: t.color, hl: t.color }));
     head("Дороги");
     Object.values(st.roadTypes).forEach(t => row("road:" + t.id, t.name, { sub: true, color: t.color, hl: t.color }));
-    row("features", "Моря и кратеры");
+    head("Названия (реальные)");
+    CATS.forEach(c => row("cat:" + c.id, c.name + " · " + FEATURES.filter(f => f[4] === c.id).length, { sub: true, color: c.color }));
     row("tnames", "Названия территорий", { hl: "#ff7fd8" });
     row("borders", "Границы территорий", { hl: "#ff3fd0" });
     row("fills", "Заливка территорий");
@@ -693,9 +700,23 @@ void main(){
       for (const p of pts) { const q = this.project(p[0], p[1]); if (q[2] < 0) { pen = false; continue; } if (!pen) c.moveTo(cx + q[0], cy + q[1]); else c.lineTo(cx + q[0], cy + q[1]); pen = true; }
       c.stroke(); c.shadowBlur = 0; c.setLineDash([]);
     }
-    if (visOf("features")) {
-      c.font = `300 ${Math.min(13, 7 + this.zoom * 2).toFixed(0)}px Unbounded, sans-serif`; c.fillStyle = "rgba(230,240,255,.75)"; c.strokeStyle = "rgba(10,10,20,.7)"; c.lineWidth = 3;
-      for (const [n, la, lo, sz] of FEATURES) { if (sz < 9 && this.zoom < 1.6) continue; const q = this.project(la, lo); if (q[2] < 0.25) continue; c.strokeText(n, cx + q[0], cy + q[1]); c.fillText(n, cx + q[0], cy + q[1]); }
+    {
+      // порог размера подписи зависит от приближения шара
+      const minSz = this.zoom >= 3 ? 0 : this.zoom >= 2 ? 4 : this.zoom >= 1.4 ? 5.5 : 8;
+      c.strokeStyle = "rgba(10,10,20,.75)"; c.lineWidth = 3;
+      for (const [n, la, lo, sz, cat] of FEATURES) {
+        if (!visOf("cat:" + cat)) continue;
+        const q = this.project(la, lo); if (q[2] < 0.2) continue;
+        const x = cx + q[0], y = cy + q[1], col = (CATS.find(k => k.id === cat) || {}).color || "#dde";
+        if (cat === "site") {
+          c.fillStyle = col; c.beginPath(); c.moveTo(x, y - 4); c.lineTo(x + 3.5, y + 2.5); c.lineTo(x - 3.5, y + 2.5); c.closePath(); c.fill();
+          if (this.zoom >= 1.6) { c.font = "300 10px Unbounded, sans-serif"; c.textAlign = "left"; c.strokeText(n, x + 6, y); c.fillText(n, x + 6, y); c.textAlign = "center"; }
+          continue;
+        }
+        if (sz < minSz) continue;
+        c.font = `${cat === "crater" || cat === "relief" ? "italic " : ""}300 ${Math.min(14, 6 + sz * 0.6 + this.zoom).toFixed(0)}px Unbounded, sans-serif`;
+        c.fillStyle = col; c.globalAlpha = 0.85; c.strokeText(n, x, y); c.fillText(n, x, y); c.globalAlpha = 1;
+      }
     }
     if (visOf("tnames")) {
       c.font = `400 ${Math.min(16, 9 + this.zoom * 2).toFixed(0)}px Unbounded, sans-serif`; c.fillStyle = "#ffc3ef"; c.strokeStyle = "rgba(28,12,44,.9)"; c.lineWidth = 3;
