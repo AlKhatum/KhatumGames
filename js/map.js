@@ -144,25 +144,31 @@
   function updUndo() { $("undoBtn").disabled = !undoStack.length; $("redoBtn").disabled = !redoStack.length; }
 
   // ---------- слои ----------
+  // style: "neon" — только в неоновом стиле, "white" — только в белом 3D, без style — в обоих.
+  // vis может быть объектом { neon, white } — видимость по умолчанию для каждого стиля.
   const LAYERS = [
-    { id: "ocean", name: "Океан (стиль шаблона)", kind: "div", cls: "ocean-fill", vis: true },
-    { id: "base", name: "Подложка PSD (оригинал)", kind: "img", src: "assets/map/base.jpg", vis: false },
-    { id: "bathy", name: "Батиметрия (глубины)", kind: "img", src: "assets/map/bathy.jpg", vis: true, blend: "soft-light", opacity: 0.55 },
-    { id: "grid", name: "Сетка океана (синие квадраты)", kind: "div", cls: "ocean-grid", vis: true },
-    { id: "land", name: "Суша: гипсометрия", kind: "img", src: "assets/map/land.png", vis: true },
+    { id: "ocean", name: "Океан (стиль шаблона)", kind: "div", cls: "ocean-fill", vis: true, style: "neon" },
+    { id: "wOcean", name: "Океан: графит и сетка", kind: "div", cls: "w-ocean", vis: true, style: "white" },
+    { id: "wHud", name: "HUD-разметка океана", kind: "svg", vis: true, style: "white" },
+    { id: "base", name: "Подложка PSD (оригинал)", kind: "img", src: "assets/map/base.jpg", vis: false, style: "neon" },
+    { id: "bathy", name: "Батиметрия (глубины)", kind: "img", src: "assets/map/bathy.jpg", vis: true, blend: "soft-light", opacity: 0.55, style: "neon" },
+    { id: "grid", name: "Сетка океана (синие квадраты)", kind: "div", cls: "ocean-grid", vis: true, style: "neon" },
+    { id: "land", name: "Суша: гипсометрия", kind: "img", src: "assets/map/land.png", vis: true, style: "neon" },
+    { id: "wLand", name: "Суша: белые плиты с объёмом", kind: "img", src: "assets/map/white_land.png", vis: true, style: "white", lazy: true },
     { id: "countries", name: "Страны (редактируемые)", kind: "svg", vis: true },
-    { id: "countriesRaster", name: "Страны (оригинал PSD)", kind: "img", src: "assets/map/countries_raster.png", vis: false, blend: "multiply" },
-    { id: "hydro", name: "Гидрография", kind: "img", src: "assets/map/hydro.png", vis: true, opacity: 0.8 },
+    { id: "countriesRaster", name: "Страны (оригинал PSD)", kind: "img", src: "assets/map/countries_raster.png", vis: false, blend: "multiply", style: "neon" },
+    { id: "hydro", name: "Гидрография", kind: "img", src: "assets/map/hydro.png", vis: true, opacity: 0.8, style: "neon" },
+    { id: "hydroBlue", name: "Озёра и реки", kind: "img", src: "assets/map/hydro_blue.png", vis: true, style: "white", lazy: true },
     { group: "roads", name: "Дороги", children: [
-      { id: "road_major", name: "Major Highway", kind: "img", src: "assets/map/road_major.png", vis: true, road: "#ff3fd0" },
-      { id: "road_secondary", name: "Secondary Highway", kind: "img", src: "assets/map/road_secondary.png", vis: true, road: "#19e6ff" },
-      { id: "road_road", name: "Road", kind: "img", src: "assets/map/road_road.png", vis: true, road: "#ffe14d" },
+      { id: "road_major", name: "Major Highway", kind: "img", src: "assets/map/road_major.png", vis: { neon: true, white: false }, road: "#ff3fd0" },
+      { id: "road_secondary", name: "Secondary Highway", kind: "img", src: "assets/map/road_secondary.png", vis: { neon: true, white: false }, road: "#19e6ff" },
+      { id: "road_road", name: "Road", kind: "img", src: "assets/map/road_road.png", vis: { neon: true, white: false }, road: "#ffe14d" },
       { id: "road_unknown", name: "Unknown", kind: "img", src: "assets/map/road_unknown.png", vis: false, road: "#7dff6a" }
     ] },
-    { id: "rail", name: "Железные дороги", kind: "img", src: "assets/map/rail.png", vis: true, opacity: 0.18 },
-    { id: "citiesFill", name: "Города (заливка)", kind: "img", src: "assets/map/cities_fill.png", vis: true, opacity: 0.6 },
-    { id: "outline", name: "Обводка", kind: "img", src: "assets/map/outline.png", vis: true },
-    { id: "cityIcons", name: "Города (значки)", kind: "img", src: "assets/map/city_icons.png", vis: true },
+    { id: "rail", name: "Железные дороги", kind: "img", src: "assets/map/rail.png", vis: { neon: true, white: false }, opacity: 0.18 },
+    { id: "citiesFill", name: "Города (заливка)", kind: "img", src: "assets/map/cities_fill.png", vis: { neon: true, white: false }, opacity: 0.6 },
+    { id: "outline", name: "Обводка", kind: "img", src: "assets/map/outline.png", vis: { neon: true, white: false } },
+    { id: "cityIcons", name: "Города (значки)", kind: "img", src: "assets/map/city_icons.png", vis: { neon: true, white: false } },
     { id: "borders", name: "Линии границ", kind: "svg", vis: true },
     { id: "labels", name: "Названия стран и подписи", kind: "svg", vis: true },
     { id: "cities", name: "Названия городов", kind: "svg", vis: true },
@@ -173,14 +179,17 @@
   const flatLayers = [];
   LAYERS.forEach(l => (l.group ? l.children.forEach(c => flatLayers.push(Object.assign(c, { parent: l.group }))) : flatLayers.push(l)));
 
-  let ui = { vis: {}, hl: {} };
+  let ui = { vis: {}, hl: {}, style: "neon", tilt: false };
   try { ui = Object.assign(ui, JSON.parse(localStorage.getItem(UI_KEY) || "{}")); } catch (e) { /* */ }
+  if (ui.style !== "white") ui.style = "neon";
   const saveUi = () => { try { localStorage.setItem(UI_KEY, JSON.stringify(ui)); } catch (e) { /* */ } };
+  const mapFrame = viewport.closest(".map-frame");
 
   flatLayers.forEach(l => {
     let el;
     if (l.kind === "img") {
-      el = document.createElement("img"); el.src = l.src; el.alt = ""; el.draggable = false; el.decoding = "async";
+      el = document.createElement("img"); el.alt = ""; el.draggable = false; el.decoding = "async";
+      if (!l.lazy) el.src = l.src; // «ленивые» слои грузятся только когда впервые нужны
       el.onerror = () => { el.style.display = "none"; };
     } else if (l.kind === "div") {
       el = document.createElement("div"); el.className = l.cls;
@@ -197,15 +206,26 @@
     L[l.id] = el;
   });
 
-  function isVisible(l) { return ui.vis[l.id] != null ? ui.vis[l.id] : l.vis; }
+  const inStyle = l => !l.style || l.style === ui.style;
+  const visKey = l => ui.style + ":" + l.id;
+  function isVisible(l) {
+    if (!inStyle(l)) return false;
+    const v = ui.vis[visKey(l)];
+    if (v != null) return v;
+    return typeof l.vis === "object" ? !!l.vis[ui.style] : l.vis;
+  }
+  function setVis(l, v) { ui.vis[visKey(l)] = v; }
   function applyLayer(l) {
     const el = L[l.id]; if (!el || l.internal) return;
-    el.style.display = isVisible(l) ? "" : "none";
+    const show = isVisible(l);
+    if (show && l.lazy && !el.getAttribute("src")) el.src = l.src;
+    el.style.display = show ? "" : "none";
     if (l.road) {
       const on = !!ui.hl[l.id];
       el.classList.toggle("hl", on);
-      // белая «сердцевина» линии + цветное неоновое свечение
-      el.style.filter = on ? `brightness(0) invert(1) drop-shadow(0 0 .6px ${l.road}) drop-shadow(0 0 1.4px ${l.road}) drop-shadow(0 0 3px ${l.road})` : "";
+      // неон: белая «сердцевина» + цветное свечение; белый стиль: исходная линия + свечение
+      const glow = `drop-shadow(0 0 .6px ${l.road}) drop-shadow(0 0 1.4px ${l.road}) drop-shadow(0 0 3px ${l.road})`;
+      el.style.filter = on ? (ui.style === "neon" ? "brightness(0) invert(1) " + glow : "saturate(3) " + glow) : "";
     }
   }
 
@@ -215,7 +235,7 @@
     const row = (l, sub) => {
       const r = document.createElement("div"); r.className = "layer-row" + (sub ? " sub" : "");
       const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = isVisible(l);
-      cb.addEventListener("change", () => { ui.vis[l.id] = cb.checked; applyLayer(l); saveUi(); syncGroupBoxes(); });
+      cb.addEventListener("change", () => { setVis(l, cb.checked); applyLayer(l); saveUi(); syncGroupBoxes(); });
       const nm = document.createElement("span"); nm.className = "lname"; nm.textContent = l.name;
       nm.addEventListener("click", () => cb.click());
       r.append(cb);
@@ -227,7 +247,7 @@
         b.title = "Сделать слой видимым и подсветить";
         b.addEventListener("click", () => {
           ui.hl[l.id] = !ui.hl[l.id];
-          if (ui.hl[l.id]) { ui.vis[l.id] = true; cb.checked = true; }
+          if (ui.hl[l.id]) { setVis(l, true); cb.checked = true; }
           b.classList.toggle("on", !!ui.hl[l.id]); applyLayer(l); saveUi(); syncGroupBoxes();
         });
         l._hlBtn = b;
@@ -237,18 +257,18 @@
       return r;
     };
     [...LAYERS].reverse().forEach(l => {
-      if (l.internal) return;
+      if (l.internal || !inStyle(l)) return;
       if (l.group) {
         const g = document.createElement("div"); g.className = "layer-row group";
         const cb = document.createElement("input"); cb.type = "checkbox";
         const nm = document.createElement("span"); nm.className = "lname"; nm.textContent = l.name + " (Транспорт)";
         const hb = document.createElement("button"); hb.className = "hl-btn"; hb.textContent = "Подсветить все";
-        cb.addEventListener("change", () => { l.children.forEach(c => { ui.vis[c.id] = cb.checked; c._cb.checked = cb.checked; applyLayer(c); }); saveUi(); syncGroupBoxes(); });
+        cb.addEventListener("change", () => { l.children.forEach(c => { setVis(c, cb.checked); c._cb.checked = cb.checked; applyLayer(c); }); saveUi(); syncGroupBoxes(); });
         nm.addEventListener("click", () => cb.click());
         hb.addEventListener("click", () => {
           const allOn = l.children.every(c => ui.hl[c.id]);
           l.children.forEach(c => {
-            ui.hl[c.id] = !allOn; if (!allOn) { ui.vis[c.id] = true; c._cb.checked = true; }
+            ui.hl[c.id] = !allOn; if (!allOn) { setVis(c, true); c._cb.checked = true; }
             c._hlBtn.classList.toggle("on", !allOn); applyLayer(c);
           });
           saveUi(); syncGroupBoxes();
@@ -268,8 +288,48 @@
       l._hb.classList.toggle("on", allHl); l._hb.textContent = allHl ? "Снять подсветку" : "Подсветить все";
     });
   }
-  flatLayers.forEach(applyLayer);
-  buildLayerPanel();
+
+  // ---------- стиль карты: «Неон» / «Белый 3D» ----------
+  function setStyle(st) {
+    ui.style = st === "white" ? "white" : "neon";
+    mapFrame.classList.toggle("st-white", ui.style === "white");
+    document.querySelectorAll("#styleSwitch button").forEach(b => b.classList.toggle("active", b.dataset.style === ui.style));
+    flatLayers.forEach(applyLayer);
+    buildLayerPanel();
+    saveUi();
+  }
+  document.querySelectorAll("#styleSwitch button").forEach(b => b.addEventListener("click", () => setStyle(b.dataset.style)));
+
+  // HUD-разметка океана в белом стиле (детерминированный «случайный» узор)
+  (function buildHud() {
+    const svg = L.wHud; let seed = 7;
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const ang = -28 * Math.PI / 180, ca = Math.cos(ang), sa = Math.sin(ang);
+    const parts = [];
+    for (let i = 0; i < 90; i++) {
+      const x = rnd() * W, y = rnd() * H, t = rnd();
+      if (t < 0.35) { // длинная тонкая линия под углом
+        const len = 120 + rnd() * 380;
+        parts.push(`<line x1="${x.toFixed(0)}" y1="${y.toFixed(0)}" x2="${(x + ca * len).toFixed(0)}" y2="${(y + sa * len).toFixed(0)}" class="hud-l"/>`);
+      } else if (t < 0.6) { // пачка коротких штрихов «////»
+        const n = 4 + Math.floor(rnd() * 6);
+        let d = "";
+        for (let k = 0; k < n; k++) d += `M${(x + k * 7).toFixed(0)} ${y.toFixed(0)}l6 -11`;
+        parts.push(`<path d="${d}" class="hud-s"/>`);
+      } else if (t < 0.85) { // рамка с «текстом»
+        const w = 34 + rnd() * 30;
+        let g = `<g transform="translate(${x.toFixed(0)} ${y.toFixed(0)}) skewX(-20)"><rect width="${w.toFixed(0)}" height="13" class="hud-r"/>`;
+        for (let k = 0; k < 3; k++) g += `<line x1="0" y1="${20 + k * 6}" x2="${(w * (0.5 + rnd() * 0.5)).toFixed(0)}" y2="${20 + k * 6}" class="hud-t"/>`;
+        parts.push(g + "</g>");
+      } else { // круг-прицел
+        const r = 18 + rnd() * 30;
+        parts.push(`<circle cx="${x.toFixed(0)}" cy="${y.toFixed(0)}" r="${r.toFixed(0)}" class="hud-c"/>`);
+      }
+    }
+    svg.innerHTML = parts.join("");
+  })();
+  setStyle(ui.style);
+
 
   // ---------- рендер сущностей ----------
   const els = { countries: {}, clabels: {}, cities: {}, labels: {}, borders: {}, markers: {} };
@@ -490,14 +550,28 @@
     erase: "Кликните по стране, подписи, городу, линии или отметке, чтобы удалить (Ctrl+Z — вернуть)."
   };
   function setTool(t) {
+    if (ui.tilt && !["pan", "erase"].includes(t)) { toast("В 3D-наклоне редактирование выключено"); return; }
     tool = t; draft = null;
     document.querySelectorAll("#toolbar [data-tool]").forEach(b => b.classList.toggle("active", b.dataset.tool === t));
-    viewport.className = "viewport tool-" + t;
+    viewport.className = "viewport tool-" + t + (ui.tilt ? " tilted" : "");
     $("markerPalette").classList.toggle("hidden", t !== "marker");
-    $("hint").textContent = HINTS[t] || "";
+    $("hint").textContent = ui.tilt ? HINT_TILT : (HINTS[t] || "");
     drawEditOverlay();
   }
   document.querySelectorAll("#toolbar [data-tool]").forEach(b => b.addEventListener("click", () => setTool(b.dataset.tool)));
+
+  // ---------- 3D-наклон (режим просмотра: выбор, легенда, переименование, удаление) ----------
+  const HINT_TILT = "3D-наклон: доступны просмотр, выбор страны, переименование двойным кликом и удаление. Для правки границ и рисования выключите наклон.";
+  function setTilt(on) {
+    ui.tilt = !!on;
+    viewport.classList.toggle("tilted", ui.tilt);
+    $("tiltToggle").checked = ui.tilt;
+    document.querySelectorAll("#toolbar [data-tool]").forEach(b => { b.disabled = ui.tilt && !["pan", "erase"].includes(b.dataset.tool); });
+    if (ui.tilt && !["pan", "erase"].includes(tool)) setTool("pan");
+    else $("hint").textContent = ui.tilt ? HINT_TILT : (HINTS[tool] || "");
+    saveUi();
+  }
+  $("tiltToggle").addEventListener("change", e => setTilt(e.target.checked));
   $("undoBtn").onclick = undo; $("redoBtn").onclick = redo;
   // палитра отметок
   (function () {
@@ -700,7 +774,7 @@
       return;
     }
     const ent = entOf(t);
-    if (tool === "pan" && ent && (ent.col === "markers" || ent.col === "labels" || ent.col === "cities" || ent.part === "label")) {
+    if (tool === "pan" && !ui.tilt && ent && (ent.col === "markers" || ent.col === "labels" || ent.col === "cities" || ent.part === "label")) {
       drag = { kind: "move", ent, sx: e.clientX, sy: e.clientY, p0: p, before: clone(state[ent.col][ent.id]), moved: false };
       return;
     }
@@ -817,6 +891,7 @@
   renderAll();
   updUndo();
   setTool("pan");
+  setTilt(ui.tilt);
   requestAnimationFrame(fit);
   window.KGMap = { state, select, setTool, fit, get view() { return { s, tx, ty }; } };
 })();

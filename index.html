@@ -46,10 +46,25 @@
       <div class="map-frame">
         <h1 class="map-title">Карта мира после Великого Потопа</h1>
         <div class="viewport" id="viewport">
-          <div class="world" id="world">
-            <!-- слои заполняются из js/map.js -->
+          <div class="tilt" id="tilt">
+            <div class="world" id="world">
+              <!-- слои заполняются из js/map.js -->
+            </div>
           </div>
         </div>
+
+        <!-- Роза ветров (белый стиль) -->
+        <svg class="compass" viewBox="-60 -60 120 120" aria-hidden="true">
+          <circle r="44" class="c-ring"/>
+          <circle r="38" class="c-ring thin"/>
+          <path d="M0-44v8M0 36v8M-44 0h8M36 0h8" class="c-tick"/>
+          <path d="M0-30 4 0 0 30-4 0Z" class="c-ns"/>
+          <path d="M-30 0 0 4 30 0 0-4Z" class="c-we"/>
+          <path d="M-14-14 2 0-14 14M14-14-2 0 14 14" class="c-diag"/>
+          <path d="M0-30 4 0h-8Z" class="c-north"/>
+          <text y="-49" class="c-l">N</text><text y="56" class="c-l">S</text>
+          <text x="53" y="3" class="c-l">E</text><text x="-53" y="3" class="c-l">W</text>
+        </svg>
 
         <!-- Панель инструментов -->
         <div class="toolbar panel" id="toolbar">
@@ -80,6 +95,12 @@
 
       <!-- Слои -->
       <aside class="side panel" id="layersPanel">
+        <h3>Стиль карты</h3>
+        <div class="style-switch" id="styleSwitch">
+          <button data-style="neon" class="active">Неон</button>
+          <button data-style="white">Белый 3D</button>
+        </div>
+        <label class="layer-row tilt-row"><input type="checkbox" id="tiltToggle"><span class="lname">3D-наклон карты</span></label>
         <h3>Слои</h3>
         <div id="layerList"></div>
         <h3>Данные</h3>
