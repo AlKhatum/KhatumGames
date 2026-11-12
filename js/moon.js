@@ -118,7 +118,7 @@
     el.f.setAttribute("fill", t.color);
     el.t.setAttribute("x", t.label[0]); el.t.setAttribute("y", t.label[1]); el.t.setAttribute("font-size", t.size);
     el.t.setAttribute("letter-spacing", (t.size * 0.2).toFixed(1)); el.t.setAttribute("stroke-width", Math.max(0.6, t.size * 0.14).toFixed(1));
-    el.t.textContent = t.name;
+    L.svg(el.t, t.name);
   }
   function renderFeatures() {
     let h = "";
@@ -176,7 +176,7 @@
       const t = st.markTypes[m.type] || { color: "#fff", shape: "dot" };
       const [x, y] = toXY(m.lat, m.lon), isSel = sel && sel.col === "marks" && sel.id === m.id;
       h += `<g class="m-mark${isSel ? " sel" : ""}${mui.hl["mark:" + m.type] ? " hl" : ""}" data-mcol="marks" data-id="${m.id}" transform="translate(${x.toFixed(1)} ${y.toFixed(1)}) scale(${k.toFixed(3)})" style="--glow:${t.color}">` +
-        `<circle r="9" class="m-mark-ring" stroke="${t.color}"/>${shapeSvg(t.shape, t.color)}<text y="20">${esc(m.name)}</text></g>`;
+        `<circle r="9" class="m-mark-ring" stroke="${t.color}"/>${shapeSvg(t.shape, t.color)}<text y="20">${tspans(m.name)}</text></g>`;
     }
     Lmarks.innerHTML = h;
   }
@@ -217,18 +217,23 @@
     if (sel) {
       const e = st[sel.col][sel.id];
       if (sel.col === "territories") {
-        h = `<div class="legend-label">Территория</div>` + (gm ? `<input type="text" id="mName" value="${esc(e.name)}">` : `<div class="country-title">${esc(e.name)}</div>`) +
-          (gm ? `<div class="legend-row"><span>Цвет</span><input type="color" id="mColor" value="${e.color}"><button class="small-btn" id="mDel">Удалить</button></div>` : "") +
-          `<div class="legend-meta">Площадь ≈ ${Math.round(areaKm2(sel.id)).toLocaleString("ru-RU")} км²</div>`;
+        const fsrc = flagSrc(sel.id, e);
+        h = `<div class="m-terr-card"><label class="flag${gm ? " can-edit" : ""}" title="${gm ? "Нажмите, чтобы выбрать флаг" : "Флаг территории"}">` +
+          (fsrc ? `<img src="${esc(fsrc)}" alt="">` : `<span class="flag-ph">ФЛАГ<br><small>${gm ? "нажмите, чтобы выбрать" : "место под изображение"}</small></span>`) +
+          (gm ? `<input type="file" id="mFlagInput" accept="image/*" hidden>` : "") + `</label><div class="legend-info">` +
+          `<div class="legend-label">Территория</div>` + (gm ? `<input type="text" id="mName" value="${esc(L.toInput(e.name))}" title="« ↵ » — перенос строки">` : `<div class="country-title">${esc(L.oneLine(e.name))}</div>`) +
+          (gm ? `<div class="legend-row"><span>Цвет</span><input type="color" id="mColor" value="${e.color}"><button class="small-btn" id="mDel">Удалить</button></div>` +
+            (fsrc ? `<div class="legend-row"><button class="small-btn" id="mFlagClear">Убрать флаг</button></div>` : "") : "") +
+          `<div class="legend-meta">Площадь ≈ ${Math.round(areaKm2(sel.id)).toLocaleString("ru-RU")} км²</div></div></div>`;
       } else if (sel.col === "marks") {
         const t = st.markTypes[e.type] || {};
-        h = `<div class="legend-label">Отметка · ${esc(t.name || "")}</div>` + (gm ? `<input type="text" id="mName" value="${esc(e.name)}">` : `<div class="country-title">${esc(e.name)}</div>`) +
+        h = `<div class="legend-label">Отметка · ${esc(t.name || "")}</div>` + (gm ? `<input type="text" id="mName" value="${esc(L.toInput(e.name))}" title="« ↵ » — перенос строки">` : `<div class="country-title">${esc(L.oneLine(e.name))}</div>`) +
           (gm ? `<div class="legend-row"><span>Тип</span><select id="mType">${Object.values(st.markTypes).map(x => `<option value="${x.id}" ${x.id === e.type ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select><button class="small-btn" id="mDel">Удалить</button></div>` : "") +
           `<div class="legend-meta">${Math.abs(e.lat).toFixed(2)}° ${e.lat >= 0 ? "с. ш." : "ю. ш."}, ${Math.abs(e.lon).toFixed(2)}° ${e.lon >= 0 ? "в. д." : "з. д."}</div>`;
       } else if (sel.col === "roads") {
         const t = st.roadTypes[e.type] || {};
         let len = 0; for (let i = 1; i < e.pts.length; i++) len += dist(e.pts[i - 1], e.pts[i]);
-        h = `<div class="legend-label">Дорога · ${esc(t.name || "")}</div>` + (gm ? `<input type="text" id="mName" value="${esc(e.name)}">` : `<div class="country-title">${esc(e.name)}</div>`) +
+        h = `<div class="legend-label">Дорога · ${esc(t.name || "")}</div>` + (gm ? `<input type="text" id="mName" value="${esc(L.toInput(e.name))}" title="« ↵ » — перенос строки">` : `<div class="country-title">${esc(L.oneLine(e.name))}</div>`) +
           (gm ? `<div class="legend-row"><span>Тип</span><select id="mType">${Object.values(st.roadTypes).map(x => `<option value="${x.id}" ${x.id === e.type ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select><button class="small-btn" id="mDel">Удалить</button></div>` : "") +
           `<div class="legend-meta">Длина ≈ ${fmt(len)}${gm ? " · тяните точки, чтобы изменить путь" : ""}</div>`;
       }
@@ -236,10 +241,11 @@
     box.innerHTML = h;
     if (!sel || !gm) return;
     const e = st[sel.col][sel.id];
-    const nm = $("mName"); if (nm) { nm.addEventListener("keydown", ev => { if (ev.key === "Enter") nm.blur(); ev.stopPropagation(); }); nm.addEventListener("change", () => { const v = nm.value.trim(); if (v && v !== e.name) { const a = clone(e); a.name = v; commit(sel.col, sel.id, e, a); } }); }
+    const nm = $("mName"); if (nm) { nm.addEventListener("keydown", ev => { if (ev.key === "Enter") nm.blur(); ev.stopPropagation(); }); nm.addEventListener("change", () => { const v = L.fromInput(nm.value); if (v && v !== e.name) { const a = clone(e); a.name = v; commit(sel.col, sel.id, e, a); } }); }
     const cl = $("mColor"); if (cl) cl.addEventListener("change", () => { const a = clone(e); a.color = cl.value; commit(sel.col, sel.id, e, a); });
     const ty2 = $("mType"); if (ty2) ty2.addEventListener("change", () => { const a = clone(e); a.type = ty2.value; commit(sel.col, sel.id, e, a); });
     const dl = $("mDel"); if (dl) dl.addEventListener("click", () => removeEntity(sel.col, sel.id));
+    if (sel.col === "territories") bindFlag(sel.id);
   }
   function buildLists() {
     if (!st) return;
@@ -250,7 +256,7 @@
     if (!terr.length) tl.innerHTML = `<div class="small">${gm ? "Территорий пока нет — нажмите «+ Территория» и рисуйте кистью." : "Территорий пока нет."}</div>`;
     for (const t of terr) {
       const r = document.createElement("div"); r.className = "c-row"; r.dataset.id = t.id;
-      r.innerHTML = `<span class="swatch" style="background:${t.color}"></span><span class="c-name">${esc(t.name)}</span>`;
+      r.innerHTML = `<span class="swatch" style="background:${t.color}"></span><span class="c-name">${esc(L.oneLine(t.name))}</span>`;
       r.addEventListener("click", () => { select({ col: "territories", id: t.id }); centerOn(t.label[0], t.label[1]); });
       tl.append(r);
     }
@@ -298,7 +304,7 @@
     const h2 = document.createElement("div"); h2.className = "legend-label"; h2.textContent = "Типы дорог"; tyl.append(h2);
     Object.values(st.roadTypes).forEach(t => typeRow("roadTypes", t, { solid: "сплошная", dash: "штрих", dot: "пунктир" }[t.dash] || ""));
     // выпадающие списки панели инструментов
-    const fill = (selEl, items, cur) => { selEl.innerHTML = items.map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join(""); if (cur && items.some(x => x.id === cur)) selEl.value = cur; return selEl.value || null; };
+    const fill = (selEl, items, cur) => { selEl.innerHTML = items.map(x => `<option value="${x.id}">${esc(L.oneLine(x.name))}</option>`).join(""); if (cur && items.some(x => x.id === cur)) selEl.value = cur; return selEl.value || null; };
     brushT = fill($("mbTerr"), terr, brushT);
     markType = fill($("mbMark"), Object.values(st.markTypes), markType);
     roadType = fill($("mbRoad"), Object.values(st.roadTypes), roadType);
@@ -313,6 +319,7 @@
     if (col === "territories") renderTerr(id);
     if (sel && sel.col === col && sel.id === id && val == null) sel = null;
     renderRoads(); renderMarks(); renderVertices(); buildLists(); updateCard();
+    if (col === "satellites" || col === "satTypes") refreshSats();
     if (sub === "globe") syncGlobe(false);
   }
   function markDirty(paint) {
@@ -416,7 +423,7 @@
     if (!isGm()) return;
     let id = 1; while (st.territories[id] || TM.bbox[id]) id++;
     if (id > 255) { toast("Предел — 255 территорий"); return; }
-    const name = await ask("Название лунной территории", "Новая территория");
+    const name = await ask("Название лунной территории", "Новая территория", { multiline: true });
     if (!name) return;
     const cx = (vp.clientWidth / 2 - tx) / s, cy = (vp.clientHeight / 2 - ty) / s;
     const cv = document.createElement("canvas").getContext("2d"); cv.fillStyle = `hsl(${Math.floor(Math.random() * 360)} 65% 62%)`;
@@ -453,14 +460,14 @@
     recompute(res.labels); push({ kind: "paint", stroke: res });
     if (v && !hadBox) { const t = st.territories[String(v)], lp = TM.labelPoint(v); if (t && lp) { const a = clone(t); a.label = lp; setEntity("territories", String(v), a); } }
   }
-  function pick(p) { const v = TM.at(p[0], p[1]); if (!v || !st.territories[String(v)]) { toast("Здесь нет территории"); return; } brushT = String(v); $("mbTerr").value = brushT; toast("Кисть: " + st.territories[brushT].name); }
+  function pick(p) { const v = TM.at(p[0], p[1]); if (!v || !st.territories[String(v)]) { toast("Здесь нет территории"); return; } brushT = String(v); $("mbTerr").value = brushT; toast("Кисть: " + L.oneLine(st.territories[brushT].name)); }
 
   // дороги
   let roadDraft = null, editVtx = null;
   function finishRoad(save) {
     const r = roadDraft; roadDraft = null; draftPath.setAttribute("d", "");
     if (save && r && r.pts.length >= 2) {
-      ask("Название дороги", st.roadTypes[roadType] ? st.roadTypes[roadType].name : "Дорога").then(name => {
+      ask("Название дороги", st.roadTypes[roadType] ? st.roadTypes[roadType].name : "Дорога", { multiline: true }).then(name => {
         if (!name) return;
         const id = uid("road"); commit("roads", id, null, { id, type: roadType, name, pts: r.pts.map(p => [+p[0].toFixed(3), +p[1].toFixed(3)]) });
       });
@@ -577,7 +584,7 @@
     }
     if (tool === "mark" && gm) {
       if (!st.markTypes[markType]) { toast("Создайте тип отметки во вкладке «Типы»"); return; }
-      const name = await ask("Название отметки", st.markTypes[markType].name);
+      const name = await ask("Название отметки", st.markTypes[markType].name, { multiline: true });
       if (!name) return;
       const id = uid("mk"); commit("marks", id, null, { id, type: markType, name, lat: +ll[0].toFixed(3), lon: +ll[1].toFixed(3) }); return;
     }
@@ -590,7 +597,7 @@
     if (tool === "picker" && gm) { pick(p); setTool("brush"); return; }
     if (tool === "erase" && gm) { if (d.ent) removeEntity(d.ent.col, d.ent.id); else { const v = TM.at(p[0], p[1]); if (v && st.territories[v]) removeEntity("territories", String(v)); } return; }
     // выбор
-    if (dbl && gm && d.ent) { const e2 = st[d.ent.col][d.ent.id]; const v = await ask("Новое название", e2.name); if (v && v !== e2.name) { const a = clone(e2); a.name = v; commit(d.ent.col, d.ent.id, e2, a); } return; }
+    if (dbl && gm && d.ent) { const e2 = st[d.ent.col][d.ent.id]; const v = await ask("Новое название", e2.name, { multiline: true }); if (v && v !== e2.name) { const a = clone(e2); a.name = v; commit(d.ent.col, d.ent.id, e2, a); } return; }
     if (d.ent && d.ent.col !== "territories") { select(d.ent); return; }
     const v = TM.at(p[0], p[1]); select(v && st.territories[v] ? { col: "territories", id: String(v) } : null);
   });
@@ -664,11 +671,14 @@ void main(){
     this._bind("pal", 2, gl.NEAREST); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, d);
   };
   MoonGlobe.prototype.radius = function () { return Math.min(this.cv.clientWidth, this.cv.clientHeight) * 0.45 * this.zoom; };
-  MoonGlobe.prototype.project = function (lat, lon) {
-    const r = this.radius(), p = lat * D, l = lon * D - this.lon;
+  // rho — расстояние от центра в радиусах Луны (1 — поверхность; у спутников больше)
+  MoonGlobe.prototype.project = function (lat, lon, rho) {
+    rho = rho || 1;
+    const r = this.radius() * rho, p = lat * D, l = lon * D - this.lon;
     return [Math.cos(p) * Math.sin(l) * r, -(Math.sin(p) * Math.cos(this.lat) - Math.cos(p) * Math.sin(this.lat) * Math.cos(l)) * r,
-      Math.sin(p) * Math.sin(this.lat) + Math.cos(p) * Math.cos(this.lat) * Math.cos(l)];
+      (Math.sin(p) * Math.sin(this.lat) + Math.cos(p) * Math.cos(this.lat) * Math.cos(l)) * rho];
   };
+  MoonGlobe.prototype.hidden = function (pr) { const r = this.radius(); return pr[2] < 0 && pr[0] * pr[0] + pr[1] * pr[1] < r * r; };
   MoonGlobe.prototype.unproject = function (sx, sy) {
     const r = this.radius(), qx = sx / r, qy = -sy / r, r2 = qx * qx + qy * qy; if (r2 > 1) return null;
     const z = Math.sqrt(1 - r2), c0 = Math.cos(this.lat), s0 = Math.sin(this.lat);
@@ -703,7 +713,7 @@ void main(){
     }
     {
       // порог размера подписи зависит от приближения шара
-      const minSz = this.zoom >= 3 ? 0 : this.zoom >= 2 ? 4 : this.zoom >= 1.4 ? 5.5 : 8;
+      const minSz = this.zoom >= 3 ? 0 : this.zoom >= 2 ? 4 : this.zoom >= 1.4 ? 5.5 : this.zoom >= 0.7 ? 8 : 99; // издалека — без названий
       c.strokeStyle = "rgba(10,10,20,.75)"; c.lineWidth = 3;
       for (const [n, la, lo, sz, cat] of FEATURES) {
         if (!visOf("cat:" + cat)) continue;
@@ -711,18 +721,19 @@ void main(){
         const x = cx + q[0], y = cy + q[1], col = (CATS.find(k => k.id === cat) || {}).color || "#dde";
         if (cat === "site") {
           c.fillStyle = col; c.beginPath(); c.moveTo(x, y - 4); c.lineTo(x + 3.5, y + 2.5); c.lineTo(x - 3.5, y + 2.5); c.closePath(); c.fill();
-          if (this.zoom >= 1.6) { c.font = "300 10px Unbounded, sans-serif"; c.textAlign = "left"; c.strokeText(n, x + 6, y); c.fillText(n, x + 6, y); c.textAlign = "center"; }
+          if (this.zoom >= 1.6) { c.font = `300 10px ${fontOf("moonNames")}`; c.textAlign = "left"; c.strokeText(n, x + 6, y); c.fillText(n, x + 6, y); c.textAlign = "center"; }
           continue;
         }
         if (sz < minSz) continue;
-        c.font = `${cat === "crater" || cat === "relief" ? "italic " : ""}300 ${Math.min(14, 6 + sz * 0.6 + this.zoom).toFixed(0)}px Unbounded, sans-serif`;
+        c.font = `${cat === "crater" || cat === "relief" ? "italic " : ""}300 ${Math.min(14, 6 + sz * 0.6 + this.zoom).toFixed(0)}px ${fontOf("moonNames")}`;
         c.fillStyle = col; c.globalAlpha = 0.85; c.strokeText(n, x, y); c.fillText(n, x, y); c.globalAlpha = 1;
       }
     }
     if (visOf("tnames")) {
-      c.font = `400 ${Math.min(16, 9 + this.zoom * 2).toFixed(0)}px Unbounded, sans-serif`; c.fillStyle = "#ffc3ef"; c.strokeStyle = "rgba(28,12,44,.9)"; c.lineWidth = 3;
+      const tsz = Math.min(16, 9 + this.zoom * 2);
+      c.font = `400 ${tsz.toFixed(0)}px ${fontOf("moon")}`; c.fillStyle = "#ffc3ef"; c.strokeStyle = "rgba(28,12,44,.9)"; c.lineWidth = 3;
       if (mui.hl.tnames) { c.shadowColor = "#ff3fd0"; c.shadowBlur = 8; }
-      for (const t of Object.values(st.territories)) { const ll = toLL(t.label[0], t.label[1]); const q = this.project(ll[0], ll[1]); if (q[2] < 0.2) continue; const nm = t.name.toUpperCase(); c.strokeText(nm, cx + q[0], cy + q[1]); c.fillText(nm, cx + q[0], cy + q[1]); }
+      for (const t of Object.values(st.territories)) { const ll = toLL(t.label[0], t.label[1]); const q = this.project(ll[0], ll[1]); if (q[2] < 0.2) continue; L.canvas(c, t.name.toUpperCase(), cx + q[0], cy + q[1], tsz, true); }
       c.shadowBlur = 0;
     }
     for (const m of Object.values(st.marks)) {
@@ -732,12 +743,14 @@ void main(){
       const x = cx + q[0], y = cy + q[1], isSel = sel && sel.col === "marks" && sel.id === m.id;
       c.fillStyle = t.color; c.shadowColor = t.color; c.shadowBlur = isSel || mui.hl["mark:" + m.type] ? 12 : 4;
       c.beginPath(); c.arc(x, y, isSel ? 6 : 4.5, 0, Math.PI * 2); c.fill(); c.shadowBlur = 0;
-      c.font = "300 11px Unbounded, sans-serif"; c.strokeStyle = "rgba(5,5,15,.9)"; c.lineWidth = 3;
-      c.strokeText(m.name, x, y - 13); c.fillText(m.name, x, y - 13);
+      c.font = `300 11px ${fontOf("moon")}`; c.strokeStyle = "rgba(5,5,15,.9)"; c.lineWidth = 3;
+      const nl = String(m.name).split("\n").length; L.canvas(c, m.name, x, y - 13 - (nl - 1) * 11 * 1.15 / 2, 11, true);
       this.hits.push({ x, y, ent: { col: "marks", id: m.id } });
     }
+    // спутники Луны
+    if (msat.items.length) { c.textAlign = "center"; window.KGGlobe.drawSats(this, c, msat, cx, cy); c.lineCap = "butt"; }
   };
-  function globeDirty() { if (!globe || gRaf || sub !== "globe") return; gRaf = requestAnimationFrame(() => { gRaf = 0; globe.render(); }); }
+  function globeDirty() { if (!globe || gRaf || sub !== "globe" || msat.loop) return; gRaf = requestAnimationFrame(() => { gRaf = 0; globe.render(); }); }
   function syncGlobe(ids) { if (!globe) return; if (ids) globe.setIds(TM.ids); globe.setPal(st); globeDirty(); }
   function setSub(m) {
     sub = m;
@@ -745,6 +758,7 @@ void main(){
     vp.classList.toggle("hidden", m !== "flat");
     $("moonGlobeWrap").classList.toggle("hidden", m !== "globe");
     wrap.classList.toggle("moon-globe", m === "globe");
+    $("mSatPanel").classList.toggle("hidden", m !== "globe");
     if (m === "globe") {
       if (!globe) {
         try { globe = new MoonGlobe($("moonGlobe"), $("moonGlobeOv")); } catch (e) { console.error(e); globe = null; }
@@ -754,7 +768,7 @@ void main(){
       }
       const c = toLL((vp.clientWidth / 2 - tx) / s || MW / 2, (vp.clientHeight / 2 - ty) / s || MH / 2);
       globe.lat = Math.max(-35, Math.min(35, c[0] || 0)) * D; globe.lon = (c[1] || 0) * D;
-      syncGlobe(true);
+      syncGlobe(true); refreshSats(); startSatLoop();
     } else requestAnimationFrame(() => { if (!fitS || s < fitS) fit(); });
     setTool("pan");
   }
@@ -764,38 +778,224 @@ void main(){
     cv.addEventListener("pointerdown", e => { cv.setPointerCapture(e.pointerId); g = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, moved: false }; });
     cv.addEventListener("pointermove", e => {
       if (!g || !globe) return; const r = globe.radius();
-      if (Math.hypot(e.clientX - g.sx, e.clientY - g.sy) > 4) g.moved = true;
+      if (Math.hypot(e.clientX - g.sx, e.clientY - g.sy) > 4) { g.moved = true; if (msat.follow) { msat.follow = false; $("mSatFollow").checked = false; } }
       globe.lon -= (e.clientX - g.x) / r; globe.lat = Math.max(-1.5, Math.min(1.5, globe.lat + (e.clientY - g.y) / r));
       g.x = e.clientX; g.y = e.clientY; globeDirty();
     });
     cv.addEventListener("pointerup", e => {
       const w = g; g = null; if (!w || w.moved || !globe) return;
       const rc = cv.getBoundingClientRect(), mx = e.clientX - rc.left, my = e.clientY - rc.top;
+      let best = null, bd = 12;
+      for (const it of msat.items) { if (!it.on || !it.screen) continue; const dd = Math.hypot(it.screen[0] - mx, it.screen[1] - my); if (dd < bd) { bd = dd; best = it; } }
+      if (best) { selectSat(best.s.id, false); return; }
       const hit = (globe.hits || []).find(h => Math.hypot(h.x - mx, h.y - my) < 10);
       if (hit) { select(hit.ent); return; }
       const ll = globe.unproject(mx - rc.width / 2, my - rc.height / 2); if (!ll) { select(null); return; }
       const [x, y] = toXY(ll[0], ll[1]), v = TM.at(x, y); select(v && st.territories[v] ? { col: "territories", id: String(v) } : null);
     });
-    cv.addEventListener("wheel", e => { e.preventDefault(); if (globe) { globe.zoom = Math.min(6, Math.max(0.5, globe.zoom * Math.pow(1.0015, -e.deltaY))); globeDirty(); } }, { passive: false });
+    cv.addEventListener("wheel", e => { e.preventDefault(); if (globe) { globe.zoom = Math.min(6, Math.max(0.04, globe.zoom * Math.pow(1.0015, -e.deltaY))); globeDirty(); } }, { passive: false });
     window.addEventListener("resize", () => { if (active) { if (sub === "globe") globeDirty(); else fit(); } });
   })();
   $("moonZoomIn").onclick = () => (sub === "globe" ? (globe.zoom = Math.min(6, globe.zoom * 1.4), globeDirty()) : zoomAt(1.4, vp.clientWidth / 2, vp.clientHeight / 2));
-  $("moonZoomOut").onclick = () => (sub === "globe" ? (globe.zoom = Math.max(0.5, globe.zoom / 1.4), globeDirty()) : zoomAt(1 / 1.4, vp.clientWidth / 2, vp.clientHeight / 2));
+  $("moonZoomOut").onclick = () => (sub === "globe" ? (globe.zoom = Math.max(0.04, globe.zoom / 1.4), globeDirty()) : zoomAt(1 / 1.4, vp.clientWidth / 2, vp.clientHeight / 2));
   $("moonZoomFit").onclick = () => (sub === "globe" ? (globe.zoom = 1, globeDirty()) : fit());
   document.querySelectorAll(".moon-tabs button").forEach(b => b.addEventListener("click", () => {
     document.querySelectorAll(".moon-tabs button").forEach(x => x.classList.toggle("active", x === b));
     ["Terr", "Layers", "Types"].forEach(k => $("moonPane" + k).classList.toggle("hidden", b.dataset.mtab !== k));
   }));
 
+
+  // ---------- спутники Луны (та же механика, что у глобуса Земли) ----------
+  const SatM = window.KGSats.Moon;
+  const msat = { items: [], sel: null, hidden: {}, orbits: true, names: true, follow: false, speed: 60, time: Date.now(), last: 0, loop: 0 };
+  function rebuildSatItems() {
+    const types = st.satTypes || {};
+    msat.items = Object.values(st.satellites || {}).sort((a, b) => a.name.localeCompare(b.name, "ru")).map(raw => {
+      const t = types[raw.type] || { name: "Без типа", color: "#ffffff", shape: "dot" };
+      return { raw, s: { id: raw.id, name: raw.name, note: raw.note || "", color: t.color, shape: t.shape, typeName: t.name }, on: !msat.hidden[raw.id], pos: null, ring: null, screen: null };
+    });
+    if (msat.sel && !(st.satellites || {})[msat.sel]) msat.sel = null;
+  }
+  function updateSats() {
+    for (const it of msat.items) {
+      it.pos = SatM.at(it.raw, msat.time);
+      it.ring = msat.orbits && it.on ? SatM.ring(it.raw, msat.time, it.raw.orbit === "ell" ? 240 : 160) : null;
+    }
+    if (msat.follow && msat.sel && globe) {
+      const it = msat.items.find(x => x.s.id === msat.sel);
+      if (it && it.pos) { globe.lat = Math.max(-1.3, Math.min(1.3, it.pos.lat * D)); globe.lon = it.pos.lon * D; }
+    }
+  }
+  function startSatLoop() {
+    if (msat.loop) return;
+    msat.last = performance.now();
+    const tick = now => {
+      if (!active || sub !== "globe" || !globe) { msat.loop = 0; return; }
+      msat.time += (now - msat.last) * msat.speed; msat.last = now;
+      updateSats(); globe.render(); renderSatInfo();
+      msat.loop = requestAnimationFrame(tick);
+    };
+    msat.loop = requestAnimationFrame(tick);
+  }
+  function buildSatList() {
+    const list = $("mSatList"); if (!list) return;
+    const gm = isGm();
+    list.innerHTML = msat.items.length ? "" : `<div class="small">${gm ? "Спутников нет — нажмите «+ Спутник»." : "Спутников пока нет."}</div>`;
+    for (const it of msat.items) {
+      const r = document.createElement("div"); r.className = "sat-row"; r.dataset.id = it.s.id;
+      r.innerHTML = `<input type="checkbox" ${it.on ? "checked" : ""} title="Показывать"><span class="sat-dot" style="background:${it.s.color};box-shadow:0 0 6px ${it.s.color}"></span>` +
+        `<span class="sat-name">${esc(it.s.name)}</span><span class="sat-type">${esc(it.s.typeName)}</span>` +
+        (gm ? `<button class="c-go sat-edit" title="Изменить">✎</button><button class="c-del sat-del" title="Удалить">✕</button>` : "");
+      r.querySelector("input").addEventListener("change", e => { it.on = e.target.checked; msat.hidden[it.s.id] = !it.on; });
+      r.addEventListener("click", e => {
+        if (e.target.tagName === "INPUT") return;
+        if (e.target.classList.contains("sat-edit")) { editSat(it.s.id); return; }
+        if (e.target.classList.contains("sat-del")) { deleteSat(it.s.id); return; }
+        selectSat(it.s.id, true);
+      });
+      list.append(r);
+    }
+    const box = $("mSatTypeList");
+    if (box) {
+      box.innerHTML = "";
+      for (const t of Object.values(st.satTypes || {})) {
+        const used = Object.values(st.satellites || {}).filter(x => x.type === t.id).length;
+        const r = document.createElement("div"); r.className = "sat-row";
+        r.innerHTML = `<span class="sat-dot" style="background:${t.color}"></span><span class="sat-name">${esc(t.name)}</span>` +
+          `<span class="sat-type">${esc(SatM.SHAPES[t.shape] || t.shape)} · ${used}</span>` +
+          `<button class="c-go" title="Изменить тип">✎</button><button class="c-del" title="Удалить тип">✕</button>`;
+        r.querySelector(".c-go").addEventListener("click", () => editSatType(t.id));
+        r.querySelector(".c-del").addEventListener("click", () => deleteSatType(t.id));
+        box.append(r);
+      }
+    }
+    markSatRows();
+  }
+  function refreshSats() { if (!st) return; rebuildSatItems(); buildSatList(); }
+  function markSatRows() { document.querySelectorAll("#mSatList .sat-row").forEach(r => r.classList.toggle("active", r.dataset.id === msat.sel)); }
+  function selectSat(id, center) {
+    msat.sel = id; markSatRows();
+    const it = msat.items.find(x => x.s.id === id);
+    if (center && it && it.pos && globe) { globe.lat = Math.max(-1.3, Math.min(1.3, it.pos.lat * D)); globe.lon = it.pos.lon * D; if (globe.zoom > 0.6) globe.zoom = 0.6; }
+  }
+  function renderSatInfo() {
+    const it = msat.items.find(x => x.s.id === msat.sel), box = $("mSatInfo");
+    const t = new Date(msat.time);
+    const ts = t.toLocaleString("ru-RU", { timeZone: "UTC", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) + " UTC";
+    if ($("mSatTime").textContent !== ts) $("mSatTime").textContent = ts;
+    if (!it || !it.pos) { if (box.dataset.h) { box.textContent = ""; box.dataset.h = ""; } return; }
+    const p = it.pos, ns = p.lat >= 0 ? "с. ш." : "ю. ш.", ew = p.lon >= 0 ? "в. д." : "з. д.";
+    const html = `<b style="color:${it.s.color}">${esc(it.s.name)}</b> · ${esc(it.s.typeName)}${it.s.note ? " — " + esc(it.s.note) : ""}<br>` +
+      `Высота ${Math.round(p.alt).toLocaleString("ru-RU")} км · скорость ${SatM.speed(it.raw, p.alt).toFixed(2).replace(".", ",")} км/с · виток ${SatM.fmtPeriod(SatM.period(it.raw))}<br>` +
+      `Над точкой ${Math.abs(p.lat).toFixed(1)}° ${ns}, ${Math.abs(p.lon).toFixed(1)}° ${ew}`;
+    if (box.dataset.h !== html) { box.innerHTML = html; box.dataset.h = html; }
+  }
+  const satTypeOptions = () => Object.values(st.satTypes || {}).map(t => [t.id, t.name]);
+  const MSAT_FIELDS = () => [
+    { key: "name", label: "Название" },
+    { key: "type", label: "Тип", type: "select", options: satTypeOptions() },
+    { key: "note", label: "Описание" },
+    { key: "orbit", label: "Орбита", type: "select", options: Object.entries(SatM.ORBITS) },
+    { key: "h", label: "Высота, км", type: "number", min: 10, show: v => v.orbit === "circ", hint: "Низкая лунная ≈ 100, ретранслятор ≈ 3 000–10 000" },
+    { key: "hp", label: "Периселений, км", type: "number", min: 10, show: v => v.orbit === "ell", hint: "Ближайшая к Луне точка орбиты" },
+    { key: "ha", label: "Апоселений, км", type: "number", min: 10, show: v => v.orbit === "ell", hint: "Дальняя точка; не выше 40 000 км" },
+    { key: "argp", label: "Аргумент периселения, °", type: "number", show: v => v.orbit === "ell", hint: "90 — дальняя точка над южным полюсом" },
+    { key: "i", label: "Наклонение, °", type: "number", min: 0, max: 180, hint: "0 — над экватором Луны, 90 — через полюса" },
+    { key: "raan", label: "Долгота восходящего узла, °", type: "number", hint: "Поворот плоскости орбиты вокруг оси Луны" },
+    { key: "phase", label: "Начальное положение на орбите, °", type: "number" }
+  ];
+  async function editSat(id) {
+    if (!isGm()) return;
+    if (!Object.keys(st.satTypes || {}).length) { toast("Сначала создайте тип спутника"); return; }
+    const before = id ? st.satellites[id] : null;
+    const base = before ? clone(before) : { name: "", type: Object.keys(st.satTypes)[0], note: "", orbit: "circ", h: 100, hp: 100, ha: 8000, argp: 90, i: 90, raan: 0, phase: 0 };
+    const v = await form(before ? "Спутник Луны: " + before.name : "Новый спутник Луны", MSAT_FIELDS(), base, SatM.validate);
+    if (!v) return;
+    const nid = before ? id : uid("msat");
+    const rec = { id: nid, name: v.name, type: v.type, note: v.note, orbit: v.orbit, i: v.i, raan: v.raan || 0, phase: v.phase || 0 };
+    if (v.orbit === "ell") Object.assign(rec, { hp: v.hp, ha: v.ha, argp: v.argp || 0 }); else rec.h = v.h;
+    commit("satellites", nid, before, rec);
+    msat.sel = nid; refreshSats();
+    toast(before ? "Спутник изменён" : "Спутник добавлен — он уже на орбите Луны");
+  }
+  async function deleteSat(id) {
+    const c = st.satellites[id]; if (!c || !isGm()) return;
+    if (!(await ask("Удалить спутник «" + c.name + "»?", "", { confirm: true, note: "Ctrl+Z — вернуть." }))) return;
+    commit("satellites", id, c, null); refreshSats();
+  }
+  async function editSatType(id) {
+    if (!isGm()) return;
+    const before = id ? st.satTypes[id] : null;
+    const base = before ? clone(before) : { name: "", color: "#7fe8ff", shape: "dot" };
+    const v = await form(before ? "Тип: " + before.name : "Новый тип спутников Луны",
+      [{ key: "name", label: "Название типа" }, { key: "color", label: "Цвет", type: "color" }, { key: "shape", label: "Значок", type: "select", options: Object.entries(SatM.SHAPES) }],
+      base, x => (x.name ? "" : "Укажите название типа"));
+    if (!v) return;
+    const nid = before ? id : uid("mst");
+    commit("satTypes", nid, before, { id: nid, name: v.name, color: v.color, shape: v.shape });
+    refreshSats();
+  }
+  async function deleteSatType(id) {
+    const t = st.satTypes[id]; if (!t || !isGm()) return;
+    const users = Object.values(st.satellites || {}).filter(x => x.type === id);
+    if (users.length) { toast("Тип используют: " + users.map(u => u.name).join(", ")); return; }
+    if (!(await ask("Удалить тип «" + t.name + "»?", "", { confirm: true }))) return;
+    commit("satTypes", id, t, null); refreshSats();
+  }
+  $("mAddSat").onclick = () => editSat(null);
+  $("mAddSatType").onclick = () => editSatType(null);
+  $("mSatOrbits").addEventListener("change", e => { msat.orbits = e.target.checked; });
+  $("mSatNames").addEventListener("change", e => { msat.names = e.target.checked; });
+  $("mSatFollow").addEventListener("change", e => { msat.follow = e.target.checked; });
+  document.querySelectorAll("#mSatSpeed button").forEach(b => b.addEventListener("click", () => {
+    msat.speed = +b.dataset.speed;
+    if (b.dataset.speed === "now") { msat.time = Date.now(); msat.speed = 1; }
+    document.querySelectorAll("#mSatSpeed button").forEach(x => x.classList.toggle("active", x === b));
+  }));
+  $("mSatToggle").addEventListener("click", () => $("mSatPanel").classList.toggle("collapsed"));
+
+  // ---------- флаги лунных территорий (как у стран Земли) ----------
+  const mFlagCache = {}; // id -> dataURL, пока опубликованный файл не дошёл до GitHub Pages
+  const flagSrc = (id, t) => mFlagCache[id] || t.flag || "";
+  function bindFlag(id) {
+    const inp = $("mFlagInput"), clr = $("mFlagClear");
+    if (inp) inp.addEventListener("change", e => {
+      const f = e.target.files[0]; e.target.value = "";
+      if (!f || !isGm() || !st.territories[id]) return;
+      const rd = new FileReader();
+      rd.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          const k = Math.min(1, 300 / img.width, 200 / img.height);
+          const cv = document.createElement("canvas"); cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
+          cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+          const b = st.territories[id], a = clone(b); a.flag = cv.toDataURL("image/png");
+          commit("territories", id, b, a); toast("Флаг установлен (опубликуйте, чтобы его увидели все)");
+        };
+        img.src = rd.result;
+      };
+      rd.readAsDataURL(f);
+    });
+    if (clr) clr.addEventListener("click", () => { delete mFlagCache[id]; const b = st.territories[id], a = clone(b); a.flag = null; commit("territories", id, b, a); });
+  }
+  // многострочные названия в разметке SVG: первая строка на y, остальные ниже
+  function tspans(str) {
+    const parts = String(str || "").split("\n");
+    return parts.length === 1 ? esc(parts[0]) : parts.map((p, i) => `<tspan x="0" dy="${i ? "1.15em" : 0}">${esc(p)}</tspan>`).join("");
+  }
+  const L = window.KG.lines;
+  const fontOf = slot => { const f = window.KGMap && window.KGMap.fonts && window.KGMap.fonts[slot]; return (f ? `"${f}", ` : "") + "Unbounded, sans-serif"; };
+
   // ---------- загрузка, открытие, публикация ----------
+  let pendingFlags = {};
   async function load() {
     const bust = "?t=" + Date.now();
     st = await fetch("data/moon.json" + bust, { cache: "no-store" }).then(r => r.json());
-    ["territories", "marks", "markTypes", "roads", "roadTypes"].forEach(k => (st[k] = st[k] || {}));
+    ["territories", "marks", "markTypes", "roads", "roadTypes", "satellites", "satTypes"].forEach(k => (st[k] = st[k] || {}));
     await TM.load("data/moon_territories.png" + bust, new Uint8Array(MW * MH).fill(1));
     for (const [id, d] of TM.allPaths()) if (st.territories[String(id)]) setTerrPath(id, d);
     loaded = true;
-    renderAll(); updUndo();
+    rebuildSatItems(); renderAll(); updUndo();
   }
   const M = {
     async open() {
@@ -806,20 +1006,36 @@ void main(){
         $("moonLoading").classList.add("hidden");
       }
       buildLists(); updateCard(); setTool(tool);
-      if (sub === "globe") syncGlobe(true); else requestAnimationFrame(fit);
+      if (sub === "globe") { syncGlobe(true); refreshSats(); startSatLoop(); } else requestAnimationFrame(fit);
     },
     close() { active = false; document.body.classList.remove("moon-mode"); wrap.classList.add("hidden"); if (roadDraft) finishRoad(false); },
     get active() { return active; },
+    get state() { return st; },
+    select: ent => select(ent),
+    get sats() { return msat; },
     isDirty: () => dirty,
     async files() {
       if (!dirty) return [];
       const out = [], snap = clone(st); snap.updated = new Date().toISOString();
+      // новые флаги (dataURL) — отдельными файлами data/moon_flags/<id>.png
+      const stamp = Date.now().toString(36); pendingFlags = {};
+      for (const id in snap.territories) {
+        const t = snap.territories[id];
+        if (!t.flag || !t.flag.startsWith("data:")) continue;
+        const path = `data/moon_flags/${id}.png`;
+        out.push({ path, content: Uint8Array.from(atob(t.flag.split(",")[1]), ch => ch.charCodeAt(0)) });
+        pendingFlags[id] = { data: t.flag, path: `${path}?v=${stamp}` }; t.flag = pendingFlags[id].path;
+      }
       out.push({ path: "data/moon.json", content: JSON.stringify(snap) });
       if (terrDirty) out.push({ path: "data/moon_territories.png", content: await TM.toPngBlob() });
       return out;
     },
-    published() { dirty = terrDirty = false; },
-    onGmChange() { if (loaded) { buildLists(); updateCard(); setTool(tool); renderVertices(); } },
+    published() {
+      dirty = terrDirty = false;
+      for (const id in pendingFlags) { mFlagCache[id] = pendingFlags[id].data; if (st.territories[id] && st.territories[id].flag === pendingFlags[id].data) st.territories[id].flag = pendingFlags[id].path; }
+      pendingFlags = {};
+    },
+    onGmChange() { if (loaded) { buildLists(); updateCard(); setTool(tool); renderVertices(); buildSatList(); } },
     // для показа Луны на глобусе Земли
     open3d() { M.open().then(() => setSub("globe")); }
   };

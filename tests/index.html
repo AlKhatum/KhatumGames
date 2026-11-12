@@ -18,10 +18,10 @@
 <h1>Автотесты карты Khatum Games</h1>
 <div id="summary">Выполняется…</div>
 <div id="out"></div>
-<script src="../js/geo.js?v=20261112c"></script>
-<script src="../js/territory.js?v=20261112c"></script>
-<script src="../js/sats.js?v=20261112c"></script>
-<script src="../js/moon-names.js?v=20261112c"></script>
+<script src="../js/geo.js?v=20261112e"></script>
+<script src="../js/territory.js?v=20261112e"></script>
+<script src="../js/sats.js?v=20261112e"></script>
+<script src="../js/moon-names.js?v=20261112e"></script>
 <script>
 (async function () {
   "use strict";
@@ -154,6 +154,25 @@
     assert(!S.validate({ name: "x", orbit: "circ", h: 400, i: 51.6 }), "нормальная орбита отклонена");
   });
 
+  await test("Луна: низкая орбита 100 км — виток ≈ 118 мин", () => {
+    const M = S.Moon, sec = M.period({ id: "t-m1", orbit: "circ", h: 100, i: 90 });
+    near(sec / 60, 117.8, 0.6, "мин"); return M.fmtPeriod(sec);
+  });
+  await test("Луна: спутник держит высоту и вращение Луны учтено", () => {
+    const M = S.Moon, sat = { id: "t-m2", orbit: "circ", h: 3000, i: 0, raan: 0, phase: 0 }, t = Date.now();
+    const a = M.at(sat, t); near(a.alt, 3000, 0.5, "км"); assert(Math.abs(a.lat) < 1e-6, "экваториальная орбита ушла с экватора");
+    const b = M.at(sat, t + M.period(sat) * 1000);
+    const drift = ((a.lon - b.lon) % 360 + 540) % 360 - 180;
+    near(drift, 360 * M.period(sat) / (27.321661 * 86400), 0.05, "смещение долготы за виток, °");
+  });
+  await test("Луна: проверка формы отклоняет опасные орбиты", () => {
+    const M = S.Moon;
+    assert(M.validate({ name: "x", orbit: "circ", h: 5, i: 10 }), "5 км должно отклоняться");
+    assert(M.validate({ name: "x", orbit: "circ", h: 90000, i: 10 }), "90 000 км должно отклоняться");
+    assert(M.validate({ name: "x", orbit: "geo", lon: 0 }), "у Луны нет стационарной орбиты");
+    assert(!M.validate({ name: "x", orbit: "ell", hp: 100, ha: 8000, i: 85 }), "нормальная орбита отклонена");
+  });
+
   group("Целостность данных");
   await test("Страны: имя, цвет, точка подписи", () => {
     for (const c of Object.values(map.countries)) { assert(c.name, "без имени: " + c.id); assert(/^#[0-9a-f]{6}$/i.test(c.color), "цвет " + c.id); assert(c.label && c.label.length === 2, "подпись " + c.id); }
@@ -173,6 +192,15 @@
   await test("Луна: отметки и дороги ссылаются на существующие типы", () => {
     const m = Object.values(moon.marks).filter(x => !moon.markTypes[x.type]), r = Object.values(moon.roads).filter(x => !moon.roadTypes[x.type]);
     assert(!m.length && !r.length, "битые ссылки");
+  });
+  await test("Луна: спутники ссылаются на существующие типы и летают по допустимым орбитам", () => {
+    const sats = Object.values(moon.satellites || {}), bad = sats.filter(s => !(moon.satTypes || {})[s.type] || S.Moon.validate(s));
+    assert(!bad.length, "ошибки: " + bad.map(s => s.name).join(", ")); return sats.length + " спутников";
+  });
+  await test("Шрифты надписей (если заданы ГМом) — из списка", () => {
+    const f = (map.settings && map.settings.fonts) || {};
+    for (const k of ["country", "province", "city", "custom", "moon", "moonNames"]) if (f[k]) assert(typeof f[k] === "string" && /^[A-Za-z0-9 ]+$/.test(f[k]), "странный шрифт " + k);
+    return Object.keys(f).length ? "заданы" : "по умолчанию";
   });
   await test("Луна: названия корректны", () => {
     const cats = new Set(window.KGMoonNameCats.map(c => c.id)), names = window.KGMoonNames;

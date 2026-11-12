@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@200;300;400;600&family=Oswald:wght@400;500&family=Exo+2:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20261112d">
+<link rel="stylesheet" href="css/style.css?v=20261112e">
 </head>
 <body>
 
@@ -33,9 +33,12 @@
     <button data-tab="gallery">Галерея</button>
     <button data-tab="about">О нас</button>
   </nav>
-  <button class="sound-btn" id="soundBtn" title="Звук фонового видео">
-    <span class="ico">🔇</span><span class="lbl">Звук</span>
-  </button>
+  <div class="sound-box">
+    <button class="sound-btn" id="soundBtn" title="Звук фонового видео">
+      <span class="ico">🔇</span><span class="lbl">Звук</span>
+    </button>
+    <input type="range" id="volume" min="0" max="100" value="60" title="Громкость музыки" aria-label="Громкость музыки">
+  </div>
 </header>
 
 <main>
@@ -93,6 +96,29 @@
             <canvas id="moonGlobeOv" class="g-overlay"></canvas>
           </div>
           <div class="map-loading hidden" id="moonLoading">Загрузка Луны…</div>
+          <div class="sat-panel panel hidden moon-sat-panel" id="mSatPanel">
+            <div class="sat-head"><span>Орбиты Луны</span><span class="sat-time" id="mSatTime"></span><button id="mSatToggle" title="Свернуть">—</button></div>
+            <div class="sat-body">
+              <div class="sat-opts">
+                <label><input type="checkbox" id="mSatOrbits" checked> Траектории</label>
+                <label><input type="checkbox" id="mSatNames" checked> Названия</label>
+                <label><input type="checkbox" id="mSatFollow"> Следить</label>
+              </div>
+              <div class="sat-speed" id="mSatSpeed">
+                <button data-speed="0" title="Пауза">⏸</button>
+                <button data-speed="now" title="Реальное время">×1</button>
+                <button data-speed="60" class="active" title="Минута за секунду">×60</button>
+                <button data-speed="600" title="10 минут за секунду">×600</button>
+              </div>
+              <div class="sat-gm gm-only">
+                <button id="mAddSat" class="small-btn" type="button">+ Спутник</button>
+                <button id="mAddSatType" class="small-btn" type="button">+ Тип</button>
+              </div>
+              <div class="sat-list" id="mSatList"></div>
+              <details class="sat-types gm-only"><summary>Типы спутников Луны</summary><div id="mSatTypeList"></div></details>
+              <div class="sat-info" id="mSatInfo"></div>
+            </div>
+          </div>
           <div class="view-switch moon-sub" id="moonSubSwitch">
             <button data-msub="flat" class="active">Плоская</button>
             <button data-msub="globe">Шар</button>
@@ -134,24 +160,6 @@
             <button id="moonZoomFit" title="Вся Луна">⤢</button>
           </div>
 
-          <aside class="moon-panel panel" id="moonPanel">
-            <div class="legend-head"><span>Луна</span></div>
-            <div class="moon-card" id="moonCard"></div>
-            <div class="legend-tabs moon-tabs">
-              <button data-mtab="Terr" class="active">Территории</button>
-              <button data-mtab="Layers">Слои</button>
-              <button data-mtab="Types" class="gm-only">Типы</button>
-            </div>
-            <div class="legend-pane" id="moonPaneTerr">
-              <div class="lp-tools gm-only"><button id="mAddTerr" class="small-btn">+ Территория</button></div>
-              <div id="moonTerrList"></div>
-            </div>
-            <div class="legend-pane hidden" id="moonPaneLayers"><div id="moonLayerList"></div></div>
-            <div class="legend-pane hidden" id="moonPaneTypes">
-              <div class="lp-tools"><button id="mAddMarkType" class="small-btn">+ Тип отметки</button><button id="mAddRoadType" class="small-btn">+ Тип дороги</button></div>
-              <div id="moonTypeList"></div>
-            </div>
-          </aside>
         </div>
         <div class="map-loading" id="mapLoading">Загрузка карты…</div>
 
@@ -179,6 +187,7 @@
             <span class="gm-dirty hidden" id="gmDirty" title="Есть неопубликованные правки">●</span>
             <button id="publishBtn" class="accent">Опубликовать</button>
             <button id="ghBtn" title="Подключение к GitHub">GitHub</button>
+            <button id="fontBtn" title="Шрифты надписей на карте">Шрифты</button>
             <button id="pwBtn" title="Сменить пароль ГМа">Пароль</button>
             <button id="logoutBtn" title="Выйти из режима ГМа">Выйти</button>
           </div>
@@ -260,6 +269,26 @@
         </div>
         <div class="legend-pane hidden" id="paneLayers">
           <div id="layerList"></div>
+        </div>
+      </aside>
+
+      <!-- Легенда Луны (на том же месте, что и легенда Земли) -->
+      <aside class="legend panel moon-legend" id="moonPanel">
+        <div class="legend-head"><span>Легенда Луны</span></div>
+        <div class="moon-card" id="moonCard"></div>
+        <div class="legend-tabs moon-tabs">
+          <button data-mtab="Terr" class="active">Территории</button>
+          <button data-mtab="Layers">Слои</button>
+          <button data-mtab="Types" class="gm-only">Типы</button>
+        </div>
+        <div class="legend-pane" id="moonPaneTerr">
+          <div class="lp-tools gm-only"><button id="mAddTerr" class="small-btn">+ Территория</button></div>
+          <div id="moonTerrList"></div>
+        </div>
+        <div class="legend-pane hidden" id="moonPaneLayers"><div id="moonLayerList"></div></div>
+        <div class="legend-pane hidden" id="moonPaneTypes">
+          <div class="lp-tools"><button id="mAddMarkType" class="small-btn">+ Тип отметки</button><button id="mAddRoadType" class="small-btn">+ Тип дороги</button></div>
+          <div id="moonTypeList"></div>
         </div>
       </aside>
     </div>
@@ -365,19 +394,20 @@
   <div class="modal-box panel">
     <div class="modal-title" id="modalTitle"></div>
     <input type="text" id="modalInput" autocomplete="off">
+    <textarea id="modalArea" class="modal-area hidden" rows="2"></textarea>
     <div class="modal-note" id="modalNote"></div>
     <div class="modal-btns"><button id="modalOk">OK</button><button id="modalCancel">Отмена</button></div>
   </div>
 </div>
 
-<script src="js/app.js?v=20261112c"></script>
-<script src="js/geo.js?v=20261112c"></script>
-<script src="js/territory.js?v=20261112c"></script>
-<script src="js/sats.js?v=20261112c"></script>
-<script src="js/globe.js?v=20261112c"></script>
-<script src="js/github.js?v=20261112c"></script>
-<script src="js/map.js?v=20261112c"></script>
-<script src="js/moon-names.js?v=20261112c"></script>
-<script src="js/moon.js?v=20261112c"></script>
+<script src="js/app.js?v=20261112e"></script>
+<script src="js/geo.js?v=20261112e"></script>
+<script src="js/territory.js?v=20261112e"></script>
+<script src="js/sats.js?v=20261112e"></script>
+<script src="js/globe.js?v=20261112e"></script>
+<script src="js/github.js?v=20261112e"></script>
+<script src="js/map.js?v=20261112e"></script>
+<script src="js/moon-names.js?v=20261112e"></script>
+<script src="js/moon.js?v=20261112e"></script>
 </body>
 </html>

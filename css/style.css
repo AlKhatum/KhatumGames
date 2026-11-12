@@ -563,3 +563,43 @@ body.moon-mode .map-frame::before, body.moon-mode .map-frame::after { z-index: 1
 @media (max-width: 1100px) { .map-title { display: none; } }
 .toolbar, .moon-toolbar { top: max(var(--row3), calc(var(--row2) + var(--bbh, 0px) + 8px)); }
 @media (max-width: 900px) { .toolbar, .moon-toolbar { top: var(--row3); } }
+
+/* ---------- Луна: легенда на месте легенды Земли, вид во всю рамку ---------- */
+.moon-legend { display: none; }
+body.moon-mode #legend { display: none; }
+body.moon-mode .moon-legend { display: flex; }
+.moon-vp, .moon-globe-wrap { right: 0; bottom: 0; }
+.moon-wrap .zoom { right: 10px; bottom: 10px; }
+.moon-wrap .hint { left: 50%; right: auto; transform: translateX(-50%); max-width: min(560px, calc(100% - 200px)); }
+.moon-wrap:not(.moon-globe) .moon-sat-panel { display: none !important; }
+.moon-wrap.moon-globe .zoom { right: auto; left: 10px; }
+.moon-wrap.moon-globe .hint { display: none; }
+.moon-legend .legend-card { min-height: 98px; }
+@media (max-width: 900px) {
+  .moon-vp, .moon-globe-wrap { bottom: 0; }
+  .moon-wrap .zoom { right: 6px; bottom: 10px; }
+  .moon-wrap .moon-measure { bottom: 10px; left: 6px; }
+  .moon-wrap.moon-globe .zoom { left: auto; right: 6px; bottom: auto; top: var(--row3); }
+}
+/* громкость музыки */
+.sound-box { display: flex; align-items: center; gap: 8px; }
+#volume { width: 90px; accent-color: var(--pink); }
+@media (max-width: 600px) { #volume { width: 56px; } }
+.modal-area { width: 100%; resize: vertical; background: rgba(0, 0, 0, .35); border: 1px solid var(--line-dim); border-radius: 3px; color: var(--text); font: 15px/1.4 var(--font-ui); padding: 6px 8px; }
+.modal-area:focus { outline: none; border-color: var(--line); box-shadow: 0 0 8px rgba(24, 217, 245, .35); }
+.g-label { white-space: pre-line; text-align: center; }
+
+/* шрифты надписей, которые выбирает ГМ (кнопка «Шрифты») */
+:root { --f-country: var(--font-wide); --f-province: var(--font-wide); --f-city: var(--font-wide); --f-custom: var(--font-wide); --f-moon: var(--font-wide); --f-moonNames: var(--font-wide); }
+.lbl-country, .g-label { font-family: var(--f-country); }
+.lbl-prov, .g-label.g-prov { font-family: var(--f-province); }
+.city text, .g-label.g-city { font-family: var(--f-city); }
+.lbl-custom, .g-label.g-custom { font-family: var(--f-custom); }
+.lbl-country.m-lbl, .m-mark text { font-family: var(--f-moon); }
+.m-feat { font-family: var(--f-moonNames); }
+.f-row select option { font-size: 14px; }
+/* карточка лунной территории с флагом */
+.m-terr-card { display: flex; gap: 10px; align-items: flex-start; }
+.m-terr-card .flag { width: 96px; height: 64px; }
+.m-terr-card .legend-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+@media (max-width: 900px) { .m-terr-card .flag { width: 72px; height: 48px; } }

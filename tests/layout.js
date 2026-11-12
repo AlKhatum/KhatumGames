@@ -16,15 +16,16 @@ window.KGLayoutCheck = function () {
     const moon = document.getElementById("moonWrap"), inMoon = moon && vis(moon);
     const frame = document.getElementById("mapFrame"), fr = R(frame);
     if (fr.width < 200 || fr.height < 200) issues.push("рамка карты слишком мала: " + Math.round(fr.width) + "×" + Math.round(fr.height));
-    const legend = document.getElementById("legend");
-    if (!inMoon && vis(legend)) {
+    // легенда Земли или Луны — на одном и том же месте, рядом с рамкой карты
+    const legend = document.getElementById(inMoon ? "moonPanel" : "legend");
+    if (vis(legend)) {
       const lr = R(legend);
       if (lr.right > innerWidth + 1 || lr.bottom > innerHeight + 1) issues.push("легенда выходит за экран");
       if (overlap(lr, fr) > 4) issues.push("легенда наезжает на карту");
     }
     const scope = inMoon ? moon : frame;
     const sel = inMoon
-      ? ["#moonSubSwitch", "#moonToolbar", "#mBrushBar", ".moon-measure", "#moonWrap .zoom", "#moonHint", "#moonPanel", ".view-switch:not(.moon-sub)", ".gm-bar"]
+      ? ["#moonSubSwitch", "#moonToolbar", "#mBrushBar", ".moon-measure", "#moonWrap .zoom", "#moonHint", "#mSatPanel", ".view-switch:not(.moon-sub)", ".gm-bar"]
       : [".view-switch:not(.moon-sub)", ".gm-bar", ".map-title", "#toolbar", "#brushBar", ".measure:not(.moon-measure)", "#mapFrame > .zoom", "#hint", "#satPanel"];
     const els = sel.map(s => [s, document.querySelector(s)]).filter(([, e]) => vis(e));
     for (const [s, e] of els) if (!inside(R(e), fr, 1)) issues.push(s + " выходит за рамку карты");

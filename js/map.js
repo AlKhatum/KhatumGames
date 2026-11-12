@@ -180,7 +180,7 @@
     e.setAttribute("d", d || "");
     if (selProv === id) provSelPath.setAttribute("d", d || "");
   }
-  const els = { cfill: {}, cborder: {}, clabel: {}, cities: {}, labels: {}, satellites: {}, satTypes: {} };
+  const els = { cfill: {}, cborder: {}, clabel: {}, cities: {}, labels: {}, satellites: {}, satTypes: {}, settings: {} };
   const paths = new Map(); // id страны -> d
   const flagCache = {};   // id -> dataURL (флаги, загруженные в этой сессии)
 
@@ -206,7 +206,7 @@
     t.setAttribute("x", c.label[0]); t.setAttribute("y", c.label[1]);
     t.setAttribute("font-size", c.size); t.setAttribute("letter-spacing", (c.size * 0.22).toFixed(1));
     t.setAttribute("stroke-width", Math.max(0.8, c.size * 0.14).toFixed(1));
-    t.textContent = c.name;
+    window.KG.lines.svg(t, c.name);
   }
   function cityText(c) {
     // подпись не должна налезать на крупный значок: отодвигаем от центра
@@ -230,7 +230,7 @@
     const tx = g.lastChild, o = cityText(c);
     tx.setAttribute("x", o.dx); tx.setAttribute("y", o.dy);
     tx.setAttribute("text-anchor", c.a === "end" ? "end" : c.a === "middle" ? "middle" : "start");
-    tx.textContent = c.name;
+    window.KG.lines.svg(tx, c.name);
   }
   function renderLabel(id) {
     const e = state.labels[id];
@@ -239,7 +239,7 @@
     if (!t) { t = svgEl("text", { class: "lbl-custom", "data-col": "labels", "data-id": id }, gCustom); els.labels[id] = t; }
     t.setAttribute("x", e.x); t.setAttribute("y", e.y); t.setAttribute("font-size", e.size);
     t.setAttribute("letter-spacing", (e.size * 0.15).toFixed(1));
-    t.textContent = e.text;
+    window.KG.lines.svg(t, e.text);
   }
   function renderProvince(id) {
     const e = state.provinces[id];
@@ -252,11 +252,11 @@
     if (!t) { t = svgEl("text", { "data-col": "provinces", "data-id": id }, L.provLabels); provLbl[id] = t; }
     t.setAttribute("class", "lbl-prov " + (e.size >= 6 ? "b1" : e.size >= 3.6 ? "b2" : "b3"));
     t.setAttribute("x", e.label[0]); t.setAttribute("y", e.label[1]); t.style.setProperty("--fs", e.size + "px");
-    t.textContent = e.name;
+    window.KG.lines.svg(t, e.name);
   }
   const renderSatsAny = () => { try { refreshSats(); } catch (e) { /* глобус ещё не готов */ } };
-  const RENDER = { countries: renderCountry, cities: renderCity, labels: renderLabel, provinces: renderProvince, satellites: renderSatsAny, satTypes: renderSatsAny };
-  const COLS = ["countries", "cities", "labels", "provinces", "satellites", "satTypes"];
+  const RENDER = { countries: renderCountry, cities: renderCity, labels: renderLabel, provinces: renderProvince, satellites: renderSatsAny, satTypes: renderSatsAny, settings: () => applyFonts() };
+  const COLS = ["countries", "cities", "labels", "provinces", "satellites", "satTypes", "settings"];
 
   // ---------- вид ----------
   let s = 0.3, tx = 0, ty = 0, fitS = 0.3;
@@ -321,10 +321,10 @@
   function flagSrc(c) { return flagCache[c.id] || c.flag || ""; }
   function updateCard() {
     const c = sel && sel.col === "countries" ? state.countries[sel.id] : null;
-    $("countryTitle").textContent = c ? c.name : "Выберите страну на карте";
+    $("countryTitle").textContent = c ? window.KG.lines.oneLine(c.name) : "Выберите страну на карте";
     nameInp.disabled = colorInp.disabled = !c;
     $("flagClear").disabled = !(c && (c.flag || flagCache[c.id]));
-    if (document.activeElement !== nameInp) nameInp.value = c ? c.name : "";
+    if (document.activeElement !== nameInp) nameInp.value = c ? window.KG.lines.toInput(c.name) : "";
     colorInp.value = c ? c.color : "#888888";
     const fi = $("flagImg"), src = c ? flagSrc(c) : "";
     if (src) { fi.src = src; fi.hidden = false; $("flagPh").hidden = true; }
@@ -338,18 +338,18 @@
     const pr = selProv ? state.provinces[selProv] : null;
     $("provBlock").classList.toggle("hidden", !pr);
     if (pr) {
-      $("provTitle").textContent = pr.name;
-      if (document.activeElement !== $("provName")) $("provName").value = pr.name;
+      $("provTitle").textContent = window.KG.lines.oneLine(pr.name);
+      if (document.activeElement !== $("provName")) $("provName").value = window.KG.lines.toInput(pr.name);
       $("provMeta").textContent = [pr.type, gm && pr.real ? "в нашем мире: " + pr.real : ""].filter(Boolean).join(" · ");
     }
     $("flagBox").classList.toggle("can-edit", gm && !!c);
   }
   let nameBefore = null;
   nameInp.addEventListener("focus", () => { if (sel) nameBefore = clone(state.countries[sel.id]); });
-  nameInp.addEventListener("input", () => { if (!sel || !gm) return; state.countries[sel.id].name = nameInp.value; renderCountry(sel.id); $("countryTitle").textContent = nameInp.value; });
+  nameInp.addEventListener("input", () => { if (!sel || !gm) return; state.countries[sel.id].name = window.KG.lines.fromInput(nameInp.value); renderCountry(sel.id); $("countryTitle").textContent = window.KG.lines.oneLine(state.countries[sel.id].name); });
   nameInp.addEventListener("change", () => {
     if (!sel || !nameBefore) return;
-    const after = clone(state.countries[sel.id]); after.name = nameInp.value.trim() || nameBefore.name;
+    const after = clone(state.countries[sel.id]); after.name = window.KG.lines.fromInput(nameInp.value) || nameBefore.name;
     if (after.name !== nameBefore.name) commit("countries", sel.id, nameBefore, after); else renderCountry(sel.id);
     nameBefore = clone(state.countries[sel.id]);
   });
@@ -392,13 +392,13 @@
       const sw = document.createElement("span"); sw.className = "swatch"; sw.style.background = c.color;
       r.append(sw);
       if (gm) {
-        const inp = document.createElement("input"); inp.type = "text"; inp.value = c.name; inp.className = "c-name-input"; inp.title = "Название (Enter — сохранить)";
+        const inp = document.createElement("input"); inp.type = "text"; inp.value = window.KG.lines.toInput(c.name); inp.className = "c-name-input"; inp.title = "Название (Enter — сохранить, « ↵ » — перенос строки)";
         let before = null;
         inp.addEventListener("focus", () => { before = clone(state.countries[c.id]); select({ col: "countries", id: c.id }); });
         inp.addEventListener("keydown", e => { if (e.key === "Enter") inp.blur(); e.stopPropagation(); });
         inp.addEventListener("change", () => {
-          const v = inp.value.trim();
-          if (!before || !v || v === before.name) { inp.value = state.countries[c.id].name; return; }
+          const v = window.KG.lines.fromInput(inp.value);
+          if (!before || !v || v === before.name) { inp.value = window.KG.lines.toInput(state.countries[c.id].name); return; }
           const a = clone(before); a.name = v; commit("countries", c.id, before, a);
         });
         r.append(inp);
@@ -408,7 +408,7 @@
         del.addEventListener("click", () => deleteCountry(c.id));
         r.append(go, del);
       } else {
-        const nm = document.createElement("span"); nm.className = "c-name"; nm.textContent = c.name;
+        const nm = document.createElement("span"); nm.className = "c-name"; nm.textContent = window.KG.lines.oneLine(c.name);
         r.append(nm);
         r.addEventListener("click", () => focusCountry(c.id));
       }
@@ -686,7 +686,7 @@
     const selEl = $("bbCountry"), cur = brushCountry;
     selEl.innerHTML = "";
     Object.values(state.countries).sort((a, b) => a.name.localeCompare(b.name, "ru")).forEach(c => {
-      const o = document.createElement("option"); o.value = c.id; o.textContent = c.name; selEl.append(o);
+      const o = document.createElement("option"); o.value = c.id; o.textContent = window.KG.lines.oneLine(c.name); selEl.append(o);
     });
     if (cur && state.countries[cur]) selEl.value = cur; else brushCountry = selEl.value || null;
     updateSwatch();
@@ -699,7 +699,7 @@
     if (!gm) return;
     const id = newCountryId();
     if (!id) { toast("Достигнут предел в 255 стран"); return; }
-    const name = await ask("Название новой страны", "Новая страна");
+    const name = await ask("Название новой страны", "Новая страна", { multiline: true });
     if (!name) return;
     const hue = Math.floor(Math.random() * 360);
     const color = `hsl(${hue} 65% 66%)`;
@@ -730,8 +730,8 @@
     inp.addEventListener("keydown", e => { if (e.key === "Enter") inp.blur(); e.stopPropagation(); });
     inp.addEventListener("change", () => {
       if (!gm || !selProv || !before) return;
-      const v = inp.value.trim();
-      if (!v || v === before.name) { inp.value = before.name; return; }
+      const v = window.KG.lines.fromInput(inp.value);
+      if (!v || v === before.name) { inp.value = window.KG.lines.toInput(before.name); return; }
       const a = clone(before); a.name = v; commit("provinces", selProv, before, a); before = clone(a);
     });
   })();
@@ -843,14 +843,14 @@
     }
     const v = T.at(p[0], p[1]);
     if (!v || !state.countries[String(v)]) { toast("Здесь нет страны"); return false; }
-    setBrushCountry(v); toast("Кисть: " + state.countries[String(v)].name);
+    setBrushCountry(v); toast("Кисть: " + window.KG.lines.oneLine(state.countries[String(v)].name));
     return true;
   }
   let brushProv = null;
   function setBrushProv(id) {
     brushProv = String(id);
     const pr = state.provinces[brushProv];
-    $("bbProv").textContent = pr ? "Провинция: " + pr.name : "Провинция не выбрана";
+    $("bbProv").textContent = pr ? "Провинция: " + window.KG.lines.oneLine(pr.name) : "Провинция не выбрана";
   }
   function syncBrushMode() {
     const pm = provMode();
@@ -862,7 +862,7 @@
   }
   $("bbMode").addEventListener("change", syncBrushMode);
   $("addProvBtn").onclick = async () => {
-    const name = await ask("Название новой провинции", "Новая провинция");
+    const name = await ask("Название новой провинции", "Новая провинция", { multiline: true });
     if (!name) return;
     let id = 1; while (state.provinces[id] || P.bbox[id]) id++;
     if (id > 65535) { toast("Слишком много провинций"); return; }
@@ -877,7 +877,7 @@
     const e = state[ent.col] && state[ent.col][ent.id]; if (!e) return;
     const field = { countries: "name", cities: "name", labels: "text", provinces: "name" }[ent.col];
     const title = { countries: "Переименовать страну", cities: "Переименовать город", labels: "Изменить подпись", provinces: "Переименовать провинцию" }[ent.col];
-    const v = await ask(title, e[field]);
+    const v = await ask(title, e[field], { multiline: true });
     if (!v || v === e[field]) return;
     const a = clone(e); a[field] = v; commit(ent.col, ent.id, e, a);
   }
@@ -898,14 +898,14 @@
     if (tool === "fill") { doFill(p); return; }
     if (tool === "picker") { if (pick(p)) setTool("brush"); return; }
     if (tool === "city") {
-      const name = await ask("Название нового города", "");
+      const name = await ask("Название нового города", "", { multiline: true });
       if (!name) return;
       const id = uid("ct");
       commit("cities", id, null, { id, name, x: Math.round(p[0] * 10) / 10, y: Math.round(p[1] * 10) / 10, dx: 5.2, dy: 2.2, a: "start" });
       return;
     }
     if (tool === "label") {
-      const text = await ask("Новая подпись", "");
+      const text = await ask("Новая подпись", "", { multiline: true });
       if (!text) return;
       const id = uid("l");
       commit("labels", id, null, { id, text, x: Math.round(p[0]), y: Math.round(p[1]), size: 14 });
@@ -1447,6 +1447,45 @@
     window.addEventListener("resize", globeDirty);
   })();
 
+
+  // ---------- шрифты надписей (настраивает ГМ, публикуются вместе с картой) ----------
+  const FONTS = ["Unbounded", "Exo 2", "Oswald", "Russo One", "Jura", "Play", "Tektur", "Comfortaa", "Montserrat Alternates",
+    "Roboto Condensed", "PT Sans Narrow", "Days One", "Rubik Mono One", "Philosopher", "Kelly Slab", "Press Start 2P",
+    "Ruslan Display", "Underdog", "Neucha", "Yeseva One", "Lobster", "Marck Script", "PT Serif"];
+  const FONT_SLOTS = [
+    ["country", "Названия стран"], ["province", "Названия провинций"], ["city", "Названия городов"], ["custom", "Подписи"],
+    ["moon", "Луна: территории и отметки"], ["moonNames", "Луна: моря, кратеры, места посадок"]
+  ];
+  const loadedFonts = new Set(["Unbounded", "Exo 2", "Oswald"]);
+  function ensureFont(f) {
+    if (!f || loadedFonts.has(f)) return;
+    loadedFonts.add(f);
+    const l = document.createElement("link"); l.rel = "stylesheet";
+    l.href = "https://fonts.googleapis.com/css2?family=" + f.replace(/ /g, "+") + ":wght@300;400&display=swap";
+    l.onerror = () => { l.href = "https://fonts.googleapis.com/css2?family=" + f.replace(/ /g, "+") + "&display=swap"; };
+    document.head.append(l);
+  }
+  function currentFonts() {
+    const f = {}; const saved = (state && state.settings && state.settings.fonts) || {};
+    FONT_SLOTS.forEach(([k]) => (f[k] = saved[k] || "Unbounded"));
+    return f;
+  }
+  function applyFonts() {
+    const f = currentFonts(), root = document.documentElement;
+    for (const k in f) { ensureFont(f[k]); root.style.setProperty("--f-" + k, `"${f[k]}", "Exo 2", sans-serif`); }
+    if (globe) { globe.fonts = f; globeDirty(); }
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (globe) globeDirty(); });
+  }
+  $("fontBtn").onclick = async () => {
+    if (!gm) return;
+    const before = (state.settings && state.settings.fonts) || null, cur = currentFonts();
+    FONTS.forEach(ensureFont); // чтобы превью в списке было честным
+    const v = await openForm("Шрифты надписей на карте", FONT_SLOTS.map(([k, label]) => ({ key: k, label, type: "select", options: FONTS.map(x => [x, x]) })), Object.assign({}, cur, { __opts: {} }));
+    if (!v) return;
+    commit("settings", "fonts", before, Object.assign({ id: "fonts" }, v));
+    toast("Шрифты обновлены (опубликуйте, чтобы их увидели все)");
+  };
+
   // ---------- загрузка ----------
   function rebuildAll(keepPaths) {
     for (const col of COLS) {
@@ -1477,6 +1516,7 @@
       coastPath.setAttribute("d", T.coastPath());
       console.info("контуры построены за", Math.round(performance.now() - t0), "мс");
       rebuildAll(false);
+      applyFonts();
       buildCountryList(); fillBrushSelect();
       let saved = null; try { saved = sessionStorage.getItem(GM_KEY); } catch (e) { /* */ }
       setGm(!!saved && saved === config.gm.hash);
@@ -1493,5 +1533,5 @@
   setTool("pan");
   requestAnimationFrame(fit);
   load();
-  window.KGMap = { get state() { return state; }, select, setTool, fit, T, setView3, measures, get globe() { return globe; }, get view() { return { s, tx, ty }; }, get gm() { return gm; } };
+  window.KGMap = { get state() { return state; }, select, setTool, fit, T, setView3, measures, get globe() { return globe; }, get view() { return { s, tx, ty }; }, get gm() { return gm; }, get fonts() { return currentFonts(); } };
 })();

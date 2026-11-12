@@ -175,6 +175,8 @@ void main(){
       this.labelsEl.append(el); l.el = el;
     }
   };
+  // шрифт надписей, выбранный ГМом (globe.fonts задаёт карта)
+  Globe.prototype.fontOf = function (slot) { const f = this.fonts && this.fonts[slot]; return (f ? `"${f}", ` : "") + `Unbounded, "Exo 2", sans-serif`; };
   Globe.prototype.setCities = function (list) { this.cities = list; };        // [{name, lat, lon}]
   Globe.prototype.setProvLabels = function (list) { this.provLabels = list; }; // [{name, lat, lon, size}]
 
@@ -269,7 +271,7 @@ void main(){
     // названия провинций (при сильном приближении)
     if (this.show.provLabels && this.zoom >= 2.6) {
       const min = this.zoom >= 5 ? 0 : this.zoom >= 3.6 ? 3.6 : 6;
-      ctx.font = `300 10px Unbounded, "Exo 2", sans-serif`;
+      ctx.font = `300 10px ${this.fontOf("province")}`;
       ctx.fillStyle = "rgba(240,250,255,.85)"; ctx.strokeStyle = "rgba(14,18,40,.8)"; ctx.lineWidth = 3; ctx.lineJoin = "round";
       for (const p of this.provLabels) {
         if (p.size < min) continue;
@@ -277,13 +279,14 @@ void main(){
         if (pr[2] < 0.3) continue;
         const x = cx + pr[0], y = cy + pr[1];
         if (x < -50 || y < -20 || x > ov.clientWidth + 50 || y > ov.clientHeight + 20) continue;
-        ctx.strokeText(p.name, x, y); ctx.fillText(p.name, x, y);
+        window.KG.lines.canvas(ctx, p.name, x, y, 10, true);
       }
     }
     // города
     if (this.show.cities && this.zoom >= 2.2) {
       const icon = getCityIcon(), sz = Math.min(18, 6 + this.zoom * 1.4);
-      ctx.font = `300 ${Math.min(12, 6 + this.zoom).toFixed(0)}px Unbounded, "Exo 2", sans-serif`;
+      const csz = Math.min(12, 6 + this.zoom);
+      ctx.font = `300 ${csz.toFixed(0)}px ${this.fontOf("city")}`;
       ctx.textAlign = "left";
       ctx.fillStyle = "#f5f2ff"; ctx.strokeStyle = "rgba(14,10,30,.85)"; ctx.lineWidth = 3;
       for (const c of this.cities) {
@@ -292,7 +295,7 @@ void main(){
         const x = cx + pr[0], y = cy + pr[1];
         if (x < -40 || y < -20 || x > ov.clientWidth + 40 || y > ov.clientHeight + 20) continue;
         if (icon.complete) ctx.drawImage(icon, x - sz / 2, y - sz / 2, sz, sz);
-        if (c.name && this.zoom >= 3) { ctx.strokeText(c.name, x + sz / 2 + 2, y); ctx.fillText(c.name, x + sz / 2 + 2, y); }
+        if (c.name && this.zoom >= 3) window.KG.lines.canvas(ctx, c.name, x + sz / 2 + 2, y, csz, true);
       }
       ctx.textAlign = "center";
     }
@@ -319,7 +322,10 @@ void main(){
       }
     }
     // спутники и орбиты
-    const S = this.sats;
+    drawSats(this, ctx, this.sats, cx, cy);
+  };
+  // спутники и их орбиты (общая отрисовка для Земли и Луны): g — шар с project(lat, lon, rho), hidden(pr), zoom
+  function drawSats(g, ctx, S, cx, cy) {
     if (S && S.items.length) {
       ctx.lineCap = "round";
       for (const it of S.items) {
@@ -329,9 +335,9 @@ void main(){
           // кольцо орбиты: передняя часть сплошная, задняя (за шаром) — пунктир
           let prev = null;
           for (const pt of it.ring) {
-            const pr = this.project(pt.lat, pt.lon, pt.rho);
+            const pr = g.project(pt.lat, pt.lon, pt.rho);
             if (prev) {
-              const hid = this.hidden(pr) || this.hidden(prev);
+              const hid = g.hidden(pr) || g.hidden(prev);
               ctx.beginPath();
               ctx.setLineDash(hid ? [2, 5] : []);
               ctx.strokeStyle = it.s.color;
@@ -344,13 +350,13 @@ void main(){
           }
           ctx.setLineDash([]); ctx.globalAlpha = 1;
         }
-        const pr = this.project(it.pos.lat, it.pos.lon, it.pos.rho);
-        const hid = this.hidden(pr);
+        const pr = g.project(it.pos.lat, it.pos.lon, it.pos.rho);
+        const hid = g.hidden(pr);
         const x = cx + pr[0], y = cy + pr[1];
         it.screen = hid ? null : [x, y];
         if (hid) continue;
         // линия «вниз» к подспутниковой точке
-        const ground = this.project(it.pos.lat, it.pos.lon, 1);
+        const ground = g.project(it.pos.lat, it.pos.lon, 1);
         if (ground[2] > 0) {
           ctx.globalAlpha = 0.35; ctx.strokeStyle = it.s.color; ctx.lineWidth = 1; ctx.setLineDash([1, 3]);
           ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(cx + ground[0], cy + ground[1]); ctx.stroke();
@@ -376,13 +382,14 @@ void main(){
             ctx.arc(x, y, 3.4 * k, 0, Math.PI * 2); ctx.fill();
         }
         ctx.shadowBlur = 0;
-        if ((S.names && this.zoom > 0.12) || sel) {
+        if ((S.names && g.zoom > 0.12) || sel) {
           ctx.font = `${sel ? 400 : 300} ${sel ? 12 : 10}px Unbounded, "Exo 2", sans-serif`;
           ctx.fillStyle = it.s.color; ctx.strokeStyle = "rgba(3,8,20,.9)"; ctx.lineWidth = 3;
           ctx.strokeText(it.s.name, x, y - 11); ctx.fillText(it.s.name, x, y - 11);
         }
       }
     }
-  };
+  }
+  Globe.drawSats = drawSats;
   window.KGGlobe = Globe;
 })();
