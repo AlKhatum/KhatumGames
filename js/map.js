@@ -13,43 +13,26 @@
   const clone = v => (v == null ? null : JSON.parse(JSON.stringify(v)));
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-  // ---------- 10 типов отметок ----------
-  const MARKERS = [
-    { type: "capital", name: "Столица", color: "#ffd84a", icon: '<path class="m-ico fill" d="M0-7.5 2.2-2.4 7.6-2.2 3.4 1.2 4.8 6.6 0 3.6-4.8 6.6-3.4 1.2-7.6-2.2-2.2-2.4Z"/>' },
-    { type: "fortress", name: "Крепость", color: "#ff5470", icon: '<path class="m-ico" d="M-6 6.5V-2h2.4v-3h2v3h3.2v-3h2v3H6v8.5ZM-1.6 6.5V3h3.2v3.5"/>' },
-    { type: "port", name: "Порт", color: "#19e6ff", icon: '<path class="m-ico" d="M0-4.5V6.5M-3.5-2h7M-6 2.5c0 3 2.8 4 6 4s6-1 6-4"/><circle class="m-ico" cx="0" cy="-6" r="1.6"/>' },
-    { type: "battle", name: "Поле битвы", color: "#ff3b3b", icon: '<path class="m-ico" d="M-6-6 5 5M6-6-5 5M2.5 6.5 6.5 2.5M-2.5 6.5-6.5 2.5"/>' },
-    { type: "ruins", name: "Руины", color: "#c9b48a", icon: '<path class="m-ico" d="M-7 6.5h14M-5 6.5V-1l1.5-1.5M-1 6.5V-5.5h2.5v4M4 6.5V1.5l1.5-1"/>' },
-    { type: "temple", name: "Храм", color: "#c58bff", icon: '<path class="m-ico" d="M-7-2.5 0-7l7 4.5ZM-5-2.5v8M-1.7-2.5v8M1.7-2.5v8M5-2.5v8M-7 6.5h14"/>' },
-    { type: "mine", name: "Рудник", color: "#ffa646", icon: '<path class="m-ico" d="M-5.5 6.5 4-3M-6-4.5c3-2.5 9-2.5 12.5 1.5-4-1-7.5-.7-10 1"/>' },
-    { type: "camp", name: "Лагерь выживших", color: "#7dff6a", icon: '<path class="m-ico" d="M-7 6.5 0-6.5 7 6.5ZM0-6.5v-1.5M-2 6.5 0 2l2 4.5"/>' },
-    { type: "lighthouse", name: "Маяк", color: "#fff38a", icon: '<path class="m-ico" d="M-2.5 6.5-1.5-3.5h3l1 10ZM-2-3.5h4l-.5-2h-3ZM-3-4.5h-4M3-4.5h4M-2.5-7l-2.5-1.5M2.5-7l2.5-1.5"/>' },
-    { type: "flooded", name: "Затопленный город", color: "#3fa8ff", icon: '<path class="m-ico" d="M-4 1.5V-6h3.5v7.5M1.5 1.5V-3.5H5v5M-7 3.5c1.5-1.3 2.5-1.3 3.5 0s2.5 1.3 3.5 0 2.5-1.3 3.5 0 2.5 1.3 3.5 0M-7 6.5c1.5-1.3 2.5-1.3 3.5 0s2.5 1.3 3.5 0 2.5-1.3 3.5 0 2.5 1.3 3.5 0"/>' }
-  ];
-  const MT = {}; MARKERS.forEach(m => (MT[m.type] = m));
-
   // ---------- слои ----------
+  // road — цвет подсветки растровых линий; glow — цвет подсветки векторного слоя
   const LAYERS = [
     { id: "ocean", name: "Океан", kind: "div", cls: "ocean", vis: true },
     { id: "landDark", name: "Суша вне стран", kind: "img", src: "assets/map/land.png", cls: "land-dark", vis: true },
-    { id: "countries", name: "Страны (заливка)", kind: "svg", vis: true },
+    { id: "countries", name: "Заливка стран", kind: "svg", vis: true },
     { id: "relief", name: "Рельеф", kind: "img", src: "assets/map/land.png", cls: "relief", vis: true },
     { id: "hydro", name: "Гидрография", kind: "img", src: "assets/map/hydro.png", cls: "hydro", vis: true },
     { group: "roads", name: "Дороги", children: [
-      { id: "road_major", name: "Major Highway", kind: "img", src: "assets/map/road_major.png", vis: true, road: "#ff3fd0" },
-      { id: "road_secondary", name: "Secondary Highway", kind: "img", src: "assets/map/road_secondary.png", vis: true, road: "#19e6ff" },
-      { id: "road_road", name: "Road", kind: "img", src: "assets/map/road_road.png", vis: false, road: "#ffe14d" },
-      { id: "road_unknown", name: "Unknown", kind: "img", src: "assets/map/road_unknown.png", vis: false, road: "#7dff6a" }
+      { id: "road_major", name: "Главные автострады", kind: "img", src: "assets/map/road_major.png", vis: true, road: "#ff3fd0" },
+      { id: "road_road", name: "Основные магистрали", kind: "img", src: "assets/map/road_road.png", vis: false, road: "#ffe14d" },
+      { id: "road_secondary", name: "Второстепенные дороги", kind: "img", src: "assets/map/road_secondary.png", vis: true, road: "#19e6ff" },
+      { id: "rail", name: "Железные дороги", kind: "img", src: "assets/map/rail.png", vis: false, road: "#ff9b3d" }
     ] },
-    { id: "rail", name: "Железные дороги", kind: "img", src: "assets/map/rail.png", vis: false, opacity: 0.6 },
     { id: "citiesFill", name: "Городские зоны", kind: "img", src: "assets/map/cities_fill.png", vis: true, opacity: 0.45 },
-    { id: "outline", name: "Обводка (из PSD)", kind: "img", src: "assets/map/outline.png", vis: false },
-    { id: "borders", name: "Границы стран", kind: "svg", vis: true },
+    { id: "borders", name: "Границы стран", kind: "svg", vis: true, glow: "#ff3fd0" },
     { id: "coast", name: "Береговая линия", kind: "svg", vis: true },
     { id: "paint", kind: "canvas", internal: true },
-    { id: "labels", name: "Названия стран и подписи", kind: "svg", vis: true },
+    { id: "labels", name: "Страны", kind: "svg", vis: true, glow: "#ff7fd8" },
     { id: "cities", name: "Города", kind: "svg", vis: true },
-    { id: "markers", name: "Отметки", kind: "svg", vis: true },
     { id: "over", kind: "svg", internal: true }
   ];
   const L = {};
@@ -90,6 +73,10 @@
       el.classList.toggle("hl", on);
       el.style.filter = on ? `brightness(0) invert(1) drop-shadow(0 0 .6px ${l.road}) drop-shadow(0 0 1.4px ${l.road}) drop-shadow(0 0 3px ${l.road})` : "";
     }
+    if (l.glow) {
+      el.classList.toggle("hl", !!ui.hl[l.id]);
+      el.style.setProperty("--glow", l.glow);
+    }
   }
   function buildLayerList() {
     const list = $("layerList"); list.innerHTML = "";
@@ -98,11 +85,12 @@
       const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = isVisible(l);
       cb.addEventListener("change", () => { ui.vis[l.id] = cb.checked; applyLayer(l); saveUi(); syncGroups(); });
       r.append(cb);
-      if (l.road) { const sw = document.createElement("span"); sw.className = "swatch"; sw.style.background = l.road; r.append(sw); }
+      const hlc = l.road || l.glow;
+      if (hlc) { const sw = document.createElement("span"); sw.className = "swatch"; sw.style.background = hlc; r.append(sw); }
       const nm = document.createElement("span"); nm.className = "lname"; nm.textContent = l.name; r.append(nm);
-      if (l.road) {
+      if (hlc) {
         const b = document.createElement("button"); b.type = "button"; b.className = "hl-btn" + (ui.hl[l.id] ? " on" : ""); b.textContent = "Подсветка";
-        b.style.setProperty("--hl", l.road); b.title = "Сделать слой видимым и подсветить";
+        b.style.setProperty("--hl", hlc); b.title = "Сделать слой видимым и подсветить";
         b.addEventListener("click", e => {
           e.preventDefault();
           ui.hl[l.id] = !ui.hl[l.id];
@@ -167,6 +155,9 @@
       <rect x="4.9" y="-1.8" width="0.7" height="0.7"/><rect x="4.9" y="-0.4" width="0.7" height="0.7"/><rect x="4.9" y="1" width="0.7" height="0.7"/><rect x="4.9" y="2.4" width="0.7" height="0.7"/>
       <rect x="-7" y="1" width="0.8" height="1.5"/><rect x="-5.6" y="2.7" width="1" height="0.6"/>
     </g></symbol></defs>`;
+  // градиент для названий стран — светлый, чтобы не сливаться с тёмными границами
+  L.labels.insertAdjacentHTML("afterbegin", `<defs><linearGradient id="lblGrad" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#fff4fd"/><stop offset=".5" stop-color="#ffc3ef"/><stop offset="1" stop-color="#ff74d4"/></linearGradient></defs>`);
   const gCountryLabels = svgEl("g", {}, L.labels);
   const gCustom = svgEl("g", {}, L.labels);
   const coastPath = svgEl("path", { class: "coast-line" }, L.coast);
@@ -176,7 +167,7 @@
   // ---------- состояние ----------
   let config = null, state = null, loadedStamp = "";
   let gm = false, dirty = false, terrDirty = false;
-  const els = { cfill: {}, cborder: {}, clabel: {}, cities: {}, labels: {}, markers: {} };
+  const els = { cfill: {}, cborder: {}, clabel: {}, cities: {}, labels: {} };
   const paths = new Map(); // id страны -> d
   const flagCache = {};   // id -> dataURL (флаги, загруженные в этой сессии)
 
@@ -201,6 +192,7 @@
     if (!t) { t = svgEl("text", { class: "lbl-country", "data-col": "countries", "data-id": id, "data-part": "label" }, gCountryLabels); els.clabel[id] = t; }
     t.setAttribute("x", c.label[0]); t.setAttribute("y", c.label[1]);
     t.setAttribute("font-size", c.size); t.setAttribute("letter-spacing", (c.size * 0.22).toFixed(1));
+    t.setAttribute("stroke-width", Math.max(0.8, c.size * 0.14).toFixed(1));
     t.textContent = c.name;
   }
   function cityText(c) {
@@ -236,26 +228,8 @@
     t.setAttribute("letter-spacing", (e.size * 0.15).toFixed(1));
     t.textContent = e.text;
   }
-  const markerScale = () => Math.min(2.2, Math.max(0.35, 0.95 / s));
-  function placeMarker(g) { g.setAttribute("transform", `translate(${g.dataset.x} ${g.dataset.y}) scale(${markerScale().toFixed(3)})`); }
-  function renderMarker(id) {
-    const e = state.markers[id];
-    let g = els.markers[id];
-    if (!e) { if (g) { g.remove(); delete els.markers[id]; } return; }
-    const mt = MT[e.type] || MARKERS[0];
-    if (!g || g.dataset.type !== e.type) {
-      if (g) g.remove();
-      g = svgEl("g", { class: "marker", "data-col": "markers", "data-id": id, "data-type": e.type }, L.markers);
-      g.innerHTML = `<circle class="m-ring" r="11" stroke="${mt.color}" style="filter:drop-shadow(0 0 3px ${mt.color})"/>` +
-        `<g stroke="${mt.color}" fill="${mt.color}">${mt.icon}</g><text y="23"></text>`;
-      els.markers[id] = g;
-    }
-    g.querySelector("text").textContent = e.title || mt.name;
-    g.dataset.x = e.x; g.dataset.y = e.y;
-    placeMarker(g);
-  }
-  const RENDER = { countries: renderCountry, cities: renderCity, labels: renderLabel, markers: renderMarker };
-  const COLS = ["countries", "cities", "labels", "markers"];
+  const RENDER = { countries: renderCountry, cities: renderCity, labels: renderLabel };
+  const COLS = ["countries", "cities", "labels"];
 
   // ---------- вид ----------
   let s = 0.3, tx = 0, ty = 0, fitS = 0.3;
@@ -268,7 +242,6 @@
     world.style.transform = `translate(${tx}px, ${ty}px) scale(${s})`;
     L.cities.style.visibility = s < 0.85 ? "hidden" : "";
     frame.style.setProperty("--s", s);
-    Object.values(els.markers).forEach(placeMarker);
   }
   function fit() {
     const vw = viewport.clientWidth, vh = viewport.clientHeight;
@@ -305,7 +278,7 @@
     document.querySelectorAll(".is-sel").forEach(el => el.classList.remove("is-sel"));
     sel = ent && state[ent.col] && state[ent.col][ent.id] ? { col: ent.col, id: String(ent.id) } : null;
     if (sel) {
-      const map = { cities: els.cities, labels: els.labels, markers: els.markers, countries: els.clabel }[sel.col];
+      const map = { cities: els.cities, labels: els.labels, countries: els.clabel }[sel.col];
       if (map && map[sel.id]) map[sel.id].classList.add("is-sel");
     }
     selPath.setAttribute("d", sel && sel.col === "countries" ? paths.get(sel.id) || "" : "");
@@ -612,9 +585,9 @@
   };
 
   // ---------- инструменты ГМа ----------
-  let tool = "pan", markerType = "capital", brushCountry = null, pencilSize = 2;
+  let tool = "pan", brushCountry = null, pencilSize = 2;
   const HINTS = {
-    pan: "Перетаскивайте карту, колесо — масштаб. Клик по стране — легенда. Двойной клик — переименовать. Города, подписи и отметки можно перетаскивать (подпись города — отдельно от значка).",
+    pan: "Перетаскивайте карту, колесо — масштаб. Клик по стране — легенда. Двойной клик — переименовать. Города и подписи можно перетаскивать (подпись города — отдельно от значка).",
     brush: "Кисть: рисуйте территорию выбранной страны. [ и ] — размер, Alt+клик — взять страну с карты, правая кнопка — двигать карту.",
     pencil: "Карандаш: точная правка границы (1–4 px). Alt+клик — взять страну с карты, правая кнопка — двигать карту.",
     eraser: "Ластик: убирает территорию (суша становится ничьей).",
@@ -622,8 +595,7 @@
     picker: "Пипетка: кликните по стране, чтобы рисовать ей.",
     city: "Кликните по карте, чтобы добавить город.",
     label: "Кликните по карте, чтобы добавить подпись.",
-    marker: "Выберите тип отметки и кликните по карте.",
-    erase: "Кликните по городу, подписи, отметке или стране, чтобы удалить (Ctrl+Z — вернуть)."
+    erase: "Кликните по городу, подписи или стране, чтобы удалить (Ctrl+Z — вернуть)."
   };
   const PAINT = ["brush", "pencil", "eraser", "fill", "picker"];
   function setTool(t) {
@@ -631,7 +603,6 @@
     tool = t;
     document.querySelectorAll("#toolbar [data-tool]").forEach(b => b.classList.toggle("active", b.dataset.tool === t));
     viewport.className = "viewport tool-" + t;
-    $("markerPalette").classList.toggle("hidden", !gm || t !== "marker");
     $("brushBar").classList.toggle("hidden", !gm || !PAINT.includes(t) || t === "picker");
     $("hint").textContent = gm ? HINTS[t] || "" : "Перетаскивайте карту, колесо — масштаб. Клик по стране — её флаг и название в легенде. Слои — во вкладке «Слои».";
     const sz = $("bbSize");
@@ -663,16 +634,6 @@
   function setBrushCountry(id) { brushCountry = String(id); $("bbCountry").value = brushCountry; updateSwatch(); }
   function updateSwatch() { const c = state.countries[brushCountry]; $("bbSwatch").style.background = c ? c.color : "transparent"; }
   $("bbCountry").addEventListener("change", e => { brushCountry = e.target.value; updateSwatch(); });
-  // палитра отметок
-  MARKERS.forEach(m => {
-    const b = document.createElement("button"); b.dataset.type = m.type;
-    b.innerHTML = `<svg viewBox="-13 -13 26 26"><circle r="11" fill="rgba(9,14,36,.9)" stroke="${m.color}" stroke-width="1.6"/>` +
-      `<g stroke="${m.color}" fill="${m.color}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${m.icon.replace(/class="m-ico"/g, 'fill="none"').replace(/class="m-ico fill"/g, 'stroke="none"')}</g></svg><span>${m.name}</span>`;
-    b.addEventListener("click", () => { markerType = m.type; $("markerPalette").querySelectorAll("button").forEach(x => x.classList.toggle("active", x === b)); });
-    if (m.type === markerType) b.classList.add("active");
-    $("markerPalette").append(b);
-  });
-
   function newCountryId() { for (let i = 1; i < 256; i++) if (!state.countries[i] && !T.bbox[i]) return String(i); return null; }
   $("addCountryBtn").onclick = async () => {
     if (!gm) return;
@@ -781,8 +742,8 @@
   // ---------- переименование ----------
   async function rename(ent) {
     const e = state[ent.col] && state[ent.col][ent.id]; if (!e) return;
-    const field = { countries: "name", cities: "name", labels: "text", markers: "title" }[ent.col];
-    const title = { countries: "Переименовать страну", cities: "Переименовать город", labels: "Изменить подпись", markers: "Название отметки" }[ent.col];
+    const field = { countries: "name", cities: "name", labels: "text" }[ent.col];
+    const title = { countries: "Переименовать страну", cities: "Переименовать город", labels: "Изменить подпись" }[ent.col];
     const v = await ask(title, e[field]);
     if (!v || v === e[field]) return;
     const a = clone(e); a[field] = v; commit(ent.col, ent.id, e, a);
@@ -805,14 +766,6 @@
       if (!text) return;
       const id = uid("l");
       commit("labels", id, null, { id, text, x: Math.round(p[0]), y: Math.round(p[1]), size: 14 });
-      return;
-    }
-    if (tool === "marker") {
-      const mt = MT[markerType];
-      const title = await ask("Название отметки («" + mt.name + "»)", mt.name);
-      if (title === null) return;
-      const id = uid("m");
-      commit("markers", id, null, { id, type: markerType, title, x: Math.round(p[0]), y: Math.round(p[1]) });
       return;
     }
     if (tool === "erase") {
@@ -919,7 +872,7 @@
     }
     if (e.key === "Escape") { select(null); return; }
     if (e.key === "Delete" && sel) { if (sel.col === "countries") deleteCountry(sel.id); else commit(sel.col, sel.id, state[sel.col][sel.id], null); return; }
-    const map = { v: "pan", м: "pan", b: "brush", и: "brush", p: "pencil", з: "pencil", e: "eraser", у: "eraser", g: "fill", п: "fill", i: "picker", ш: "picker", c: "city", с: "city", n: "label", т: "label", m: "marker", ь: "marker", d: "erase", в: "erase" };
+    const map = { v: "pan", м: "pan", b: "brush", и: "brush", p: "pencil", з: "pencil", e: "eraser", у: "eraser", g: "fill", п: "fill", i: "picker", ш: "picker", c: "city", с: "city", n: "label", т: "label", d: "erase", в: "erase" };
     if (map[k]) setTool(map[k]);
   });
   window.addEventListener("keyup", e => { if (e.code === "Space") spaceDown = false; });

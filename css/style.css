@@ -154,10 +154,16 @@ main { position: relative; z-index: 5; height: calc(100% - 58px); }
 
 /* подписи (шрифт по шаблону — широкий тонкий гротеск) */
 .lbl-country {
-  font-family: var(--font-wide); font-weight: 300; text-transform: uppercase;
-  fill: rgba(30, 22, 45, .78); text-anchor: middle; dominant-baseline: middle;
+  font-family: var(--font-wide); font-weight: 400; text-transform: uppercase;
+  fill: url(#lblGrad); stroke: rgba(28, 12, 44, .85); paint-order: stroke; stroke-linejoin: round;
+  text-anchor: middle; dominant-baseline: middle;
   pointer-events: visiblePainted; cursor: pointer; user-select: none;
 }
+/* подсветка слоёв «Страны» и «Границы стран» */
+#labelsLayer.hl { filter: drop-shadow(0 0 1.5px var(--glow)) drop-shadow(0 0 5px var(--glow)); }
+#labelsLayer.hl .lbl-country { stroke: rgba(70, 0, 60, .9); }
+#bordersLayer.hl { filter: drop-shadow(0 0 1.2px var(--glow)) drop-shadow(0 0 4px var(--glow)); }
+#bordersLayer.hl path { stroke: #ff9be9; stroke-width: 1.7px; }
 .lbl-custom {
   font-family: var(--font-wide); font-weight: 300; fill: var(--pink-soft); stroke: rgba(4, 18, 40, .7); stroke-width: 2px; paint-order: stroke;
   text-anchor: middle; dominant-baseline: middle; pointer-events: visiblePainted; cursor: pointer; user-select: none;
@@ -169,12 +175,6 @@ main { position: relative; z-index: 5; height: calc(100% - 58px); }
 }
 .city use { cursor: pointer; pointer-events: all; }
 .is-sel, .city.is-sel text { fill: var(--pink) !important; }
-.marker { cursor: pointer; pointer-events: all; }
-.marker .m-ring { fill: rgba(9, 14, 36, .85); stroke-width: 1.6; vector-effect: non-scaling-stroke; }
-.marker .m-ico { fill: none; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
-.marker .m-ico.fill { stroke: none; }
-.marker text { font-family: var(--font-wide); font-weight: 300; font-size: 8px; fill: #fff; stroke: rgba(10, 14, 40, .85); stroke-width: 2px; paint-order: stroke; text-anchor: middle; }
-.marker.is-sel .m-ring { stroke-width: 3; }
 
 /* ---------- ГМ ---------- */
 body:not(.is-gm) .gm-only { display: none !important; }
@@ -208,10 +208,6 @@ body:not(.is-gm) .gm-only { display: none !important; }
 .brushbar input[type=checkbox] { accent-color: var(--line); vertical-align: middle; }
 .brushbar b { display: inline-block; min-width: 24px; color: var(--line); font-weight: 600; }
 .bb-swatch { width: 16px; height: 16px; border-radius: 3px; border: 1px solid rgba(255, 255, 255, .5); }
-.marker-palette { position: absolute; z-index: 7; left: 88px; top: 50%; transform: translateY(-50%); padding: 6px; display: grid; gap: 3px; max-height: 90%; overflow: auto; }
-.marker-palette button { display: flex; align-items: center; gap: 8px; background: transparent; border: 1px solid transparent; border-radius: 3px; padding: 4px 8px; font-size: 13px; text-align: left; }
-.marker-palette button.active { border-color: var(--line); background: rgba(24, 217, 245, .14); }
-.marker-palette svg { width: 22px; height: 22px; flex: none; }
 .zoom { position: absolute; z-index: 7; right: 10px; bottom: 10px; display: flex; flex-direction: column; }
 .zoom button { width: 34px; height: 34px; background: transparent; border: none; font-size: 18px; }
 .zoom button:hover { color: var(--line); }
@@ -318,8 +314,7 @@ body.is-gm .country-title { display: none; }
   .toolbar button { width: 54px; flex: none; }
   .toolbar .sep { width: 1px; height: auto; margin: 4px 3px; }
   .brushbar { top: 112px; flex-wrap: wrap; white-space: normal; max-width: calc(100% - 12px); }
-  .marker-palette { left: 6px; top: 112px; transform: none; max-height: 55%; }
-  .map-title, .hint { display: none; }
+    .map-title, .hint { display: none; }
   .gm-bar { top: 6px; right: 6px; flex-wrap: wrap; justify-content: flex-end; }
 }
 body.is-gm .map-title { display: none; }
