@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Khatum Games — Карта мира</title>
-<meta name="description" content="Khatum Games: интерактивная карта мира после Великого Потопа.">
+<meta name="description" content="Khatum Games — вики мира после Великого Потопа: интерактивная карта, глобус, Луна и лор.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@200;300;400;600&family=Oswald:wght@400;500&family=Exo+2:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/style.css?v=20261112d">
 </head>
 <body>
 
@@ -28,7 +28,6 @@
   <nav class="tabs" id="tabs">
     <button data-tab="home">Главная</button>
     <button data-tab="map" class="active">Карта</button>
-    <button data-tab="games">Игры</button>
     <button data-tab="lore">Лор</button>
     <button data-tab="news">Новости</button>
     <button data-tab="gallery">Галерея</button>
@@ -266,38 +265,90 @@
     </div>
   </section>
 
-  <!-- ================= ЗАГЛУШКИ ================= -->
+  <!-- ================= ГЛАВНАЯ (вики) ================= -->
   <section class="page" id="page-home">
-    <div class="stub panel">
-      <h1>KHATUM GAMES</h1>
-      <p>Мир после Великого Потопа. Здесь появится главная страница проекта.</p>
-      <div class="stub-btns">
-        <button data-goto="map">Открыть карту</button>
-        <button class="soon">Начать игру</button>
-        <button class="soon">Войти</button>
-        <button class="soon">Discord</button>
+    <div class="page-scroll">
+      <div class="stub panel">
+        <h1>KHATUM GAMES</h1>
+        <p class="lead">Вики мира после Великого Потопа.</p>
+        <p>Здесь собрано всё, что нужно игрокам: живая карта мира с государствами, провинциями, городами и спутниками, Луна, лор и новости кампании. Сайт пока работает как справочник — заглядывайте, когда нужно освежить в памяти, кто с кем граничит и что творится на орбите.</p>
+        <div class="stub-btns">
+          <button data-goto="map">Открыть карту</button>
+          <button data-goto="lore">Лор</button>
+          <button data-goto="about">О нас</button>
+        </div>
       </div>
     </div>
   </section>
-  <section class="page" id="page-games">
-    <div class="stub panel"><h1>Игры</h1><p>Раздел в разработке.</p>
-      <div class="stub-btns"><button class="soon">Проект I</button><button class="soon">Проект II</button><button class="soon">Скачать</button></div></div>
-  </section>
+
+  <!-- ================= ЛОР ================= -->
   <section class="page" id="page-lore">
-    <div class="stub panel"><h1>Лор</h1><p>Хроники мира после Потопа — скоро.</p>
-      <div class="stub-btns"><button class="soon">Хронология</button><button class="soon">Фракции</button><button class="soon">Персонажи</button></div></div>
+    <div class="page-scroll">
+      <div class="stub panel wide">
+        <h1>Лор</h1>
+        <p>Мир двадцать третьего века после Великого Потопа. Разделы заполняются по ходу кампании.</p>
+        <div class="lore-grid" id="loreGrid">
+          <button class="lore-card" data-lore="ideologies"><b>Идеологии 23-го века</b><span>Во что верят и за что воюют</span></button>
+          <button class="lore-card" data-lore="corporations"><b>Корпорации</b><span>Кто владеет водой, орбитой и всем остальным</span></button>
+          <button class="lore-card" data-lore="chronology"><b>Хронология</b><span>От Великого Потопа до наших дней</span></button>
+          <button class="lore-card" data-lore="states"><b>Государства</b><span>Страны, союзы и территории на карте</span></button>
+        </div>
+        <article class="lore-article hidden" id="loreArticle">
+          <button class="lore-back" id="loreBack">← Все разделы</button>
+          <h2 id="loreTitle"></h2>
+          <p class="lore-stub">Раздел в разработке. Скоро здесь появятся статьи — а пока лор живёт в головах игроков и ГМа.</p>
+        </article>
+      </div>
+    </div>
   </section>
+
+  <!-- ================= НОВОСТИ, ГАЛЕРЕЯ ================= -->
   <section class="page" id="page-news">
-    <div class="stub panel"><h1>Новости</h1><p>Пока новостей нет.</p>
-      <div class="stub-btns"><button class="soon">Девлог</button><button class="soon">Обновления</button></div></div>
+    <div class="page-scroll">
+      <div class="stub panel"><h1>Новости</h1><p>Пока новостей нет.</p>
+        <div class="stub-btns"><button class="soon">Девлог</button><button class="soon">Обновления</button></div></div>
+    </div>
   </section>
   <section class="page" id="page-gallery">
-    <div class="stub panel"><h1>Галерея</h1><p>Арты и скриншоты появятся здесь.</p>
-      <div class="stub-btns"><button class="soon">Арты</button><button class="soon">Скриншоты</button><button class="soon">Видео</button></div></div>
+    <div class="page-scroll">
+      <div class="stub panel"><h1>Галерея</h1><p>Арты и скриншоты появятся здесь.</p>
+        <div class="stub-btns"><button class="soon">Арты</button><button class="soon">Скриншоты</button><button class="soon">Видео</button></div></div>
+    </div>
   </section>
+
+  <!-- ================= О НАС ================= -->
   <section class="page" id="page-about">
-    <div class="stub panel"><h1>О нас</h1><p>Информация о команде Khatum Games.</p>
-      <div class="stub-btns"><button class="soon">Команда</button><button class="soon">Контакты</button></div></div>
+    <div class="page-scroll">
+      <div class="stub panel wide about">
+        <h1>О нас</h1>
+        <p class="lead">Сайт и игра принадлежат команде <b>KhatumGames</b> и её владельцу — <b>Александру Кулыгину</b>.</p>
+        <p>Этот сайт навайбкоден. Его собирали не по строгому техническому заданию, а на энтузиазме, вдохновении и долгих разговорах с нейросетью — по принципу «а давай ещё вот это добавим». Он создан для развлечения игроков, которые согласились играть в эту шизофрению и, судя по всему, ни о чём не жалеют.</p>
+
+        <h2>Что здесь происходит</h2>
+        <p>Мир после Великого Потопа — сеттинг, в котором океан забрал старые берега, а вместе с ними и привычный политический порядок. На обломках прежних держав выросли новые государства, корпорации делят воду, ресурсы и орбиту, а идеологии двадцать третьего века спорят о том, каким должно быть будущее человечества — если оно вообще у него есть.</p>
+        <p>Игру ведёт ГМ, а игроки принимают решения за свои государства и организации. Поэтому карта здесь — не картинка, а живой документ: границы двигаются после войн и договоров, на орбите появляются новые станции, на Луне вырастают базы и прокладываются дороги. Всё это ГМ правит прямо на сайте.</p>
+
+        <h2>Что есть на сайте</h2>
+        <ul>
+          <li><b>Карта мира</b> — государства, провинции, города, дороги, линейка и циркуль для расчёта расстояний.</li>
+          <li><b>Глобус</b> — та же Земля шаром, с орбитальными станциями и спутниками.</li>
+          <li><b>Луна</b> — реальные моря, кратеры и места посадок, а также территории, базы и дороги мира игры.</li>
+          <li><b>Лор</b> — идеологии, корпорации, хронология и государства (разделы наполняются).</li>
+        </ul>
+
+        <h2>Честное предупреждение</h2>
+        <p>Всё на этом сайте может измениться без предупреждения — такова природа мира после Потопа (и вайбкодинга). Совпадения с реальными государствами, организациями и людьми случайны или являются художественным вымыслом. Сайт некоммерческий и сделан для своих.</p>
+
+        <h2>Контакты</h2>
+        <div class="stub-btns contacts">
+          <a class="btn-link" href="https://discord.gg/ugWHpUAVq" target="_blank" rel="noopener">Discord</a>
+          <a class="btn-link" href="https://vk.ru/beyond_earth_kulyga" target="_blank" rel="noopener">ВКонтакте</a>
+        </div>
+
+        <h2>Источники</h2>
+        <p class="small-text">Административные границы — Natural Earth (общественное достояние). Поверхность Луны — NASA, Lunar Reconnaissance Orbiter, CGI Moon Kit (общественное достояние). Названия на Луне — номенклатура Международного астрономического союза. Шрифты — Google Fonts. Фоновая музыка — YouTube.</p>
+      </div>
+    </div>
   </section>
 </main>
 
@@ -319,14 +370,14 @@
   </div>
 </div>
 
-<script src="js/app.js"></script>
-<script src="js/geo.js"></script>
-<script src="js/territory.js"></script>
-<script src="js/sats.js"></script>
-<script src="js/globe.js"></script>
-<script src="js/github.js"></script>
-<script src="js/map.js"></script>
-<script src="js/moon-names.js"></script>
-<script src="js/moon.js"></script>
+<script src="js/app.js?v=20261112c"></script>
+<script src="js/geo.js?v=20261112c"></script>
+<script src="js/territory.js?v=20261112c"></script>
+<script src="js/sats.js?v=20261112c"></script>
+<script src="js/globe.js?v=20261112c"></script>
+<script src="js/github.js?v=20261112c"></script>
+<script src="js/map.js?v=20261112c"></script>
+<script src="js/moon-names.js?v=20261112c"></script>
+<script src="js/moon.js?v=20261112c"></script>
 </body>
 </html>

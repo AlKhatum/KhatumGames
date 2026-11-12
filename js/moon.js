@@ -399,6 +399,7 @@
     $("mbSizeBox").classList.toggle("hidden", !["brush", "pencil", "eraser"].includes(t));
     $("mbMarkBox").classList.toggle("hidden", t !== "mark");
     $("mbRoadBox").classList.toggle("hidden", t !== "road");
+    requestAnimationFrame(() => { const bb = $("mBrushBar"); wrap.style.setProperty("--bbh", bb.classList.contains("hidden") ? "0px" : bb.offsetHeight + "px"); });
     const sz = $("mbSize"); if (t === "pencil") { sz.max = 4; sz.value = pencil; } else { sz.max = 80; sz.value = brush; }
     $("mbSizeVal").textContent = sz.value;
     cursor.style.display = isGm() && ["brush", "pencil", "eraser"].includes(t) ? "" : "none";

@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Khatum Games — тесты</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 20px; background: #070b1d; color: #dff6ff; font: 14px/1.5 "Segoe UI", sans-serif; }
+  h1 { font-size: 18px; margin: 0 0 6px; }
+  #summary { margin: 0 0 16px; font-weight: 600; }
+  .ok { color: #7dff6a; } .fail { color: #ff5470; }
+  .group { margin: 14px 0 4px; color: #18d9f5; text-transform: uppercase; letter-spacing: .1em; font-size: 12px; }
+  .t { padding: 2px 0; } .t small { color: #8aa3c2; margin-left: 6px; }
+</style>
+</head>
+<body>
+<h1>Автотесты карты Khatum Games</h1>
+<div id="summary">Выполняется…</div>
+<div id="out"></div>
+<script src="../js/geo.js?v=20261112c"></script>
+<script src="../js/territory.js?v=20261112c"></script>
+<script src="../js/sats.js?v=20261112c"></script>
+<script src="../js/moon-names.js?v=20261112c"></script>
+<script>
+(async function () {
+  "use strict";
+  const out = document.getElementById("out");
+  let pass = 0, fail = 0;
+  const results = [];
+  function group(name) { const d = document.createElement("div"); d.className = "group"; d.textContent = name; out.append(d); }
+  async function test(name, fn) {
+    const d = document.createElement("div"); d.className = "t";
+    try {
+      const note = await fn();
+      d.innerHTML = `<span class="ok">✔</span> ${name}` + (note ? `<small>${note}</small>` : "");
+      pass++; results.push({ name, ok: true, note });
+    } catch (e) {
+      d.innerHTML = `<span class="fail">✘</span> ${name}<small>${e.message}</small>`;
+      fail++; results.push({ name, ok: false, error: e.message });
+    }
+    out.append(d);
+  }
+  const assert = (c, msg) => { if (!c) throw new Error(msg || "условие не выполнено"); };
+  const near = (a, b, tol, what) => assert(Math.abs(a - b) <= tol, `${what || "значение"}: ${a} ≠ ${b} ± ${tol}`);
+  const json = u => fetch(u + "?t=" + Date.now(), { cache: "no-store" }).then(r => { if (!r.ok) throw new Error(u + ": " + r.status); return r.json(); });
+  async function pngPixels(src) {
+    const img = new Image(); img.src = src; await img.decode();
+    const c = document.createElement("canvas"); c.width = img.width; c.height = img.height;
+    const x = c.getContext("2d"); x.drawImage(img, 0, 0); return x.getImageData(0, 0, c.width, c.height).data;
+  }
+
+  const G = window.KGGeo, S = window.KGSats;
+  const map = await json("../data/map.json"), moon = await json("../data/moon.json"), cfg = await json("../data/config.json");
+
+  group("География и расстояния");
+  await test("Перевод координат туда-обратно", () => {
+    for (const [la, lo] of [[0, 0], [55.75, 37.6], [-33.9, 151.2], [70, -150], [-60, 10]]) {
+      const [x, y] = G.toXY(la, lo), [la2, lo2] = G.toLL(x, y);
+      near(la2, la, 1e-9, "широта"); near(lo2, lo, 1e-9, "долгота");
+    }
+  });
+  await test("Москва — Париж по реальным координатам ≈ 2486 км", () => { const d = G.dist([55.756, 37.617], [48.857, 2.352]); near(d, 2486, 6, "км"); return Math.round(d) + " км"; });
+  await test("Точка на расстоянии 1000 км действительно в 1000 км", () => {
+    for (const brg of [0, 45, 90, 200, 315]) near(G.dist([40, 20], G.dest([40, 20], brg, 1000)), 1000, 0.01, "км");
+  });
+  await test("Дуга большого круга начинается и кончается в нужных точках", () => {
+    const a = [10, -40], b = [50, 60], arc = G.arc(a, b, 20);
+    near(arc[0][0], a[0], 1e-6); near(arc[20][1], b[1], 1e-6); assert(arc.length === 21);
+  });
+  await test("Калибровка проекции по реальным городам (ошибка < 6 px)", () => {
+    const real = { "Москва": [55.756, 37.617], "Париж": [48.857, 2.352], "Мадрид": [40.417, -3.704], "Сидней": [-33.869, 151.209], "Пекин": [39.904, 116.407],
+      "Найроби": [-1.286, 36.817], "Сантьяго": [-33.449, -70.669], "Мехико": [19.433, -99.133], "Гонолулу": [21.307, -157.858], "Якутск": [62.035, 129.675] };
+    const pos = {}; Object.values(map.cities).forEach(c => (pos[c.name] = [c.x, c.y]));
+    let sum = 0, n = 0;
+    for (const nm in real) { if (!pos[nm]) continue; const [x, y] = G.toXY(real[nm][0], real[nm][1]); sum += (x - pos[nm][0]) ** 2 + (y - pos[nm][1]) ** 2; n++; }
+    const rms = Math.sqrt(sum / n); assert(n >= 8, "мало городов"); assert(rms < 6, "ошибка " + rms.toFixed(2) + " px");
+    return "по " + n + " городам: " + rms.toFixed(2) + " px ≈ " + Math.round(rms * 9.8) + " км";
+  });
+
+  group("Движок территорий");
+  await test("Контуры синтетической фигуры замкнуты и отдельны для каждой метки", () => {
+    const T = window.KGTerritoryMake(false);
+    T.W = 12; T.H = 10; T.ids = new Uint8Array(120); T.land = new Uint8Array(120).fill(1); T.mark = new Uint32Array(120); T.strokeNo = 0;
+    for (let y = 2; y < 7; y++) for (let x = 2; x < 6; x++) T.ids[y * 12 + x] = 1;
+    for (let y = 2; y < 7; y++) for (let x = 6; x < 10; x++) T.ids[y * 12 + x] = 2;
+    T.computeBBoxes();
+    const p = T.allPaths();
+    assert(p.get(1) && p.get(1).endsWith("Z"), "контур 1"); assert(p.get(2) && p.get(2).endsWith("Z"), "контур 2");
+    assert(T.bbox[1][0] === 2 && T.bbox[2][2] === 10, "рамки");
+  });
+  await test("Мазок и отмена возвращают растр до пикселя", () => {
+    const T = window.KGTerritoryMake(false);
+    T.W = 64; T.H = 64; T.ids = new Uint8Array(4096); T.land = new Uint8Array(4096).fill(1); T.mark = new Uint32Array(4096); T.strokeNo = 0;
+    T.ids.fill(3, 0, 2048); T.computeBBoxes();
+    const before = T.ids.slice(), ch = T.beginStroke();
+    T.line(5, 5, 50, 50, 4, 7, { land: true, keep: false }, ch);
+    const st = T.endStroke(ch); assert(st.idx.length > 100, "мазок слишком мал");
+    T.apply(st, true); for (let i = 0; i < 4096; i++) assert(T.ids[i] === before[i], "пиксель " + i);
+    T.apply(st, false); assert(T.ids[10 * 64 + 10] === 7, "повтор");
+    return st.idx.length + " пикселей";
+  });
+  await test("«Не трогать соседей» не перекрашивает чужие страны", () => {
+    const T = window.KGTerritoryMake(false);
+    T.W = 32; T.H = 32; T.ids = new Uint8Array(1024); T.land = new Uint8Array(1024).fill(1); T.mark = new Uint32Array(1024); T.strokeNo = 0;
+    T.ids.fill(5, 0, 512); T.computeBBoxes();
+    const ch = T.beginStroke(); T.stamp(16, 16, 10, 9, { land: true, keep: true }, ch); T.endStroke(ch);
+    for (let i = 0; i < 512; i++) assert(T.ids[i] === 5, "сосед перекрашен");
+  });
+  let T8 = null;
+  await test("Растр стран: все 139 стран из данных есть на карте", async () => {
+    T8 = window.KGTerritoryMake(false);
+    await T8.load("../data/territories.png?t=" + Date.now(), "../assets/map/land.png");
+    const missing = Object.keys(map.countries).filter(id => !T8.bbox[+id]);
+    assert(!missing.length, "нет на карте: " + missing.join(", "));
+    return Object.keys(map.countries).length + " стран, " + T8.W + "×" + T8.H;
+  });
+  await test("Растр стран сохраняется в PNG без потерь", async () => {
+    const blob = await T8.toPngBlob(), d = await pngPixels(URL.createObjectURL(blob));
+    let diff = 0; for (let i = 0; i < T8.ids.length; i++) if (T8.ids[i] !== d[i * 4]) diff++;
+    assert(diff === 0, diff + " пикселей отличаются"); return Math.round(blob.size / 1024) + " КБ";
+  });
+  await test("Растр провинций (16 бит): все провинции из данных есть на карте, PNG без потерь", async () => {
+    const P = window.KGTerritoryMake(true);
+    await P.load("../data/provinces.png?t=" + Date.now(), T8.land);
+    const ids = Object.keys(map.provinces), missing = ids.filter(id => !P.bbox[+id]);
+    assert(!missing.length, "нет на карте: " + missing.slice(0, 10).join(", "));
+    const blob = await P.toPngBlob(), d = await pngPixels(URL.createObjectURL(blob));
+    let diff = 0; for (let i = 0; i < P.ids.length; i++) if (P.ids[i] !== d[i * 4] + d[i * 4 + 1] * 256) diff++;
+    assert(diff === 0, diff + " пикселей отличаются");
+    return ids.length + " провинций";
+  });
+
+  group("Орбиты");
+  await test("Станция «Ковчег» (418 км) делает виток ≈ 92,8 мин", () => {
+    const k = map.satellites.kovcheg; assert(k, "нет «Ковчега»");
+    const m = S.period(k) / 60; near(m, 92.8, 0.5, "мин"); return m.toFixed(1) + " мин";
+  });
+  await test("Геостационарный спутник висит над своей долготой", () => {
+    const g = Object.values(map.satellites).find(s => s.orbit === "geo"); assert(g, "нет геостационарного");
+    const a = S.at(g, Date.now()), b = S.at(g, Date.now() + 6 * 3600e3);
+    // радиус геостационарной орбиты 42 164 км (высота над средним радиусом Земли ≈ 35 793 км)
+    near(a.lon, b.lon, 1e-9, "долгота"); near(a.alt + S.RE, 42164, 2, "радиус орбиты, км"); near(S.period(g) / 3600, 23.934, 0.01, "часы");
+  });
+  await test("Эллиптическая орбита: высота между перигеем и апогеем", () => {
+    const m = Object.values(map.satellites).find(s => s.orbit === "ell"); assert(m, "нет эллиптического");
+    let lo = 1e9, hi = 0; for (let t = 0; t < S.period(m) * 1000; t += 60000) { const p = S.at(m, Date.now() + t); lo = Math.min(lo, p.alt); hi = Math.max(hi, p.alt); }
+    near(lo, m.hp, 30, "перигей"); near(hi, m.ha, 30, "апогей"); return Math.round(lo) + "–" + Math.round(hi) + " км";
+  });
+  await test("Луна на расстоянии ≈ 384 400 км от центра Земли", () => { const p = S.moonAt(Date.now()); near(p.alt + 6371, 384400, 50, "км"); });
+  await test("Проверка формы спутника отклоняет опасные орбиты", () => {
+    assert(S.validate({ name: "x", orbit: "circ", h: 100, i: 50 }), "100 км должно отклоняться");
+    assert(S.validate({ name: "x", orbit: "ell", hp: 500, ha: 300, i: 50 }), "апогей ниже перигея");
+    assert(!S.validate({ name: "x", orbit: "circ", h: 400, i: 51.6 }), "нормальная орбита отклонена");
+  });
+
+  group("Целостность данных");
+  await test("Страны: имя, цвет, точка подписи", () => {
+    for (const c of Object.values(map.countries)) { assert(c.name, "без имени: " + c.id); assert(/^#[0-9a-f]{6}$/i.test(c.color), "цвет " + c.id); assert(c.label && c.label.length === 2, "подпись " + c.id); }
+  });
+  await test("Города внутри карты", () => {
+    const n = Object.values(map.cities).filter(c => c.x < 0 || c.y < 0 || c.x > G.W || c.y > G.H).length;
+    assert(n === 0, n + " городов вне карты"); return Object.keys(map.cities).length + " городов";
+  });
+  await test("Провинции ссылаются на существующие страны", () => {
+    const bad = Object.values(map.provinces).filter(p => p.c && !map.countries[p.c]);
+    assert(!bad.length, bad.length + " провинций с неизвестной страной");
+  });
+  await test("Спутники ссылаются на существующие типы", () => {
+    const bad = Object.values(map.satellites).filter(s => !map.satTypes[s.type] || S.validate(s));
+    assert(!bad.length, "ошибки: " + bad.map(s => s.name).join(", ")); return Object.keys(map.satellites).length + " спутников";
+  });
+  await test("Луна: отметки и дороги ссылаются на существующие типы", () => {
+    const m = Object.values(moon.marks).filter(x => !moon.markTypes[x.type]), r = Object.values(moon.roads).filter(x => !moon.roadTypes[x.type]);
+    assert(!m.length && !r.length, "битые ссылки");
+  });
+  await test("Луна: названия корректны", () => {
+    const cats = new Set(window.KGMoonNameCats.map(c => c.id)), names = window.KGMoonNames;
+    const bad = names.filter(([n, la, lo, sz, c]) => !n || Math.abs(la) > 90 || Math.abs(lo) > 180 || !(sz > 0) || !cats.has(c));
+    assert(!bad.length, "ошибки: " + bad.map(b => b[0]).join(", ")); return names.length + " названий";
+  });
+  await test("Конфигурация ГМа: хэш пароля PBKDF2", () => {
+    assert(cfg.gm && cfg.gm.salt && cfg.gm.hash && cfg.gm.iter >= 100000, "нет хэша"); assert(cfg.repo.owner && cfg.repo.name, "нет репозитория");
+  });
+
+  const sm = document.getElementById("summary");
+  sm.innerHTML = fail ? `<span class="fail">Провалено: ${fail}</span> · пройдено: ${pass}` : `<span class="ok">Все тесты пройдены: ${pass}</span>`;
+  window.TEST_RESULTS = { pass, fail, results };
+})();
+</script>
+</body>
+</html>

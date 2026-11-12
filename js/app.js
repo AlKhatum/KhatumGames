@@ -13,6 +13,16 @@
   }
   tabs.forEach(b => b.addEventListener("click", () => openTab(b.dataset.tab)));
   document.querySelectorAll("[data-goto]").forEach(b => b.addEventListener("click", () => openTab(b.dataset.goto)));
+  // разделы лора (пока заглушки)
+  (function lore() {
+    const grid = document.getElementById("loreGrid"), art = document.getElementById("loreArticle");
+    if (!grid || !art) return;
+    grid.querySelectorAll("[data-lore]").forEach(b => b.addEventListener("click", () => {
+      document.getElementById("loreTitle").textContent = b.querySelector("b").textContent;
+      grid.classList.add("hidden"); art.classList.remove("hidden");
+    }));
+    document.getElementById("loreBack").addEventListener("click", () => { art.classList.add("hidden"); grid.classList.remove("hidden"); });
+  })();
   document.querySelectorAll(".soon").forEach(b => b.addEventListener("click", () => toast("Раздел «" + b.textContent + "» в разработке")));
   window.addEventListener("hashchange", () => openTab(location.hash.slice(1)));
   openTab(location.hash.slice(1) || "map");

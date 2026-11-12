@@ -662,6 +662,8 @@
     frame.querySelectorAll("[data-tool]").forEach(b => b.classList.toggle("active", b.dataset.tool === t));
     viewport.className = "viewport tool-" + t;
     $("brushBar").classList.toggle("hidden", !gm || !PAINT.includes(t) || t === "picker");
+    // панель инструментов опускается под панель кисти, если та переносится на несколько строк
+    requestAnimationFrame(() => { const bb = $("brushBar"); frame.style.setProperty("--bbh", bb.classList.contains("hidden") ? "0px" : bb.offsetHeight + "px"); });
     $("hint").textContent = viewMode === "globe" ? HINT_GLOBE : MEASURE.includes(t) ? HINTS[t] : gm ? HINTS[t] || "" : "Перетаскивайте карту, колесо — масштаб. Клик по стране — её флаг и название в легенде. Слои — во вкладке «Слои».";
     const sz = $("bbSize");
     if (t === "pencil") { sz.max = 4; sz.value = pencilSize; } else { sz.max = 120; sz.value = brushSize; }
