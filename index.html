@@ -806,7 +806,11 @@ function loadImage(src) { return new Promise((res, rej) => { const i = new Image
 (async function init() {
   resizeOverlay();
   try {
-    const [, maskImg] = await Promise.all([img.decode ? img.decode() : loadImage(img.src), loadImage('land.png')]);
+    const baseReady = new Promise((res, rej) => {
+      if (img.complete && img.naturalWidth) return res();
+      img.addEventListener('load', res, { once: true }); img.addEventListener('error', rej, { once: true });
+    });
+    const [, maskImg] = await Promise.all([baseReady, loadImage('land.png')]);
     W = img.naturalWidth; H = img.naturalHeight;
     TW = maskImg.naturalWidth; TH = maskImg.naturalHeight;
     const c = document.createElement('canvas'); c.width = TW; c.height = TH;
