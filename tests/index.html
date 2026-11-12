@@ -18,10 +18,10 @@
 <h1>Автотесты карты Khatum Games</h1>
 <div id="summary">Выполняется…</div>
 <div id="out"></div>
-<script src="../js/geo.js?v=20261112e"></script>
-<script src="../js/territory.js?v=20261112e"></script>
-<script src="../js/sats.js?v=20261112e"></script>
-<script src="../js/moon-names.js?v=20261112e"></script>
+<script src="../js/geo.js?v=20261113a"></script>
+<script src="../js/territory.js?v=20261113a"></script>
+<script src="../js/sats.js?v=20261113a"></script>
+<script src="../js/moon-names.js?v=20261113a"></script>
 <script>
 (async function () {
   "use strict";
@@ -106,6 +106,34 @@
     T.ids.fill(5, 0, 512); T.computeBBoxes();
     const ch = T.beginStroke(); T.stamp(16, 16, 10, 9, { land: true, keep: true }, ch); T.endStroke(ch);
     for (let i = 0; i < 512; i++) assert(T.ids[i] === 5, "сосед перекрашен");
+  });
+  await test("Береговая линия режется на куски по квадратам, пиксельный шум отброшен", () => {
+    const T = window.KGTerritoryMake(false), W = 96, H = 64;
+    T.W = W; T.H = H; T.land = new Uint8Array(W * H);
+    for (let y = 8; y < 56; y++) for (let x = 8; x < 88; x++) T.land[y * W + x] = 1; // большой «материк»
+    T.land[2 * W + 2] = 1; // одиночный пиксель — шум
+    const tiles = T.coastTiles(32, 6);
+    assert(tiles.length >= 4, "кусков мало: " + tiles.length); // углы прямоугольника лежат в 4 разных квадратах
+    assert(tiles.every(d => /^M[\d.]+ [\d.]+L/.test(d)), "кусок без линий");
+    assert(!tiles.join("").includes("M2.0") && !tiles.join("").includes("M1."), "шум не отброшен");
+    return tiles.length + " кусков";
+  });
+  await test("Фоновый поток строит те же контуры, что и страница", async () => {
+    const T = window.KGTerritoryMake(false), W = 40, H = 30;
+    T.W = W; T.H = H; T.ids = new Uint8Array(W * H);
+    for (let y = 3; y < 20; y++) for (let x = 4; x < 30; x++) T.ids[y * W + x] = x < 15 ? 1 : 2;
+    for (let y = 22; y < 28; y++) for (let x = 30; x < 38; x++) T.ids[y * W + x] = 3;
+    const local = T.allPaths();
+    const res = await new Promise((ok, bad) => {
+      const w = new Worker("../js/paths-worker.js?t=" + Date.now());
+      w.onmessage = e => { w.terminate(); ok(e.data); }; w.onerror = e => { w.terminate(); bad(new Error(e.message)); };
+      w.postMessage({ ids: T.ids, land: null, W, H, wide: false });
+    });
+    assert(!res.error, res.error);
+    const remote = new Map(res.paths);
+    assert(remote.size === local.size, "разное число контуров");
+    for (const [k, d] of local) assert(remote.get(k) === d, "контур " + k + " отличается");
+    return remote.size + " контура";
   });
   let T8 = null;
   await test("Растр стран: все 139 стран из данных есть на карте", async () => {

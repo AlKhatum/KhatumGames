@@ -130,10 +130,16 @@
     for (let i = 0; i < n; i++) if (keep[i]) out.push(p[2 * i], p[2 * i + 1]);
     return out;
   }
-  function ringsToPath(rings) {
+  // площадь кольца (px²) — чтобы отбрасывать одиночные пиксели на береговой линии
+  function ringArea(r) {
+    let a = 0;
+    for (let i = 0, n = r.length; i < n; i += 2) { const j = (i + 2) % n; a += r[i] * r[j + 1] - r[j] * r[i + 1]; }
+    return Math.abs(a) / 2;
+  }
+  function ringsToPath(rings, tol) {
     const parts = [];
     for (const r0 of rings) {
-      const r = simplify(chaikin(r0, 2), 0.28);
+      const r = simplify(chaikin(r0, 2), tol || 0.28);
       if (r.length < 6) continue;
       let s = "M" + r[0].toFixed(1) + " " + r[1].toFixed(1);
       for (let i = 2; i < r.length; i += 2) s += "L" + r[i].toFixed(1) + " " + r[i + 1].toFixed(1);
@@ -204,9 +210,30 @@
       return out;
     },
     // береговая линия по маске суши
-    coastPath() {
-      const r = trace(T.land, T.W, T.H, null, 0, 0, T.W, T.H).get(1) || [];
-      return ringsToPath(r);
+    coastPath() { return T.coastTiles().join(""); },
+    // береговая линия кусками по квадратам tile×tile (это только обводка, поэтому кольца можно резать
+    // на открытые ломаные): браузер рисует лишь видимые куски. Островки меньше minArea px² — шум растра.
+    coastTiles(tile, minArea) {
+      tile = tile || 384; minArea = minArea == null ? 6 : minArea;
+      const rings = trace(T.land, T.W, T.H, null, 0, 0, T.W, T.H).get(1) || [];
+      const tiles = new Map();
+      const put = (key, str) => { const a = tiles.get(key); if (a) a.push(str); else tiles.set(key, [str]); };
+      const kOf = (x, y) => Math.floor(x / tile) + "," + Math.floor(y / tile);
+      for (const r0 of rings) {
+        if (ringArea(r0) < minArea) continue;
+        const r = simplify(chaikin(r0, 2), 0.4);
+        const n = r.length / 2;
+        if (n < 3) continue;
+        const pt = i => r[2 * (i % n)].toFixed(1) + " " + r[2 * (i % n) + 1].toFixed(1);
+        let key = kOf(r[0], r[1]), cur = "M" + pt(0);
+        for (let i = 1; i <= n; i++) {
+          cur += "L" + pt(i);
+          const k = kOf(r[2 * (i % n)], r[2 * (i % n) + 1]);
+          if (k !== key) { put(key, cur); key = k; cur = "M" + pt(i); }
+        }
+        if (cur.indexOf("L") > 0) put(key, cur);
+      }
+      return Array.from(tiles.values(), a => a.join(""));
     },
     at(x, y) {
       x = Math.floor(x); y = Math.floor(y);

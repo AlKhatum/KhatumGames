@@ -603,3 +603,8 @@ body.moon-mode .moon-legend { display: flex; }
 .m-terr-card .flag { width: 96px; height: 64px; }
 .m-terr-card .legend-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 @media (max-width: 900px) { .m-terr-card .flag { width: 72px; height: 48px; } }
+/* производительность: на обзоре всего мира границы провинций не рисуем (их всё равно не различить) */
+#mapFrame[data-lod="far"] #provBordersLayer { display: none; }
+/* производительность: облегчённая отрисовка во время масштабирования и перетаскивания */
+#mapFrame.moving #provBordersLayer, #mapFrame.moving #provLabelsLayer, #mapFrame.moving #citiesLayer, #mapFrame.moving #coastLayer { visibility: hidden; }
+.viewport.panning .world { will-change: transform; }

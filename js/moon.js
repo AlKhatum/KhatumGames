@@ -67,7 +67,7 @@
   // ---------- DOM ----------
   const wrap = $("moonWrap"), vp = $("moonViewport"), world = $("moonWorld");
   const svg = id => { const e = document.createElementNS(NS, "svg"); e.setAttribute("viewBox", `0 0 ${MW} ${MH}`); e.setAttribute("width", MW); e.setAttribute("height", MH); e.classList.add("layer"); e.id = id; world.append(e); return e; };
-  const tex = document.createElement("img"); tex.className = "layer"; tex.alt = ""; tex.draggable = false; tex.src = "assets/moon/moon.jpg"; world.append(tex);
+  const tex = document.createElement("img"); tex.className = "layer"; tex.alt = ""; tex.draggable = false; world.append(tex); // текстура грузится при первом открытии Луны
   const Lfill = svg("mFill"), Lborder = svg("mBorder"), Lroads = svg("mRoads");
   const paintCv = document.createElement("canvas"); paintCv.width = MW; paintCv.height = MH; paintCv.className = "layer"; world.append(paintCv);
   const paintCtx = paintCv.getContext("2d", { willReadFrequently: true });
@@ -990,6 +990,7 @@ void main(){
   let pendingFlags = {};
   async function load() {
     const bust = "?t=" + Date.now();
+    if (!tex.getAttribute("src")) tex.src = "assets/moon/moon.jpg";
     st = await fetch("data/moon.json" + bust, { cache: "no-store" }).then(r => r.json());
     ["territories", "marks", "markTypes", "roads", "roadTypes", "satellites", "satTypes"].forEach(k => (st[k] = st[k] || {}));
     await TM.load("data/moon_territories.png" + bust, new Uint8Array(MW * MH).fill(1));

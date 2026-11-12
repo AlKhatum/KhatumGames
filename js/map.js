@@ -48,7 +48,8 @@
   flat.forEach(l => {
     let el;
     if (l.kind === "img") {
-      el = document.createElement("img"); el.src = l.src; el.alt = ""; el.draggable = false; el.decoding = "async";
+      el = document.createElement("img"); el.alt = ""; el.draggable = false; el.decoding = "async";
+      el.dataset.src = l.src; if (ui.vis[l.id] != null ? ui.vis[l.id] : l.vis) el.src = l.src; // выключенные слои грузятся при включении
     } else if (l.kind === "div") {
       el = document.createElement("div");
     } else if (l.kind === "canvas") {
@@ -68,10 +69,12 @@
   const paintCtx = L.paint.getContext("2d", { willReadFrequently: true });
 
   const isVisible = l => (ui.vis[l.id] != null ? ui.vis[l.id] : l.vis);
+  function ensureSrc(img) { if (img && img.tagName === "IMG" && !img.getAttribute("src") && img.dataset.src) img.src = img.dataset.src; }
   function applyLayer(l) {
     const el = L[l.id]; if (!el || l.internal) return;
     try { if (globe) globeDirty(); } catch (e) { /* глобус ещё не создан */ }
     el.style.display = isVisible(l) ? "" : "none";
+    if (isVisible(l)) ensureSrc(el);
     if (l.road) {
       const on = !!ui.hl[l.id];
       el.classList.toggle("hl", on);
@@ -164,14 +167,13 @@
     <stop offset="0" stop-color="#fff4fd"/><stop offset=".5" stop-color="#ffc3ef"/><stop offset="1" stop-color="#ff74d4"/></linearGradient></defs>`);
   const gCountryLabels = svgEl("g", {}, L.labels);
   const gCustom = svgEl("g", {}, L.labels);
-  const coastPath = svgEl("path", { class: "coast-line" }, L.coast);
   const provSelPath = svgEl("path", { class: "prov-sel-outline" }, L.over);
   const selPath = svgEl("path", { class: "sel-outline" }, L.over);
   const cursorEl = svgEl("circle", { class: "brush-cursor", r: 10, cx: -100, cy: -100 }, L.over);
 
   // ---------- состояние ----------
   let config = null, state = null, loadedStamp = "";
-  let gm = false, dirty = false, terrDirty = false, provDirty = false, selProv = null;
+  let gm = false, dirty = false, terrDirty = false, provDirty = false, selProv = null, provReady = false;
   const provPaths = new Map(), provEls = {}, provLbl = {};
   function setProvPath(id, d) {
     id = String(id); provPaths.set(id, d || "");
@@ -267,11 +269,16 @@
     tx = mw < vw ? (vw - mw) / 2 : Math.min(0, Math.max(vw - mw, ntx));
     ty = mh < vh ? (vh - mh) / 2 : Math.min(0, Math.max(vh - mh, nty));
     world.style.transform = `translate(${tx}px, ${ty}px) scale(${s})`;
-    L.cities.style.visibility = s < 0.85 ? "hidden" : "";
-    frame.dataset.z = s >= 3.2 ? 3 : s >= 1.9 ? 2 : s >= 1.1 ? 1 : 0;
-    frame.style.setProperty("--pk", Math.min(1, 2.4 / s).toFixed(3)); // названия провинций не раздуваются при приближении
+    // Всё, что ниже, меняем только при переходе порога: любая смена стиля на рамке заставляет
+    // браузер пересчитать тысячи элементов карты, а это и есть «подлагивание» при масштабировании.
+    const cityVis = s < 0.85 ? "hidden" : "", z = String(s >= 3.2 ? 3 : s >= 1.9 ? 2 : s >= 1.1 ? 1 : 0);
+    const lod = s < 0.5 ? "far" : "near"; // издалека границы провинций не читаются, а рисовать их дорого
+    const pk = Math.min(1, 2.4 / s).toFixed(2); // названия провинций не раздуваются при приближении
+    if (L.cities.style.visibility !== cityVis) L.cities.style.visibility = cityVis;
+    if (frame.dataset.z !== z) frame.dataset.z = z;
+    if (frame.dataset.lod !== lod) frame.dataset.lod = lod;
+    if (L.provLabels.style.getPropertyValue("--pk") !== pk) L.provLabels.style.setProperty("--pk", pk);
     if (typeof renderMeasure === "function") renderMeasure();
-    frame.style.setProperty("--s", s);
   }
   function fit() {
     const vw = viewport.clientWidth, vh = viewport.clientHeight;
@@ -291,8 +298,18 @@
     const r = viewport.getBoundingClientRect();
     return [(e.clientX - r.left - tx) / s, (e.clientY - r.top - ty) / s];
   }
+  // Во время масштабирования прячем мелкие детали (границы и названия провинций, города) —
+  // браузеру не приходится перерисовывать тысячи элементов в каждом кадре. Через 0,25 с после
+  // остановки они возвращаются. При перетаскивании карта рисуется слоем GPU (класс panning).
+  let movingTimer = 0;
+  function markMoving() {
+    if (!frame.classList.contains("moving")) frame.classList.add("moving");
+    clearTimeout(movingTimer);
+    movingTimer = setTimeout(() => frame.classList.remove("moving"), 250);
+  }
   viewport.addEventListener("wheel", e => {
     e.preventDefault();
+    markMoving();
     const r = viewport.getBoundingClientRect();
     zoomAt(Math.pow(1.0015, -e.deltaY), e.clientX - r.left, e.clientY - r.top);
   }, { passive: false });
@@ -735,13 +752,6 @@
       const a = clone(before); a.name = v; commit("provinces", selProv, before, a); before = clone(a);
     });
   })();
-  function buildProvPaths() {
-    const t0 = performance.now();
-    const all = P.allPaths();
-    for (const id of Object.keys(provEls)) if (!all.has(+id)) setProvPath(id, "");
-    for (const [id, d] of all) if (state.provinces[String(id)]) setProvPath(id, d);
-    console.info("провинции построены за", Math.round(performance.now() - t0), "мс");
-  }
   async function deleteCountry(id) {
     const c = state.countries[id]; if (!c) return;
     const ok = await ask("Удалить страну «" + c.name + "»?", "", { confirm: true, note: "Её территория станет ничьей. Ctrl+Z — вернуть." });
@@ -788,6 +798,7 @@
   function paintValue() {
     if (tool === "eraser") return 0;
     if (provMode()) {
+      if (!provReady) { toast("Провинции ещё загружаются, подождите пару секунд"); return null; }
       if (!brushProv || !state.provinces[brushProv]) { toast("Возьмите провинцию пипеткой (Alt+клик) или создайте новую"); return null; }
       return +brushProv;
     }
@@ -958,6 +969,7 @@
     if (tool === "ruler" && ruler && !drag) { ruler.cursor = p; renderMeasure(); }
     if (pinch && pointers.size === 2) {
       const [a, b] = [...pointers.values()], r = viewport.getBoundingClientRect();
+      markMoving();
       zoomAt((pinch.s * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d) / s, (a.x + b.x) / 2 - r.left, (a.y + b.y) / 2 - r.top);
       return;
     }
@@ -1100,8 +1112,8 @@
     } else if (circleDraft) { drawCircle(circleDraft, true); out = "Циркуль: радиус " + Geo.fmt(circleDraft.r); }
     else if (measures.lines.length && (lastKind === "line" || !measures.circles.length)) out = "Линейка: " + Geo.fmt(lineLen(measures.lines[measures.lines.length - 1].pts));
     else if (measures.circles.length) out = "Циркуль: радиус " + Geo.fmt(measures.circles[measures.circles.length - 1].r);
-    svg.innerHTML = h;
-    mOut.textContent = out;
+    if (h || svg.childNodes.length) svg.innerHTML = h; // пустой слой не трогаем при каждом кадре
+    if (mOut.textContent !== out) mOut.textContent = out;
     mOut.classList.toggle("hidden", !out);
   }
 
@@ -1171,6 +1183,7 @@
   function whenLoaded(img) { return img.complete && img.naturalWidth ? Promise.resolve() : new Promise(r => { img.addEventListener("load", r, { once: true }); img.addEventListener("error", r, { once: true }); }); }
   async function buildGlobeTextures() {
     const imgs = [L.relief, L.road_major, L.road_secondary, L.road_road, L.rail, L.hydro, L.citiesFill];
+    imgs.forEach(ensureSrc);
     await Promise.all(imgs.map(whenLoaded));
     globe.setLand(L.relief);
     const N = W * H, lines = new Uint8Array(N * 4);
@@ -1499,6 +1512,45 @@
     for (const [id, d] of all) if (state.countries[String(id)]) setCountryPath(id, d);
     buildCountryList(); fillBrushSelect(); select(null);
   }
+  // ---------- контуры: из кэша браузера или в фоновом потоке ----------
+  // Контуры стран, провинций и берега считаются из растров один раз и кладутся в IndexedDB
+  // (ключ — время публикации карты). Расчёт идёт в Web Worker, страница при этом не замирает.
+  const PATHS_VER = 3; // поднять при изменении алгоритма контуров
+  function pathsInWorker(M, wide, withCoast) {
+    return new Promise((res, rej) => {
+      let w;
+      try { w = new Worker("js/paths-worker.js?v=20261113a"); } catch (e) { rej(e); return; }
+      const t = setTimeout(() => { w.terminate(); rej(new Error("слишком долго")); }, 90000);
+      w.onmessage = e => { clearTimeout(t); w.terminate(); if (e.data.error) rej(new Error(e.data.error)); else res(e.data); };
+      w.onerror = e => { clearTimeout(t); w.terminate(); rej(new Error(e.message || "ошибка потока")); };
+      w.postMessage({ ids: M.ids, land: withCoast ? M.land : null, W: M.W, H: M.H, wide });
+    });
+  }
+  async function computePaths(M, wide, withCoast) {
+    try { return await pathsInWorker(M, wide, withCoast); } catch (e) {
+      console.warn("фоновый поток недоступен, считаю на странице:", e.message);
+      return { paths: Array.from(M.allPaths()), coast: withCoast ? M.coastTiles() : null };
+    }
+  }
+  function setCoast(list) {
+    L.coast.querySelectorAll(".coast-line").forEach(e => e.remove());
+    for (const d of list || []) svgEl("path", { class: "coast-line", d }, L.coast);
+  }
+  // тысячи путей провинций добавляем порциями, чтобы не было долгого кадра
+  async function applyProvPaths(list) {
+    const all = new Map(list);
+    for (const id of Object.keys(provEls)) if (!all.has(+id)) setProvPath(id, "");
+    const items = Array.from(all).filter(([id]) => state.provinces[String(id)]);
+    for (let i = 0; i < items.length; i += 400) {
+      for (const [id, d] of items.slice(i, i + 400)) setProvPath(id, d);
+      await new Promise(r => setTimeout(r, 0)); // отдаём кадр браузеру (rAF в фоновой вкладке не идёт)
+    }
+  }
+  function buildProvPaths() {
+    const t0 = performance.now();
+    applyProvPaths(Array.from(P.allPaths()));
+    console.info("провинции построены за", Math.round(performance.now() - t0), "мс");
+  }
   async function load() {
     const bust = "?t=" + Date.now();
     try {
@@ -1508,13 +1560,19 @@
       ]);
       config = cfg; state = st; loadedStamp = st.updated || "";
       for (const c of COLS) state[c] = state[c] || {};
-      await T.load("data/territories.png" + bust, "assets/map/land.png");
-      await P.load("data/provinces.png" + bust, T.land);
+      // растры привязаны к времени публикации: браузер берёт их из кэша, пока карту не обновят
+      const ver = "?v=" + encodeURIComponent(loadedStamp || String(Date.now()));
+      const key = PATHS_VER + "|" + loadedStamp;
       const t0 = performance.now();
-      const all = T.allPaths();
-      for (const [id, d] of all) if (state.countries[String(id)]) setCountryPath(id, d);
-      coastPath.setAttribute("d", T.coastPath());
-      console.info("контуры построены за", Math.round(performance.now() - t0), "мс");
+      const [cache] = await Promise.all([
+        loadedStamp ? DB.get("paths").catch(() => null) : null,
+        T.load("data/territories.png" + ver, "assets/map/land.png")
+      ]);
+      const hit = !!(cache && cache.key === key && cache.c && cache.p);
+      const cp = hit ? cache.c : await computePaths(T, false, true);
+      for (const [id, d] of cp.paths) if (state.countries[String(id)]) setCountryPath(id, d);
+      setCoast(cp.coast);
+      console.info("контуры " + (hit ? "из кэша" : "построены") + " за", Math.round(performance.now() - t0), "мс");
       rebuildAll(false);
       applyFonts();
       buildCountryList(); fillBrushSelect();
@@ -1523,7 +1581,14 @@
       updUndo();
       $("mapLoading").classList.add("hidden");
       requestAnimationFrame(fit);
-      setTimeout(buildProvPaths, 60); // границы провинций строим после показа карты
+      // провинции — уже после показа карты
+      const t1 = performance.now();
+      await P.load("data/provinces.png" + ver, T.land);
+      const pp = hit ? cache.p : await computePaths(P, true, false);
+      await applyProvPaths(pp.paths);
+      provReady = true;
+      console.info("провинции " + (hit ? "из кэша" : "построены") + " за", Math.round(performance.now() - t1), "мс");
+      if (!hit && loadedStamp) DB.set("paths", { key, c: { paths: cp.paths, coast: cp.coast }, p: { paths: pp.paths } }).catch(() => {});
       if (gm) offerDraft();
     } catch (err) {
       console.error(err);
