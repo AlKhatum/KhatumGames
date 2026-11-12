@@ -100,7 +100,10 @@
 
         <!-- Настройки кисти (только ГМ) -->
         <div class="brushbar panel gm-only hidden" id="brushBar">
+          <select id="bbMode" title="Что рисовать"><option value="t">Страны</option><option value="p">Провинции</option></select>
           <span class="bb-swatch" id="bbSwatch"></span>
+          <span class="bb-prov hidden" id="bbProv"></span>
+          <button class="small-btn hidden" id="addProvBtn" type="button">+ Провинция</button>
           <select id="bbCountry" title="Какой страной рисовать"></select>
           <label>Размер <input type="range" id="bbSize" min="1" max="120" value="24"><b id="bbSizeVal">24</b></label>
           <label title="Рисовать только по суше"><input type="checkbox" id="bbLand" checked> Только суша</label>
@@ -133,6 +136,12 @@
               <button id="flagClear" class="small-btn" disabled>Убрать флаг</button>
             </div>
             <div class="legend-meta" id="countryMeta"></div>
+            <div class="prov-block hidden" id="provBlock">
+              <div class="legend-label">Провинция</div>
+              <div class="prov-title" id="provTitle"></div>
+              <input type="text" id="provName" class="gm-only" placeholder="Название провинции">
+              <div class="legend-meta" id="provMeta"></div>
+            </div>
           </div>
         </div>
         <div class="legend-tabs">

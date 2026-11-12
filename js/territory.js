@@ -143,17 +143,25 @@
   }
 
   // ---------- модель ----------
+  // wide = false: id стран (1 байт, серый PNG); wide = true: id провинций (2 байта: R + G·256)
+  function make(wide) {
+  const Arr = wide ? Uint16Array : Uint8Array;
   const T = {
+    wide,
     W: 0, H: 0, ids: null, land: null, bbox: [],
-    async load(idsUrl, landUrl) {
+    async load(idsUrl, land) {
       const a = await readPixels(idsUrl);
       T.W = a.w; T.H = a.h;
       const N = a.w * a.h;
-      T.ids = new Uint8Array(N);
-      for (let i = 0; i < N; i++) T.ids[i] = a.data[i * 4];
-      const b = await readPixels(landUrl);
-      T.land = new Uint8Array(N);
-      if (b.w === a.w && b.h === a.h) for (let i = 0; i < N; i++) T.land[i] = b.data[i * 4 + 3] >= 128 ? 1 : 0;
+      T.ids = new Arr(N);
+      if (wide) for (let i = 0; i < N; i++) T.ids[i] = a.data[i * 4] + a.data[i * 4 + 1] * 256;
+      else for (let i = 0; i < N; i++) T.ids[i] = a.data[i * 4];
+      if (land instanceof Uint8Array) T.land = land; // общая маска суши
+      else {
+        const b = await readPixels(land);
+        T.land = new Uint8Array(N);
+        if (b.w === a.w && b.h === a.h) for (let i = 0; i < N; i++) T.land[i] = b.data[i * 4 + 3] >= 128 ? 1 : 0;
+      }
       T.mark = new Uint32Array(N);
       T.strokeNo = 0;
       T.computeBBoxes();
@@ -271,7 +279,7 @@
       return n;
     },
     endStroke(ch) {
-      const res = { idx: Int32Array.from(ch.idx), old: Uint8Array.from(ch.old), val: Uint8Array.from(ch.val), labels: ch.labels };
+      const res = { idx: Int32Array.from(ch.idx), old: Arr.from(ch.old), val: Arr.from(ch.val), labels: ch.labels, wide };
       // расширяем рамки затронутых стран
       for (const L of ch.labels) {
         if (!L || ch.x0 === Infinity) continue;
@@ -320,11 +328,19 @@
       cv.width = T.W; cv.height = T.H;
       const ctx = cv.getContext("2d");
       const img = ctx.createImageData(T.W, T.H), d = img.data;
-      for (let i = 0, n = T.W * T.H; i < n; i++) { const v = T.ids[i]; d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = v; d[i * 4 + 3] = 255; }
+      for (let i = 0, n = T.W * T.H; i < n; i++) {
+        const v = T.ids[i];
+        if (wide) { d[i * 4] = v & 255; d[i * 4 + 1] = v >> 8; d[i * 4 + 2] = 0; } else d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = v;
+        d[i * 4 + 3] = 255;
+      }
       ctx.putImageData(img, 0, 0);
       return new Promise(res => cv.toBlob(res, "image/png"));
     }
   };
 
-  window.KGTerritory = T;
+  return T;
+  }
+
+  window.KGTerritory = make(false);
+  window.KGProvinces = make(true);
 })();

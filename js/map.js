@@ -8,7 +8,7 @@
   const UI_KEY = "kg-map-ui-v2", GM_KEY = "kg-gm-session";
   const $ = id => document.getElementById(id);
   const { toast, ask } = window.KG;
-  const T = window.KGTerritory, GH = window.KGGitHub;
+  const T = window.KGTerritory, P = window.KGProvinces, GH = window.KGGitHub;
   const viewport = $("viewport"), world = $("world"), frame = $("mapFrame");
   const clone = v => (v == null ? null : JSON.parse(JSON.stringify(v)));
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -28,10 +28,12 @@
       { id: "rail", name: "Железные дороги", kind: "img", src: "assets/map/rail.png", vis: false, road: "#ff9b3d" }
     ] },
     { id: "citiesFill", name: "Городские зоны", kind: "img", src: "assets/map/cities_fill.png", vis: true, opacity: 0.45 },
+    { id: "provBorders", name: "Провинции", kind: "svg", vis: true, glow: "#7fe8ff" },
     { id: "borders", name: "Границы стран", kind: "svg", vis: true, glow: "#ff3fd0" },
     { id: "coast", name: "Береговая линия", kind: "svg", vis: true },
     { id: "paint", kind: "canvas", internal: true },
     { id: "labels", name: "Страны", kind: "svg", vis: true, glow: "#ff7fd8" },
+    { id: "provLabels", name: "Названия провинций", kind: "svg", vis: true },
     { id: "cities", name: "Города", kind: "svg", vis: true },
     { id: "measure", kind: "svg", internal: true },
     { id: "over", kind: "svg", internal: true }
@@ -63,7 +65,7 @@
     world.appendChild(el);
     L[l.id] = el;
   });
-  const paintCtx = L.paint.getContext("2d");
+  const paintCtx = L.paint.getContext("2d", { willReadFrequently: true });
 
   const isVisible = l => (ui.vis[l.id] != null ? ui.vis[l.id] : l.vis);
   function applyLayer(l) {
@@ -162,12 +164,21 @@
   const gCountryLabels = svgEl("g", {}, L.labels);
   const gCustom = svgEl("g", {}, L.labels);
   const coastPath = svgEl("path", { class: "coast-line" }, L.coast);
+  const provSelPath = svgEl("path", { class: "prov-sel-outline" }, L.over);
   const selPath = svgEl("path", { class: "sel-outline" }, L.over);
   const cursorEl = svgEl("circle", { class: "brush-cursor", r: 10, cx: -100, cy: -100 }, L.over);
 
   // ---------- состояние ----------
   let config = null, state = null, loadedStamp = "";
-  let gm = false, dirty = false, terrDirty = false;
+  let gm = false, dirty = false, terrDirty = false, provDirty = false, selProv = null;
+  const provPaths = new Map(), provEls = {}, provLbl = {};
+  function setProvPath(id, d) {
+    id = String(id); provPaths.set(id, d || "");
+    let e = provEls[id];
+    if (!e) { e = svgEl("path", {}, L.provBorders); provEls[id] = e; }
+    e.setAttribute("d", d || "");
+    if (selProv === id) provSelPath.setAttribute("d", d || "");
+  }
   const els = { cfill: {}, cborder: {}, clabel: {}, cities: {}, labels: {} };
   const paths = new Map(); // id страны -> d
   const flagCache = {};   // id -> dataURL (флаги, загруженные в этой сессии)
@@ -229,8 +240,21 @@
     t.setAttribute("letter-spacing", (e.size * 0.15).toFixed(1));
     t.textContent = e.text;
   }
-  const RENDER = { countries: renderCountry, cities: renderCity, labels: renderLabel };
-  const COLS = ["countries", "cities", "labels"];
+  function renderProvince(id) {
+    const e = state.provinces[id];
+    let t = provLbl[id];
+    if (!e) {
+      if (t) { t.remove(); delete provLbl[id]; }
+      if (provEls[id]) { provEls[id].remove(); delete provEls[id]; provPaths.delete(id); }
+      return;
+    }
+    if (!t) { t = svgEl("text", { "data-col": "provinces", "data-id": id }, L.provLabels); provLbl[id] = t; }
+    t.setAttribute("class", "lbl-prov " + (e.size >= 6 ? "b1" : e.size >= 3.6 ? "b2" : "b3"));
+    t.setAttribute("x", e.label[0]); t.setAttribute("y", e.label[1]); t.style.setProperty("--fs", e.size + "px");
+    t.textContent = e.name;
+  }
+  const RENDER = { countries: renderCountry, cities: renderCity, labels: renderLabel, provinces: renderProvince };
+  const COLS = ["countries", "cities", "labels", "provinces"];
 
   // ---------- вид ----------
   let s = 0.3, tx = 0, ty = 0, fitS = 0.3;
@@ -242,6 +266,8 @@
     ty = mh < vh ? (vh - mh) / 2 : Math.min(0, Math.max(vh - mh, nty));
     world.style.transform = `translate(${tx}px, ${ty}px) scale(${s})`;
     L.cities.style.visibility = s < 0.85 ? "hidden" : "";
+    frame.dataset.z = s >= 3.2 ? 3 : s >= 1.9 ? 2 : s >= 1.1 ? 1 : 0;
+    frame.style.setProperty("--pk", Math.min(1, 2.4 / s).toFixed(3)); // названия провинций не раздуваются при приближении
     if (typeof renderMeasure === "function") renderMeasure();
     frame.style.setProperty("--s", s);
   }
@@ -284,6 +310,7 @@
       if (map && map[sel.id]) map[sel.id].classList.add("is-sel");
     }
     selPath.setAttribute("d", sel && sel.col === "countries" ? paths.get(sel.id) || "" : "");
+    provSelPath.setAttribute("d", selProv ? provPaths.get(selProv) || "" : "");
     if (globe) { globe.sel = sel && sel.col === "countries" ? +sel.id : 0; globeDirty(); }
     updateCard();
     markListSelection();
@@ -306,6 +333,13 @@
       meta = (n ? "Городов: " + n : "Без городов") + (gm && c.layer ? " · слой PSD: " + c.layer : "");
     }
     $("countryMeta").textContent = meta;
+    const pr = selProv ? state.provinces[selProv] : null;
+    $("provBlock").classList.toggle("hidden", !pr);
+    if (pr) {
+      $("provTitle").textContent = pr.name;
+      if (document.activeElement !== $("provName")) $("provName").value = pr.name;
+      $("provMeta").textContent = [pr.type, gm && pr.real ? "в нашем мире: " + pr.real : ""].filter(Boolean).join(" · ");
+    }
     $("flagBox").classList.toggle("can-edit", gm && !!c);
   }
   let nameBefore = null;
@@ -406,7 +440,7 @@
   function pushUndo(entry) { undoStack.push(entry); if (undoStack.length > 200) undoStack.shift(); redoStack.length = 0; updUndo(); markDirty(entry); }
   function applyEntry(entry, back) {
     if (entry.kind === "entity") setEntity(entry.col, entry.id, clone(back ? entry.before : entry.after));
-    else if (entry.kind === "paint") { T.apply(entry.stroke, back); recompute(entry.stroke.labels); }
+    else if (entry.kind === "paint") { (entry.stroke.wide ? P : T).apply(entry.stroke, back); recomputeAny(entry.stroke); }
     else if (entry.kind === "multi") (back ? entry.items.slice().reverse() : entry.items).forEach(it => applyEntry(it, back));
   }
   function undo() { const e = undoStack.pop(); if (!e) return; redoStack.push(e); applyEntry(e, true); updUndo(); markDirty(e); }
@@ -415,9 +449,15 @@
   const touchesPaint = e => e.kind === "paint" || (e.kind === "multi" && e.items.some(touchesPaint));
   function markDirty(entry) {
     dirty = true;
-    if (entry && touchesPaint(entry)) terrDirty = true;
+    const mark = e => { if (e.kind === "paint") { if (e.stroke.wide) provDirty = true; else terrDirty = true; } else if (e.kind === "multi") e.items.forEach(mark); };
+    if (entry) mark(entry);
     $("gmDirty").classList.remove("hidden");
     scheduleDraft();
+  }
+  function recomputeAny(stroke) {
+    if (!stroke.wide) { recompute(stroke.labels); return; }
+    const res = P.pathsFor(stroke.labels);
+    for (const [Lb, d] of res) if (state.provinces[String(Lb)]) setProvPath(Lb, d);
   }
   function recompute(labels) {
     const res = T.pathsFor(labels);
@@ -449,7 +489,7 @@
     if (!gm) return;
     clearTimeout(draftTimer);
     draftTimer = setTimeout(() => {
-      DB.set("draft", { base: loadedStamp, time: Date.now(), state, flags: flagCache, ids: terrDirty ? T.ids.slice() : null })
+      DB.set("draft", { base: loadedStamp, time: Date.now(), state, flags: flagCache, ids: terrDirty ? T.ids.slice() : null, pids: provDirty ? P.ids.slice() : null })
         .catch(() => toast("Не удалось сохранить черновик в браузере"));
     }, 2000);
   }
@@ -464,6 +504,7 @@
     state = d.state;
     Object.assign(flagCache, d.flags || {});
     if (d.ids && d.ids.length === T.ids.length) { T.ids.set(d.ids); T.computeBBoxes(); terrDirty = true; }
+    if (d.pids && d.pids.length === P.ids.length) { P.ids.set(d.pids); P.computeBBoxes(); provDirty = true; buildProvPaths(); }
     rebuildAll(true);
     dirty = true; $("gmDirty").classList.remove("hidden");
     toast("Черновик восстановлен");
@@ -549,6 +590,7 @@
       st.updated = new Date().toISOString();
       files.push({ path: "data/map.json", content: JSON.stringify(st) });
       if (terrDirty) files.push({ path: "data/territories.png", content: await T.toPngBlob() });
+      if (provDirty) files.push({ path: "data/provinces.png", content: await P.toPngBlob() });
       await GH.commit(config.repo, files, "Карта: правки ГМа " + new Date().toLocaleString("ru-RU"), m => ($("hint").textContent = m));
       // локально храним флаги как dataURL (на сайте файлы появятся после сборки Pages)
       for (const id in st.countries) {
@@ -556,7 +598,7 @@
         if (c && c.flag && c.flag.startsWith("data:")) { flagCache[id] = c.flag; c.flag = st.countries[id].flag; }
       }
       state.updated = loadedStamp = st.updated;
-      dirty = terrDirty = false;
+      dirty = terrDirty = provDirty = false;
       $("gmDirty").classList.add("hidden");
       DB.del("draft").catch(() => {});
       toast("Опубликовано. Сайт обновится примерно через минуту.");
@@ -657,6 +699,39 @@
     setBrushCountry(id); select({ col: "countries", id }); setTool("brush");
     toast("Нарисуйте территорию кистью");
   };
+  async function deleteProvince(id) {
+    const c = state.provinces[id]; if (!c) return;
+    const ok = await ask("Удалить провинцию «" + c.name + "»?", "", { confirm: true, note: "Её земля останется без провинции. Ctrl+Z — вернуть." });
+    if (!ok) return;
+    const ch = P.beginStroke(), b = P.bbox[+id];
+    if (b) for (let y = b[1]; y < b[3]; y++) for (let x = b[0]; x < b[2]; x++) { const i = y * W + x; if (P.ids[i] === +id) P._set(i, 0, ch); }
+    const stroke = P.endStroke(ch);
+    const items = [];
+    if (stroke.idx.length) items.push({ kind: "paint", stroke });
+    items.push({ kind: "entity", col: "provinces", id: String(id), before: clone(c), after: null });
+    if (selProv === String(id)) selProv = null;
+    applyEntry({ kind: "multi", items: items.filter(i => i.kind === "entity") }, false);
+    pushUndo({ kind: "multi", items });
+  }
+  (function provNameInput() {
+    const inp = $("provName");
+    let before = null;
+    inp.addEventListener("focus", () => { if (selProv) before = clone(state.provinces[selProv]); });
+    inp.addEventListener("keydown", e => { if (e.key === "Enter") inp.blur(); e.stopPropagation(); });
+    inp.addEventListener("change", () => {
+      if (!gm || !selProv || !before) return;
+      const v = inp.value.trim();
+      if (!v || v === before.name) { inp.value = before.name; return; }
+      const a = clone(before); a.name = v; commit("provinces", selProv, before, a); before = clone(a);
+    });
+  })();
+  function buildProvPaths() {
+    const t0 = performance.now();
+    const all = P.allPaths();
+    for (const id of Object.keys(provEls)) if (!all.has(+id)) setProvPath(id, "");
+    for (const [id, d] of all) if (state.provinces[String(id)]) setProvPath(id, d);
+    console.info("провинции построены за", Math.round(performance.now() - t0), "мс");
+  }
   async function deleteCountry(id) {
     const c = state.countries[id]; if (!c) return;
     const ok = await ask("Удалить страну «" + c.name + "»?", "", { confirm: true, note: "Её территория станет ничьей. Ctrl+Z — вернуть." });
@@ -673,9 +748,11 @@
     pushUndo(entry);
   }
 
-  // ---------- рисование ----------
+  // ---------- рисование (страны или провинции) ----------
   let stroke = null, lastPt = null;
-  function paintPreview(x0, y0, x1, y1) {
+  const provMode = () => $("bbMode").value === "p";
+  const eng = () => (provMode() ? P : T);
+  function paintPreview(E, x0, y0, x1, y1) {
     x0 = Math.max(0, Math.floor(x0)); y0 = Math.max(0, Math.floor(y0));
     x1 = Math.min(W, Math.ceil(x1)); y1 = Math.min(H, Math.ceil(y1));
     const bw = x1 - x0, bh = y1 - y0;
@@ -683,9 +760,10 @@
     const img = paintCtx.getImageData(x0, y0, bw, bh), d = img.data;
     for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
       const i = (y0 + y) * W + (x0 + x);
-      if (T.mark[i] !== T.strokeNo) continue;
-      const v = T.ids[i], c = v ? rgbOf(v) : [16, 24, 46], o = (y * bw + x) * 4;
-      d[o] = c[0]; d[o + 1] = c[1]; d[o + 2] = c[2]; d[o + 3] = 235;
+      if (E.mark[i] !== E.strokeNo) continue;
+      const v = E.ids[i], o = (y * bw + x) * 4;
+      const c = !v ? [16, 24, 46] : E === P ? [120, 235, 255] : rgbOf(v);
+      d[o] = c[0]; d[o + 1] = c[1]; d[o + 2] = c[2]; d[o + 3] = E === P ? 150 : 235;
     }
     paintCtx.putImageData(img, x0, y0);
   }
@@ -699,59 +777,96 @@
   }
   function paintValue() {
     if (tool === "eraser") return 0;
+    if (provMode()) {
+      if (!brushProv || !state.provinces[brushProv]) { toast("Возьмите провинцию пипеткой (Alt+клик) или создайте новую"); return null; }
+      return +brushProv;
+    }
     if (!brushCountry || !state.countries[brushCountry]) { toast("Выберите страну для кисти"); return null; }
     return +brushCountry;
   }
   function paintOpts() { return { land: $("bbLand").checked, keep: $("bbKeep").checked }; }
   function startStroke(p) {
     const v = paintValue(); if (v == null) return false;
-    const hadBox = v && !!T.bbox[v];
-    stroke = { ch: T.beginStroke(), v, r: Math.max(0.5, curSize() / 2), opts: paintOpts(), hadBox };
+    const E = eng();
+    const hadBox = v && !!E.bbox[v];
+    stroke = { E, ch: E.beginStroke(), v, r: Math.max(0.5, curSize() / 2), opts: paintOpts(), hadBox };
     lastPt = p;
-    T.stamp(p[0], p[1], stroke.r, v, stroke.opts, stroke.ch);
-    paintPreview(p[0] - stroke.r - 1, p[1] - stroke.r - 1, p[0] + stroke.r + 1, p[1] + stroke.r + 1);
+    E.stamp(p[0], p[1], stroke.r, v, stroke.opts, stroke.ch);
+    paintPreview(E, p[0] - stroke.r - 1, p[1] - stroke.r - 1, p[0] + stroke.r + 1, p[1] + stroke.r + 1);
     return true;
   }
   function moveStroke(p) {
-    T.line(lastPt[0], lastPt[1], p[0], p[1], stroke.r, stroke.v, stroke.opts, stroke.ch);
+    const E = stroke.E;
+    E.line(lastPt[0], lastPt[1], p[0], p[1], stroke.r, stroke.v, stroke.opts, stroke.ch);
     const r = stroke.r + 1;
-    paintPreview(Math.min(lastPt[0], p[0]) - r, Math.min(lastPt[1], p[1]) - r, Math.max(lastPt[0], p[0]) + r, Math.max(lastPt[1], p[1]) + r);
+    paintPreview(E, Math.min(lastPt[0], p[0]) - r, Math.min(lastPt[1], p[1]) - r, Math.max(lastPt[0], p[0]) + r, Math.max(lastPt[1], p[1]) + r);
     lastPt = p;
   }
   function endStroke() {
     const st = stroke; stroke = null;
-    const res = T.endStroke(st.ch);
+    const E = st.E, res = E.endStroke(st.ch);
     paintCtx.clearRect(0, 0, W, H);
     if (!res.idx.length) return;
-    recompute(res.labels);
+    recomputeAny(res);
     pushUndo({ kind: "paint", stroke: res });
-    // у новой страны ставим подпись туда, где её начали рисовать
+    // у новой страны/провинции ставим подпись туда, где её начали рисовать
     if (st.v && !st.hadBox) {
-      const c = state.countries[String(st.v)], lp = T.labelPoint(st.v);
-      if (c && lp) { const a = clone(c); a.label = lp; setEntity("countries", String(st.v), a); }
+      const col = E === P ? "provinces" : "countries";
+      const c = state[col][String(st.v)], lp = E.labelPoint(st.v);
+      if (c && lp) { const a = clone(c); a.label = lp; setEntity(col, String(st.v), a); }
     }
   }
   function doFill(p) {
     const v = paintValue(); if (v == null) return;
-    const ch = T.beginStroke();
-    const n = T.fill(p[0], p[1], v, paintOpts(), ch);
-    const res = T.endStroke(ch);
+    const E = eng(), ch = E.beginStroke();
+    const n = E.fill(p[0], p[1], v, paintOpts(), ch);
+    const res = E.endStroke(ch);
     if (!n || !res.idx.length) { toast("Здесь нечего заливать"); return; }
-    recompute(res.labels);
+    recomputeAny(res);
     pushUndo({ kind: "paint", stroke: res });
   }
   function pick(p) {
+    if (provMode()) {
+      const v = P.at(p[0], p[1]);
+      if (!v || !state.provinces[String(v)]) { toast("Здесь нет провинции"); return false; }
+      setBrushProv(v); return true;
+    }
     const v = T.at(p[0], p[1]);
     if (!v || !state.countries[String(v)]) { toast("Здесь нет страны"); return false; }
     setBrushCountry(v); toast("Кисть: " + state.countries[String(v)].name);
     return true;
   }
+  let brushProv = null;
+  function setBrushProv(id) {
+    brushProv = String(id);
+    const pr = state.provinces[brushProv];
+    $("bbProv").textContent = pr ? "Провинция: " + pr.name : "Провинция не выбрана";
+  }
+  function syncBrushMode() {
+    const pm = provMode();
+    $("bbCountry").classList.toggle("hidden", pm); $("bbSwatch").classList.toggle("hidden", pm);
+    $("bbProv").classList.toggle("hidden", !pm); $("addProvBtn").classList.toggle("hidden", !pm);
+    if (pm && !ui.vis.provBorders && ui.vis.provBorders !== undefined) { /* слой мог быть скрыт */ }
+    if (pm) { const l = flat.find(x => x.id === "provBorders"); if (l && !isVisible(l)) { ui.vis.provBorders = true; applyLayer(l); buildLayerList(); } }
+    setBrushProv(brushProv || "");
+  }
+  $("bbMode").addEventListener("change", syncBrushMode);
+  $("addProvBtn").onclick = async () => {
+    const name = await ask("Название новой провинции", "Новая провинция");
+    if (!name) return;
+    let id = 1; while (state.provinces[id] || P.bbox[id]) id++;
+    if (id > 65535) { toast("Слишком много провинций"); return; }
+    const cx = (viewport.clientWidth / 2 - tx) / s, cy = (viewport.clientHeight / 2 - ty) / s;
+    commit("provinces", String(id), null, { id: String(id), name, real: "", type: "", label: [Math.round(cx), Math.round(cy)], size: 5, c: brushCountry || "" });
+    setBrushProv(id); setTool("brush");
+    toast("Нарисуйте территорию провинции кистью");
+  };
 
   // ---------- переименование ----------
   async function rename(ent) {
     const e = state[ent.col] && state[ent.col][ent.id]; if (!e) return;
-    const field = { countries: "name", cities: "name", labels: "text" }[ent.col];
-    const title = { countries: "Переименовать страну", cities: "Переименовать город", labels: "Изменить подпись" }[ent.col];
+    const field = { countries: "name", cities: "name", labels: "text", provinces: "name" }[ent.col];
+    const title = { countries: "Переименовать страну", cities: "Переименовать город", labels: "Изменить подпись", provinces: "Переименовать провинцию" }[ent.col];
     const v = await ask(title, e[field]);
     if (!v || v === e[field]) return;
     const a = clone(e); a[field] = v; commit(ent.col, ent.id, e, a);
@@ -761,7 +876,15 @@
   async function handleClick(ent, p) {
     if (tool === "ruler") { rulerAdd(p); return; }
     if (tool === "compass") return;
-    if (!gm || tool === "pan") { select(ent && ent.col ? ent : null); return; }
+    if (!gm || tool === "pan") {
+      const pid = P.ids ? P.at(p[0], p[1]) : 0;
+      const provOn = isVisible(flat.find(x => x.id === "provBorders"));
+      selProv = provOn && pid && state.provinces[String(pid)] ? String(pid) : null;
+      if (ent && ent.col && ent.col !== "countries" && ent.col !== "provinces") { select(ent); return; }
+      const cid = T.at(p[0], p[1]);
+      select(cid && state.countries[String(cid)] ? { col: "countries", id: String(cid) } : null);
+      return;
+    }
     if (tool === "fill") { doFill(p); return; }
     if (tool === "picker") { if (pick(p)) setTool("brush"); return; }
     if (tool === "city") {
@@ -781,6 +904,7 @@
     if (tool === "erase") {
       if (!ent || !ent.col) return;
       if (ent.col === "countries") { deleteCountry(ent.id); return; }
+      if (ent.col === "provinces") { deleteProvince(ent.id); return; }
       commit(ent.col, ent.id, state[ent.col][ent.id], null);
       toast("Удалено (Ctrl+Z — вернуть)");
     }
@@ -889,7 +1013,7 @@
       sz.value = Math.max(+sz.min, Math.min(+sz.max, +sz.value + (up ? 1 : -1) * Math.max(1, Math.round(+sz.value * 0.15))));
       sz.dispatchEvent(new Event("input")); return;
     }
-    if (e.key === "Escape") { select(null); return; }
+    if (e.key === "Escape") { selProv = null; select(null); return; }
     if (e.key === "Delete" && sel) { if (sel.col === "countries") deleteCountry(sel.id); else commit(sel.col, sel.id, state[sel.col][sel.id], null); return; }
     const map = { v: "pan", м: "pan", b: "brush", и: "brush", p: "pencil", з: "pencil", e: "eraser", у: "eraser", g: "fill", п: "fill", i: "picker", ш: "picker", c: "city", с: "city", n: "label", т: "label", d: "erase", в: "erase" };
     if (map[k]) setTool(map[k]);
@@ -1039,7 +1163,7 @@
   // ---------- загрузка ----------
   function rebuildAll(keepPaths) {
     for (const col of COLS) {
-      const map = col === "countries" ? els.clabel : els[col];
+      const map = col === "countries" ? els.clabel : col === "provinces" ? provLbl : els[col];
       for (const id of Object.keys(map)) if (!state[col][id]) RENDER[col](id);
       for (const id in state[col]) RENDER[col](id);
     }
@@ -1059,6 +1183,7 @@
       config = cfg; state = st; loadedStamp = st.updated || "";
       for (const c of COLS) state[c] = state[c] || {};
       await T.load("data/territories.png" + bust, "assets/map/land.png");
+      await P.load("data/provinces.png" + bust, T.land);
       const t0 = performance.now();
       const all = T.allPaths();
       for (const [id, d] of all) if (state.countries[String(id)]) setCountryPath(id, d);
@@ -1071,6 +1196,7 @@
       updUndo();
       $("mapLoading").classList.add("hidden");
       requestAnimationFrame(fit);
+      setTimeout(buildProvPaths, 60); // границы провинций строим после показа карты
       if (gm) offerDraft();
     } catch (err) {
       console.error(err);

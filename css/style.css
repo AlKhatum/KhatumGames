@@ -353,3 +353,23 @@ body.is-gm .map-title { display: none; }
 #measureLayer .m-lbl { font-family: var(--font-wide); font-weight: 400; fill: #ffe14d; stroke: rgba(10, 8, 0, .9); paint-order: stroke; text-anchor: middle; }
 .hint { bottom: 64px; }
 @media (max-width: 900px) { .measure button { width: 50px; } .view-switch { top: 6px; left: 6px; } }
+
+/* ---------- провинции ---------- */
+#provBordersLayer path { fill: none; stroke: rgba(18, 22, 48, .42); stroke-width: .7px; stroke-dasharray: 3 2; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+#provBordersLayer.hl { filter: drop-shadow(0 0 1px var(--glow)) drop-shadow(0 0 3px var(--glow)); }
+#provBordersLayer.hl path { stroke: #9ff0ff; stroke-width: 1.1px; }
+.lbl-prov {
+  display: none; font-family: var(--font-wide); font-weight: 300; letter-spacing: .06em; font-size: calc(var(--fs, 4px) * var(--pk, 1));
+  fill: rgba(240, 250, 255, .9); stroke: rgba(14, 18, 40, .75); stroke-width: .6px; paint-order: stroke;
+  text-anchor: middle; dominant-baseline: middle; pointer-events: visiblePainted; cursor: pointer; user-select: none;
+}
+.map-frame[data-z="1"] .lbl-prov.b1,
+.map-frame[data-z="2"] .lbl-prov.b1, .map-frame[data-z="2"] .lbl-prov.b2,
+.map-frame[data-z="3"] .lbl-prov { display: inline; }
+.prov-sel-outline { fill: rgba(127, 232, 255, .12); stroke: #7fe8ff; stroke-width: 1.6px; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; pointer-events: none; filter: drop-shadow(0 0 3px #7fe8ff); }
+.prov-block { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+.prov-title { font-family: var(--font-wide); font-weight: 300; font-size: 12px; color: #9ff0ff; letter-spacing: .05em; }
+body.is-gm .prov-title { display: none; }
+.legend-info #provName { color: #9ff0ff; }
+.bb-prov { color: #9ff0ff; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.brushbar select#bbMode { border-color: var(--line); }
