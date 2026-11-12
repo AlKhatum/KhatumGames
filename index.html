@@ -7,7 +7,7 @@
 <meta name="description" content="Khatum Games: интерактивная карта мира после Великого Потопа.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@400;600&family=Oswald:wght@400;500&family=Exo+2:wght@400;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@200;300;400;600&family=Oswald:wght@400;500&family=Exo+2:wght@400;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -43,21 +43,37 @@
   <!-- ================= КАРТА ================= -->
   <section class="page active" id="page-map">
     <div class="map-shell">
-      <div class="map-frame">
-        <h1 class="map-title">Карта мира после Великого Потопа</h1>
+      <div class="map-frame" id="mapFrame">
         <div class="viewport" id="viewport">
-          <div class="world" id="world">
-            <!-- слои заполняются из js/map.js -->
+          <div class="world" id="world"><!-- слои создаёт js/map.js --></div>
+        </div>
+        <div class="map-loading" id="mapLoading">Загрузка карты…</div>
+        <h1 class="map-title">Карта мира после Великого Потопа</h1>
+
+        <!-- Вход ГМа / панель ГМа -->
+        <div class="gm-bar" id="gmBar">
+          <button class="gm-login" id="gmLoginBtn" title="Вход для ГМа">🔒 Вход ГМ</button>
+          <div class="gm-actions hidden" id="gmActions">
+            <span class="gm-badge">ГМ</span>
+            <span class="gm-dirty hidden" id="gmDirty" title="Есть неопубликованные правки">●</span>
+            <button id="publishBtn" class="accent">Опубликовать</button>
+            <button id="ghBtn" title="Подключение к GitHub">GitHub</button>
+            <button id="pwBtn" title="Сменить пароль ГМа">Пароль</button>
+            <button id="logoutBtn" title="Выйти из режима ГМа">Выйти</button>
           </div>
         </div>
 
-        <!-- Панель инструментов -->
-        <div class="toolbar panel" id="toolbar">
-          <button data-tool="pan" class="active" title="Перемещение / выбор (V)">✥<span>Выбор</span></button>
-          <button data-tool="edit" title="Редактировать границы выбранной страны (E)">⬠<span>Границы</span></button>
-          <button data-tool="territory" title="Нарисовать новую территорию (T)">▱<span>Территория</span></button>
-          <button data-tool="border" title="Нарисовать линию границы (B)">⟋<span>Линия</span></button>
-          <button data-tool="label" title="Добавить название (N)">Aa<span>Название</span></button>
+        <!-- Инструменты (только ГМ) -->
+        <div class="toolbar panel gm-only" id="toolbar">
+          <button data-tool="pan" class="active" title="Выбор и перемещение (V)">✥<span>Выбор</span></button>
+          <button data-tool="brush" title="Кисть: закрасить территорию страной (B)">🖌<span>Кисть</span></button>
+          <button data-tool="pencil" title="Карандаш: точная правка границы (P)">✎<span>Карандаш</span></button>
+          <button data-tool="eraser" title="Ластик: убрать территорию (E)">⌫<span>Ластик</span></button>
+          <button data-tool="fill" title="Заливка области (G)">◧<span>Заливка</span></button>
+          <button data-tool="picker" title="Пипетка: взять страну с карты (I)">⊙<span>Пипетка</span></button>
+          <div class="sep"></div>
+          <button data-tool="city" title="Добавить город (C)">🏙<span>Город</span></button>
+          <button data-tool="label" title="Добавить подпись (N)">Aa<span>Подпись</span></button>
           <button data-tool="marker" title="Поставить отметку (M)">⌖<span>Отметка</span></button>
           <button data-tool="erase" title="Удалить объект (D)">✕<span>Удалить</span></button>
           <div class="sep"></div>
@@ -65,12 +81,17 @@
           <button id="redoBtn" title="Вернуть (Ctrl+Y)">↷<span>Вперёд</span></button>
         </div>
 
-        <!-- Палитра отметок -->
+        <!-- Настройки кисти (только ГМ) -->
+        <div class="brushbar panel gm-only hidden" id="brushBar">
+          <span class="bb-swatch" id="bbSwatch"></span>
+          <select id="bbCountry" title="Какой страной рисовать"></select>
+          <label>Размер <input type="range" id="bbSize" min="1" max="120" value="24"><b id="bbSizeVal">24</b></label>
+          <label title="Рисовать только по суше"><input type="checkbox" id="bbLand" checked> Только суша</label>
+          <label title="Не перекрашивать другие страны, только пустую сушу"><input type="checkbox" id="bbKeep"> Не трогать соседей</label>
+        </div>
+
         <div class="marker-palette panel hidden" id="markerPalette"></div>
-
-        <!-- Подсказка по инструменту -->
         <div class="hint" id="hint"></div>
-
         <div class="zoom panel">
           <button id="zoomIn" title="Приблизить">+</button>
           <button id="zoomOut" title="Отдалить">−</button>
@@ -78,42 +99,41 @@
         </div>
       </div>
 
-      <!-- Слои -->
-      <aside class="side panel" id="layersPanel">
-        <h3>Слои</h3>
-        <div id="layerList"></div>
-        <h3>Данные</h3>
-        <div class="data-btns">
-          <button id="exportBtn">Экспорт JSON</button>
-          <label class="btn-like">Импорт JSON<input type="file" id="importInput" accept=".json,application/json" hidden></label>
-          <button id="resetBtn" class="danger">Сбросить правки</button>
-        </div>
-        <p class="small">Правки сохраняются в этом браузере автоматически.</p>
-      </aside>
-    </div>
-
-    <!-- Легенда карты -->
-    <div class="legend panel" id="legend">
-      <div class="legend-head" id="legendHead">
-        <span>Легенда карты</span>
-        <button class="legend-toggle" id="legendToggle" title="Свернуть">—</button>
-      </div>
-      <div class="legend-body">
-        <label class="flag" id="flagBox" title="Нажмите, чтобы загрузить флаг">
-          <img id="flagImg" alt="" hidden>
-          <span class="flag-ph" id="flagPh">ФЛАГ<br><small>место под изображение</small></span>
-          <input type="file" id="flagInput" accept="image/*" hidden>
-        </label>
-        <div class="legend-info">
-          <div class="legend-label">Страна</div>
-          <input type="text" id="countryName" placeholder="Выберите страну на карте" disabled>
-          <div class="legend-row">
-            <span>Цвет</span><input type="color" id="countryColor" disabled>
-            <button id="flagClear" class="small-btn" disabled>Убрать флаг</button>
+      <!-- Легенда карты -->
+      <aside class="legend panel" id="legend">
+        <div class="legend-head"><span>Легенда карты</span></div>
+        <div class="legend-card">
+          <label class="flag" id="flagBox" title="Флаг страны">
+            <img id="flagImg" alt="" hidden>
+            <span class="flag-ph" id="flagPh">ФЛАГ<br><small>место под изображение</small></span>
+            <input type="file" id="flagInput" accept="image/*" hidden>
+          </label>
+          <div class="legend-info">
+            <div class="legend-label">Страна</div>
+            <div class="country-title" id="countryTitle">Выберите страну на карте</div>
+            <input type="text" id="countryName" class="gm-only" placeholder="Название страны" disabled>
+            <div class="legend-row gm-only">
+              <span>Цвет</span><input type="color" id="countryColor" disabled>
+              <button id="flagClear" class="small-btn" disabled>Убрать флаг</button>
+            </div>
+            <div class="legend-meta" id="countryMeta"></div>
           </div>
-          <div class="legend-meta" id="countryMeta"></div>
         </div>
-      </div>
+        <div class="legend-tabs">
+          <button data-ltab="countries" class="active">Страны</button>
+          <button data-ltab="layers">Слои</button>
+        </div>
+        <div class="legend-pane" id="paneCountries">
+          <div class="lp-tools">
+            <input type="search" id="countrySearch" placeholder="Поиск страны…">
+            <button id="addCountryBtn" class="gm-only small-btn" title="Создать новую страну">+ Страна</button>
+          </div>
+          <div class="country-list" id="countryList"></div>
+        </div>
+        <div class="legend-pane hidden" id="paneLayers">
+          <div id="layerList"></div>
+        </div>
+      </aside>
     </div>
   </section>
 
@@ -156,14 +176,15 @@
 <div class="modal hidden" id="modal">
   <div class="modal-box panel">
     <div class="modal-title" id="modalTitle"></div>
-    <input type="text" id="modalInput">
+    <input type="text" id="modalInput" autocomplete="off">
+    <div class="modal-note" id="modalNote"></div>
     <div class="modal-btns"><button id="modalOk">OK</button><button id="modalCancel">Отмена</button></div>
   </div>
 </div>
 
-<script src="data/countries.js"></script>
-<script src="data/cities.js"></script>
 <script src="js/app.js"></script>
+<script src="js/territory.js"></script>
+<script src="js/github.js"></script>
 <script src="js/map.js"></script>
 </body>
 </html>

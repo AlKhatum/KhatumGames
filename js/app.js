@@ -54,11 +54,16 @@
   }
 
   // ---------- диалог ввода текста ----------
-  function ask(title, value) {
+  // opts: { password: true } — поле пароля; { note: "…" } — пояснение под полем
+  function ask(title, value, opts) {
+    opts = opts || {};
     return new Promise(resolve => {
       const m = document.getElementById("modal"), inp = document.getElementById("modalInput");
       document.getElementById("modalTitle").textContent = title;
+      document.getElementById("modalNote").textContent = opts.note || "";
+      inp.type = opts.password ? "password" : "text";
       inp.value = value || "";
+      inp.style.display = opts.confirm ? "none" : "";
       m.classList.remove("hidden");
       setTimeout(() => { inp.focus(); inp.select(); }, 0);
       function done(v) {
@@ -67,8 +72,8 @@
         resolve(v);
       }
       const ok = document.getElementById("modalOk"), cancel = document.getElementById("modalCancel");
-      const onOk = () => done(inp.value.trim() || null);
-      const onCancel = () => done(null);
+      const onOk = () => done(opts.confirm ? true : (inp.value.trim() || null));
+      const onCancel = () => done(opts.confirm ? false : null);
       const onKey = e => { if (e.key === "Enter") onOk(); if (e.key === "Escape") onCancel(); e.stopPropagation(); };
       ok.addEventListener("click", onOk); cancel.addEventListener("click", onCancel); inp.addEventListener("keydown", onKey);
     });

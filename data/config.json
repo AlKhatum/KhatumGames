@@ -1,0 +1,12 @@
+{
+  "repo": {
+    "owner": "AlKhatum",
+    "name": "KhatumGames",
+    "branch": "main"
+  },
+  "gm": {
+    "salt": "PMauiWxvpWj9GcbWg8L3ZA==",
+    "hash": "GPUbSCuFeyJNjVVZfPRGi944tYBm8UmrUacT2bj4JfY=",
+    "iter": 150000
+  }
+}
