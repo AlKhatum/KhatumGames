@@ -70,6 +70,7 @@
   const isVisible = l => (ui.vis[l.id] != null ? ui.vis[l.id] : l.vis);
   function applyLayer(l) {
     const el = L[l.id]; if (!el || l.internal) return;
+    try { if (globe) globeDirty(); } catch (e) { /* глобус ещё не создан */ }
     el.style.display = isVisible(l) ? "" : "none";
     if (l.road) {
       const on = !!ui.hl[l.id];
@@ -311,7 +312,7 @@
     }
     selPath.setAttribute("d", sel && sel.col === "countries" ? paths.get(sel.id) || "" : "");
     provSelPath.setAttribute("d", selProv ? provPaths.get(selProv) || "" : "");
-    if (globe) { globe.sel = sel && sel.col === "countries" ? +sel.id : 0; globeDirty(); }
+    try { if (globe) globeDirty(); } catch (e) { /* */ }
     updateCard();
     markListSelection();
   }
@@ -1095,11 +1096,75 @@
   }
 
   // ---------- глобус ----------
-  const HINT_GLOBE = "Глобус: тяните — вращать, колесо — масштаб, клик по стране — легенда. Редактирование и измерения — на плоской карте.";
-  let viewMode = "flat", globe = null, globeRaf = 0;
-  function globeDirty() { if (viewMode !== "globe" || !globe || globeRaf) return; globeRaf = requestAnimationFrame(() => { globeRaf = 0; globe.render(); }); }
+  const HINT_GLOBE = "Глобус: тяните — вращать, колесо — масштаб, клик по стране — легенда, клик по спутнику — его орбита. Редактирование и измерения — на плоской карте.";
+  const Sat = window.KGSats;
+  let viewMode = "flat", globe = null, globeRaf = 0, globeLoop = 0, globeReady = null;
+  const satUi = { items: Sat.list.map(s => ({ s, on: true, pos: null, ring: null, screen: null })), sel: "kovcheg", orbits: true, names: true, speed: 60, time: Date.now(), follow: false, last: 0 };
+  function globeShow() {
+    const sh = {};
+    flat.forEach(l => { if (!l.internal) { sh[l.id] = isVisible(l); if (ui.hl[l.id]) sh["hl_" + l.id] = true; } });
+    return sh;
+  }
+  function globeDirty() {
+    if (viewMode !== "globe" || !globe || globeRaf || globeLoop) return;
+    globeRaf = requestAnimationFrame(() => { globeRaf = 0; drawGlobe(); });
+  }
+  function drawGlobe() {
+    globe.show = globeShow();
+    globe.sel = sel && sel.col === "countries" ? +sel.id : 0;
+    globe.selProv = selProv ? +selProv : 0;
+    updateSats();
+    globe.render();
+    renderSatInfo();
+  }
+  // анимация спутников, пока открыт глобус
+  function startLoop() {
+    if (globeLoop) return;
+    satUi.last = performance.now();
+    const tick = now => {
+      if (viewMode !== "globe") { globeLoop = 0; return; }
+      const dt = now - satUi.last; satUi.last = now;
+      satUi.time += dt * satUi.speed;
+      drawGlobe();
+      globeLoop = requestAnimationFrame(tick);
+    };
+    globeLoop = requestAnimationFrame(tick);
+  }
+  function updateSats() {
+    globe.sats = satUi;
+    for (const it of satUi.items) {
+      it.pos = Sat.at(it.s, satUi.time);
+      it.ring = satUi.orbits && it.on ? Sat.ring(it.s, satUi.time, it.s.e > 0 ? 240 : 160) : null;
+    }
+    if (satUi.follow && satUi.sel) {
+      const it = satUi.items.find(x => x.s.id === satUi.sel);
+      if (it && it.pos) { globe.lat = Math.max(-1.3, Math.min(1.3, it.pos.lat * Math.PI / 180)); globe.lon = it.pos.lon * Math.PI / 180; }
+    }
+  }
+  // сборка упакованных текстур слоёв (дороги в RGBA, реки+городские зоны в LA)
+  function alphaOf(img) {
+    const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+    const cx = cv.getContext("2d", { willReadFrequently: true });
+    cx.drawImage(img, 0, 0, W, H);
+    return cx.getImageData(0, 0, W, H).data;
+  }
+  function whenLoaded(img) { return img.complete && img.naturalWidth ? Promise.resolve() : new Promise(r => { img.addEventListener("load", r, { once: true }); img.addEventListener("error", r, { once: true }); }); }
+  async function buildGlobeTextures() {
+    const imgs = [L.relief, L.road_major, L.road_secondary, L.road_road, L.rail, L.hydro, L.citiesFill];
+    await Promise.all(imgs.map(whenLoaded));
+    globe.setLand(L.relief);
+    const N = W * H, lines = new Uint8Array(N * 4);
+    [L.road_major, L.road_secondary, L.road_road, L.rail].forEach((img, ch) => {
+      const d = alphaOf(img);
+      for (let i = 0; i < N; i++) lines[i * 4 + ch] = d[i * 4 + 3];
+    });
+    globe.setLines(lines, W, H);
+    const misc = new Uint8Array(N * 2), hy = alphaOf(L.hydro), cf = alphaOf(L.citiesFill);
+    for (let i = 0; i < N; i++) { misc[i * 2] = hy[i * 4 + 3]; misc[i * 2 + 1] = cf[i * 4 + 3]; }
+    globe.setMisc(misc, W, H);
+  }
   function syncGlobe(withIds) {
-    if (withIds) globe.setIds(T.ids, T.W, T.H);
+    if (withIds) { globe.setIds(T.ids, T.W, T.H); if (P.ids) globe.setProv(P.ids, P.W, P.H); }
     const pal = {}, labels = [];
     const cx = document.createElement("canvas").getContext("2d");
     for (const id in state.countries) {
@@ -1110,31 +1175,80 @@
     }
     globe.setPalette(pal);
     globe.setLabels(labels);
+    globe.setCities(Object.values(state.cities).map(c => { const ll = Geo.toLL(c.x, c.y); return { name: c.name, lat: ll[0], lon: ll[1] }; }));
+    globe.setProvLabels(Object.values(state.provinces || {}).map(p => { const ll = Geo.toLL(p.label[0], p.label[1]); return { name: p.name, lat: ll[0], lon: ll[1], size: p.size }; }));
     globeDirty();
   }
-  function globeZoom(f) { if (!globe) return; globe.zoom = f ? Math.min(8, Math.max(0.5, globe.zoom * f)) : 1; globeDirty(); }
-  function setView3(mode) {
+  function globeZoom(f) { if (!globe) return; globe.zoom = f ? Math.min(8, Math.max(0.18, globe.zoom * f)) : 1; globeDirty(); }
+  async function setView3(mode) {
     if (mode === "globe" && !globe) {
-      try { globe = new window.KGGlobe($("globeCanvas"), $("globeLabels")); } catch (e) { console.error(e); globe = null; }
+      try { globe = new window.KGGlobe($("globeCanvas"), $("globeOverlay"), $("globeLabels")); } catch (e) { console.error(e); globe = null; }
       if (!globe || !globe.ok()) { globe = null; toast("Не удалось запустить глобус (нужен WebGL)"); return; }
-      const land = L.relief;
-      const ready = land.complete ? Promise.resolve() : new Promise(r => land.addEventListener("load", r, { once: true }));
-      ready.then(() => { globe.setLand(land); globeDirty(); });
+      $("globeLoading").classList.remove("hidden");
+      globeReady = buildGlobeTextures().then(() => $("globeLoading").classList.add("hidden"));
     }
     viewMode = mode;
     frame.classList.toggle("globe-mode", mode === "globe");
     $("globeWrap").classList.toggle("hidden", mode !== "globe");
+    $("satPanel").classList.toggle("hidden", mode !== "globe");
     document.querySelectorAll("#viewSwitch button").forEach(b => b.classList.toggle("active", b.dataset.view === mode));
     if (mode === "globe") {
-      // центрируем глобус на том месте, куда смотрела плоская карта
       const c = Geo.toLL((viewport.clientWidth / 2 - tx) / s, (viewport.clientHeight / 2 - ty) / s);
       globe.lat = Math.max(-60, Math.min(70, c[0])) * Math.PI / 180; globe.lon = c[1] * Math.PI / 180;
-      globe.sel = sel && sel.col === "countries" ? +sel.id : 0;
       syncGlobe(true);
+      if (!satUi.listBuilt) buildSatList();
+      satUi.time = Date.now();
+      startLoop();
+      if (globeReady) globeReady.then(globeDirty);
     }
     setTool(mode === "globe" ? "pan" : tool);
   }
   document.querySelectorAll("#viewSwitch button").forEach(b => b.addEventListener("click", () => setView3(b.dataset.view)));
+
+  // панель спутников
+  function buildSatList() {
+    satUi.listBuilt = true;
+    const list = $("satList"); list.innerHTML = "";
+    for (const it of satUi.items) {
+      const r = document.createElement("div"); r.className = "sat-row"; r.dataset.id = it.s.id;
+      r.innerHTML = `<input type="checkbox" checked title="Показывать"><span class="sat-dot" style="background:${it.s.color};box-shadow:0 0 6px ${it.s.color}"></span>` +
+        `<span class="sat-name">${esc(it.s.name)}</span><span class="sat-type">${esc(it.s.typeRu)}</span>`;
+      r.querySelector("input").addEventListener("change", e => { it.on = e.target.checked; globeDirty(); });
+      r.addEventListener("click", e => { if (e.target.tagName !== "INPUT") selectSat(it.s.id, true); });
+      list.append(r);
+    }
+    markSatRows();
+  }
+  function markSatRows() { document.querySelectorAll("#satList .sat-row").forEach(r => r.classList.toggle("active", r.dataset.id === satUi.sel)); }
+  function selectSat(id, center) {
+    satUi.sel = id; markSatRows();
+    const it = satUi.items.find(x => x.s.id === id);
+    if (center && it && it.pos && globe) { globe.lat = Math.max(-1.3, Math.min(1.3, it.pos.lat * Math.PI / 180)); globe.lon = it.pos.lon * Math.PI / 180; }
+    globeDirty();
+  }
+  function renderSatInfo() {
+    const it = satUi.items.find(x => x.s.id === satUi.sel);
+    const box = $("satInfo");
+    if (!it || !it.pos) { box.textContent = ""; return; }
+    const p = it.pos, ns = p.lat >= 0 ? "с. ш." : "ю. ш.", ew = p.lon >= 0 ? "в. д." : "з. д.";
+    const html = `<b style="color:${it.s.color}">${esc(it.s.name)}</b> — ${esc(it.s.note)}<br>` +
+      `Высота ${Math.round(p.alt).toLocaleString("ru-RU")} км · скорость ${Sat.speed(it.s, p.alt).toFixed(2).replace(".", ",")} км/с · виток ${Sat.fmtPeriod(it.s.period)}<br>` +
+      `Над точкой ${Math.abs(p.lat).toFixed(1)}° ${ns}, ${Math.abs(p.lon).toFixed(1)}° ${ew}`;
+    if (box.dataset.h !== html) { box.innerHTML = html; box.dataset.h = html; }
+    const t = new Date(satUi.time);
+    const ts = t.toLocaleString("ru-RU", { timeZone: "UTC", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) + " UTC";
+    if ($("satTime").textContent !== ts) $("satTime").textContent = ts;
+  }
+  $("satOrbits").addEventListener("change", e => { satUi.orbits = e.target.checked; globeDirty(); });
+  $("satNames").addEventListener("change", e => { satUi.names = e.target.checked; globeDirty(); });
+  $("satFollow").addEventListener("change", e => { satUi.follow = e.target.checked; globeDirty(); });
+  document.querySelectorAll("#satSpeed button").forEach(b => b.addEventListener("click", () => {
+    satUi.speed = +b.dataset.speed;
+    if (b.dataset.speed === "now") { satUi.time = Date.now(); satUi.speed = 1; }
+    document.querySelectorAll("#satSpeed button").forEach(x => x.classList.toggle("active", x === b));
+  }));
+  $("satToggle").addEventListener("click", () => $("satPanel").classList.toggle("collapsed"));
+
   (function globeInput() {
     const cv = $("globeCanvas");
     let g = null;
@@ -1142,18 +1256,27 @@
     cv.addEventListener("pointermove", e => {
       if (!g || !globe) return;
       const dx = e.clientX - g.x, dy = e.clientY - g.y, r = globe.radius();
-      if (Math.hypot(e.clientX - g.sx, e.clientY - g.sy) > 4) g.moved = true;
+      if (Math.hypot(e.clientX - g.sx, e.clientY - g.sy) > 4) { g.moved = true; if (satUi.follow) { satUi.follow = false; $("satFollow").checked = false; } }
       globe.lon -= dx / r; globe.lat = Math.max(-1.5, Math.min(1.5, globe.lat + dy / r));
       g.x = e.clientX; g.y = e.clientY; globeDirty();
     });
     cv.addEventListener("pointerup", e => {
       const was = g; g = null;
       if (!was || was.moved || !globe) return;
-      const rc = cv.getBoundingClientRect();
-      const ll = globe.unproject(e.clientX - rc.left - rc.width / 2, e.clientY - rc.top - rc.height / 2);
-      if (!ll) { select(null); return; }
+      const rc = cv.getBoundingClientRect(), mx = e.clientX - rc.left, my = e.clientY - rc.top;
+      // сначала спутники
+      let best = null, bd = 12;
+      for (const it of satUi.items) {
+        if (!it.on || !it.screen) continue;
+        const d = Math.hypot(it.screen[0] - mx, it.screen[1] - my);
+        if (d < bd) { bd = d; best = it; }
+      }
+      if (best) { selectSat(best.s.id, false); return; }
+      const ll = globe.unproject(mx - rc.width / 2, my - rc.height / 2);
+      if (!ll) { selProv = null; select(null); return; }
       const [x, y] = Geo.toXY(ll[0], ll[1]);
-      const id = T.at(x, y);
+      const id = T.at(x, y), pid = P.ids ? P.at(x, y) : 0;
+      selProv = isVisible(flat.find(f => f.id === "provBorders")) && pid && state.provinces[String(pid)] ? String(pid) : null;
       select(id && state.countries[String(id)] ? { col: "countries", id: String(id) } : null);
     });
     cv.addEventListener("wheel", e => { e.preventDefault(); globeZoom(Math.pow(1.0015, -e.deltaY)); }, { passive: false });

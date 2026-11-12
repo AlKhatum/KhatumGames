@@ -49,7 +49,29 @@
         </div>
         <div class="globe-wrap hidden" id="globeWrap">
           <canvas id="globeCanvas"></canvas>
+          <canvas id="globeOverlay" class="g-overlay"></canvas>
           <div class="g-labels" id="globeLabels"></div>
+          <div class="g-loading hidden" id="globeLoading">Собираю слои для глобуса…</div>
+        </div>
+
+        <!-- Спутники (только глобус) -->
+        <div class="sat-panel panel hidden" id="satPanel">
+          <div class="sat-head"><span>Орбиты</span><span class="sat-time" id="satTime"></span><button id="satToggle" title="Свернуть">—</button></div>
+          <div class="sat-body">
+            <div class="sat-opts">
+              <label><input type="checkbox" id="satOrbits" checked> Траектории</label>
+              <label><input type="checkbox" id="satNames" checked> Названия</label>
+              <label><input type="checkbox" id="satFollow"> Следить</label>
+            </div>
+            <div class="sat-speed" id="satSpeed">
+              <button data-speed="0" title="Пауза">⏸</button>
+              <button data-speed="now" title="Реальное время">×1</button>
+              <button data-speed="60" class="active" title="Минута за секунду">×60</button>
+              <button data-speed="600" title="10 минут за секунду">×600</button>
+            </div>
+            <div class="sat-list" id="satList"></div>
+            <div class="sat-info" id="satInfo"></div>
+          </div>
         </div>
         <div class="map-loading" id="mapLoading">Загрузка карты…</div>
 
@@ -210,6 +232,7 @@
 <script src="js/app.js"></script>
 <script src="js/geo.js"></script>
 <script src="js/territory.js"></script>
+<script src="js/sats.js"></script>
 <script src="js/globe.js"></script>
 <script src="js/github.js"></script>
 <script src="js/map.js"></script>
