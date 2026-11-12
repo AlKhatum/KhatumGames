@@ -1,867 +1,169 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>Welcome to the Teyvat</title>
-<style>
-  :root {
-    --accent: #8fd0d8;
-    --accent-dim: #3f7880;
-    --panel: rgba(10, 16, 20, .92);
-    --text: #d7e6e8;
-  }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; background: #000; color: var(--text); overflow: hidden;
-    font-family: "Segoe UI", Roboto, Arial, sans-serif; font-size: 13px; }
-  button, input, select { font: inherit; color: inherit; }
-
-  /* ---------- Карта ---------- */
-  #viewport { position: fixed; inset: 0; overflow: hidden; touch-action: none; background: #565b5f; }
-  #world { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
-  #world > * { position: absolute; left: 0; top: 0; user-select: none; -webkit-user-drag: none; pointer-events: none; }
-  #terr { opacity: 1; }
-  #overlay { position: fixed; inset: 0; pointer-events: none; }
-  #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--accent); font-size: 16px; pointer-events: none; }
-
-  /* ---------- Окна ---------- */
-  .win { position: fixed; z-index: 30; background: var(--panel); border: 1px solid var(--accent-dim); border-radius: 8px;
-    box-shadow: 0 6px 24px rgba(0,0,0,.5); min-width: 200px; }
-  .win-h { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px 6px 10px; cursor: move;
-    color: var(--accent); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; font-size: 12px;
-    border-bottom: 1px solid rgba(143,208,216,.15); user-select: none; touch-action: none; }
-  .win-h button { background: none; border: 1px solid var(--accent-dim); color: var(--accent); border-radius: 4px; cursor: pointer;
-    width: 22px; height: 20px; line-height: 1; padding: 0; }
-  .win-b { padding: 8px 10px 10px; max-height: calc(100vh - 120px); overflow: auto; }
-  .win.collapsed .win-b { display: none; }
-  .win h4 { margin: 10px 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: #7fa9ae; font-weight: 600; }
-  .win h4:first-child { margin-top: 0; }
-
-  .btn { background: #18232a; border: 1px solid #2d434a; border-radius: 5px; padding: 5px 8px; cursor: pointer; text-align: left; }
-  .btn:hover { border-color: var(--accent-dim); }
-  .btn.on { background: #1f3a40; border-color: var(--accent); color: #fff; }
-
-  /* Инструменты */
-  #tools { left: 12px; top: 12px; width: 222px; }
-  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
-  .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
-  .grid4 .btn { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 5px 2px; font-size: 10px; text-align: center; }
-  .opt { margin-top: 8px; }
-  .opt label { display: flex; align-items: center; gap: 6px; margin-top: 6px; cursor: pointer; }
-  .opt input[type=range] { width: 100%; }
-  #cur-f { display: flex; align-items: center; gap: 6px; margin-top: 8px; padding: 5px 7px; border-radius: 5px; background: #121b20; }
-  .sw { width: 14px; height: 14px; border-radius: 3px; border: 1px solid rgba(255,255,255,.35); flex: none; }
-  #tool-hint { margin-top: 8px; color: #8aa7ab; font-size: 11.5px; line-height: 1.35; }
-
-  /* Легенда */
-  #legend { right: 12px; top: 12px; width: 270px; }
-  .frow { display: flex; align-items: center; gap: 6px; padding: 4px 5px; border-radius: 5px; border: 1px solid transparent; cursor: pointer; }
-  .frow:hover { background: #121b20; }
-  .frow.active { border-color: var(--accent); background: #142328; }
-  .frow input[type=color] { width: 22px; height: 20px; padding: 0; border: 0; background: none; cursor: pointer; flex: none; }
-  .frow input[type=text] { flex: 1; min-width: 0; background: transparent; border: 0; border-bottom: 1px dashed transparent; padding: 2px 0; }
-  .frow input[type=text]:focus { outline: none; border-bottom-color: var(--accent-dim); }
-  .fpct { color: #8aa7ab; font-size: 11px; min-width: 38px; text-align: right; }
-  .fdel { background: none; border: 0; color: #a66; cursor: pointer; font-size: 15px; padding: 0 2px; }
-  .srow { display: flex; align-items: center; gap: 8px; padding: 3px 5px; }
-  .srow canvas { flex: none; }
-
-  /* Всплывающее окно точки/дороги */
-  #pop { position: fixed; z-index: 40; display: none; background: var(--panel); border: 1px solid var(--accent); border-radius: 8px; padding: 8px; width: 210px; }
-  #pop input, #pop select { width: 100%; background: #121b20; border: 1px solid #2d434a; border-radius: 4px; padding: 4px 6px; margin-bottom: 6px; }
-  #pop .row { display: flex; gap: 6px; }
-  #pop .row .btn { flex: 1; text-align: center; }
-  #pop .del { color: #f09a9a; }
-
-  /* Масштаб */
-  #controls { position: fixed; left: 12px; bottom: 12px; z-index: 20; display: flex; flex-direction: column; gap: 6px; }
-  #controls button { width: 38px; height: 38px; font-size: 19px; line-height: 1; cursor: pointer;
-    background: var(--panel); color: var(--accent); border: 1px solid var(--accent-dim); border-radius: 6px; }
-
-  /* Музыка */
-  #dock { position: fixed; right: 12px; bottom: 12px; z-index: 20; background: var(--panel);
-    border: 1px solid var(--accent-dim); border-radius: 8px; padding: 6px; display: flex; flex-direction: column; gap: 6px; }
-  #dock-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--accent); }
-  #dock-head button { background: none; border: 1px solid var(--accent-dim); color: var(--accent); border-radius: 4px; cursor: pointer; font-size: 13px; padding: 1px 7px; }
-  #dock iframe { display: block; width: 200px; height: 200px; border: 0; border-radius: 4px; }
-  #dock-err { display: none; max-width: 200px; font-size: 12px; color: #e9a; }
-
-  /* Заставка */
-  #gate { position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 22px; background: radial-gradient(ellipse at center, #0b1418 0%, #000 70%); transition: opacity .6s; }
-  #gate.hide { opacity: 0; pointer-events: none; }
-  #gate h1 { margin: 0; font-size: clamp(32px, 6vw, 72px); color: var(--accent); text-align: center; text-shadow: 0 0 24px rgba(143,208,216,.35); }
-  #enter { font-size: 20px; padding: 14px 36px; cursor: pointer; color: var(--accent); background: transparent;
-    border: 2px solid var(--accent); border-radius: 6px; letter-spacing: .08em; text-transform: uppercase; transition: background .2s, color .2s; }
-  #enter:hover { background: var(--accent); color: #000; }
-  #gate small { color: #6a8; font-size: 13px; }
-</style>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Khatum Games — Карта мира</title>
+<meta name="description" content="Khatum Games: интерактивная карта мира после Великого Потопа.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@400;600&family=Oswald:wght@400;500&family=Exo+2:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 
-<div id="viewport">
-  <div id="world">
-    <img id="map" src="map.jpg" alt="Карта" draggable="false">
-    <canvas id="terr"></canvas>
+<!-- Фоновое видео YouTube -->
+<div id="bg-video" aria-hidden="true">
+  <iframe id="yt" title="Фоновое видео"
+    src="https://www.youtube.com/embed/cIhNXNR27Sc?autoplay=1&mute=1&loop=1&playlist=cIhNXNR27Sc&controls=0&modestbranding=1&rel=0&playsinline=1&enablejsapi=1&iv_load_policy=3&disablekb=1"
+    allow="autoplay; encrypted-media" frameborder="0" tabindex="-1"></iframe>
+</div>
+<div id="bg-shade"></div>
+
+<header class="topbar">
+  <a class="brand" href="#map">
+    <span class="brand-mark">◆</span>
+    <span class="brand-name">KHATUM<b>GAMES</b></span>
+  </a>
+  <nav class="tabs" id="tabs">
+    <button data-tab="home">Главная</button>
+    <button data-tab="map" class="active">Карта</button>
+    <button data-tab="games">Игры</button>
+    <button data-tab="lore">Лор</button>
+    <button data-tab="news">Новости</button>
+    <button data-tab="gallery">Галерея</button>
+    <button data-tab="about">О нас</button>
+  </nav>
+  <button class="sound-btn" id="soundBtn" title="Звук фонового видео">
+    <span class="ico">🔇</span><span class="lbl">Звук</span>
+  </button>
+</header>
+
+<main>
+  <!-- ================= КАРТА ================= -->
+  <section class="page active" id="page-map">
+    <div class="map-shell">
+      <div class="map-frame">
+        <h1 class="map-title">Карта мира после Великого Потопа</h1>
+        <div class="viewport" id="viewport">
+          <div class="world" id="world">
+            <!-- слои заполняются из js/map.js -->
+          </div>
+        </div>
+
+        <!-- Панель инструментов -->
+        <div class="toolbar panel" id="toolbar">
+          <button data-tool="pan" class="active" title="Перемещение / выбор (V)">✥<span>Выбор</span></button>
+          <button data-tool="edit" title="Редактировать границы выбранной страны (E)">⬠<span>Границы</span></button>
+          <button data-tool="territory" title="Нарисовать новую территорию (T)">▱<span>Территория</span></button>
+          <button data-tool="border" title="Нарисовать линию границы (B)">⟋<span>Линия</span></button>
+          <button data-tool="label" title="Добавить название (N)">Aa<span>Название</span></button>
+          <button data-tool="marker" title="Поставить отметку (M)">⌖<span>Отметка</span></button>
+          <button data-tool="erase" title="Удалить объект (D)">✕<span>Удалить</span></button>
+          <div class="sep"></div>
+          <button id="undoBtn" title="Отменить (Ctrl+Z)">↶<span>Назад</span></button>
+          <button id="redoBtn" title="Вернуть (Ctrl+Y)">↷<span>Вперёд</span></button>
+        </div>
+
+        <!-- Палитра отметок -->
+        <div class="marker-palette panel hidden" id="markerPalette"></div>
+
+        <!-- Подсказка по инструменту -->
+        <div class="hint" id="hint"></div>
+
+        <div class="zoom panel">
+          <button id="zoomIn" title="Приблизить">+</button>
+          <button id="zoomOut" title="Отдалить">−</button>
+          <button id="zoomFit" title="Показать всю карту">⤢</button>
+        </div>
+      </div>
+
+      <!-- Слои -->
+      <aside class="side panel" id="layersPanel">
+        <h3>Слои</h3>
+        <div id="layerList"></div>
+        <h3>Данные</h3>
+        <div class="data-btns">
+          <button id="exportBtn">Экспорт JSON</button>
+          <label class="btn-like">Импорт JSON<input type="file" id="importInput" accept=".json,application/json" hidden></label>
+          <button id="resetBtn" class="danger">Сбросить правки</button>
+        </div>
+        <p class="small">Правки сохраняются в этом браузере автоматически.</p>
+      </aside>
+    </div>
+
+    <!-- Легенда карты -->
+    <div class="legend panel" id="legend">
+      <div class="legend-head" id="legendHead">
+        <span>Легенда карты</span>
+        <button class="legend-toggle" id="legendToggle" title="Свернуть">—</button>
+      </div>
+      <div class="legend-body">
+        <label class="flag" id="flagBox" title="Нажмите, чтобы загрузить флаг">
+          <img id="flagImg" alt="" hidden>
+          <span class="flag-ph" id="flagPh">ФЛАГ<br><small>место под изображение</small></span>
+          <input type="file" id="flagInput" accept="image/*" hidden>
+        </label>
+        <div class="legend-info">
+          <div class="legend-label">Страна</div>
+          <input type="text" id="countryName" placeholder="Выберите страну на карте" disabled>
+          <div class="legend-row">
+            <span>Цвет</span><input type="color" id="countryColor" disabled>
+            <button id="flagClear" class="small-btn" disabled>Убрать флаг</button>
+          </div>
+          <div class="legend-meta" id="countryMeta"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= ЗАГЛУШКИ ================= -->
+  <section class="page" id="page-home">
+    <div class="stub panel">
+      <h1>KHATUM GAMES</h1>
+      <p>Мир после Великого Потопа. Здесь появится главная страница проекта.</p>
+      <div class="stub-btns">
+        <button data-goto="map">Открыть карту</button>
+        <button class="soon">Начать игру</button>
+        <button class="soon">Войти</button>
+        <button class="soon">Discord</button>
+      </div>
+    </div>
+  </section>
+  <section class="page" id="page-games">
+    <div class="stub panel"><h1>Игры</h1><p>Раздел в разработке.</p>
+      <div class="stub-btns"><button class="soon">Проект I</button><button class="soon">Проект II</button><button class="soon">Скачать</button></div></div>
+  </section>
+  <section class="page" id="page-lore">
+    <div class="stub panel"><h1>Лор</h1><p>Хроники мира после Потопа — скоро.</p>
+      <div class="stub-btns"><button class="soon">Хронология</button><button class="soon">Фракции</button><button class="soon">Персонажи</button></div></div>
+  </section>
+  <section class="page" id="page-news">
+    <div class="stub panel"><h1>Новости</h1><p>Пока новостей нет.</p>
+      <div class="stub-btns"><button class="soon">Девлог</button><button class="soon">Обновления</button></div></div>
+  </section>
+  <section class="page" id="page-gallery">
+    <div class="stub panel"><h1>Галерея</h1><p>Арты и скриншоты появятся здесь.</p>
+      <div class="stub-btns"><button class="soon">Арты</button><button class="soon">Скриншоты</button><button class="soon">Видео</button></div></div>
+  </section>
+  <section class="page" id="page-about">
+    <div class="stub panel"><h1>О нас</h1><p>Информация о команде Khatum Games.</p>
+      <div class="stub-btns"><button class="soon">Команда</button><button class="soon">Контакты</button></div></div>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>
+<div class="modal hidden" id="modal">
+  <div class="modal-box panel">
+    <div class="modal-title" id="modalTitle"></div>
+    <input type="text" id="modalInput">
+    <div class="modal-btns"><button id="modalOk">OK</button><button id="modalCancel">Отмена</button></div>
   </div>
 </div>
-<canvas id="overlay"></canvas>
-<div id="loading">Загрузка карты…</div>
 
-<!-- Инструменты -->
-<div class="win" id="tools">
-  <div class="win-h"><span>Инструменты</span><button class="min" title="Свернуть">–</button></div>
-  <div class="win-b">
-    <div class="grid2" id="toolbtns">
-      <button class="btn" data-tool="pan">✋ Обзор</button>
-      <button class="btn" data-tool="brush">🖌 Кисть</button>
-      <button class="btn" data-tool="lasso">➰ Контур</button>
-      <button class="btn" data-tool="fill">🪣 Заливка</button>
-      <button class="btn" data-tool="erase">🧽 Ластик</button>
-      <button class="btn" data-tool="point">📍 Точка</button>
-      <button class="btn" data-tool="road">🛤 Дорога</button>
-      <button class="btn" id="undo" title="Ctrl+Z">↶ Отменить</button>
-    </div>
-
-    <div class="opt" id="opt-brush">
-      <div>Размер кисти: <span id="bsize-v"></span></div>
-      <input type="range" id="bsize" min="4" max="160" value="40">
-      <label><input type="checkbox" id="onlyfree"> не трогать чужие земли</label>
-    </div>
-
-    <div class="opt" id="opt-point">
-      <div style="margin-bottom:5px">Тип точки:</div>
-      <div class="grid4" id="ptypes"></div>
-    </div>
-
-    <div id="cur-f"><span>Держава:</span><span class="sw" id="cur-sw"></span><b id="cur-name"></b></div>
-    <div id="tool-hint"></div>
-
-    <h4 style="margin-top:12px">Данные</h4>
-    <div class="grid2">
-      <button class="btn" id="export">💾 Экспорт</button>
-      <button class="btn" id="import">📂 Импорт</button>
-      <button class="btn" id="clear-terr">🗑 Стереть земли</button>
-      <button class="btn" id="clear-all">🗑 Стереть всё</button>
-    </div>
-    <input type="file" id="import-file" accept=".json,application/json" hidden>
-  </div>
-</div>
-
-<!-- Легенда -->
-<div class="win" id="legend">
-  <div class="win-h"><span>Легенда</span><button class="min" title="Свернуть">–</button></div>
-  <div class="win-b">
-    <h4>Державы</h4>
-    <div id="flist"></div>
-    <button class="btn" id="fadd" style="margin-top:6px;width:100%;text-align:center">+ Добавить державу</button>
-    <h4>Обозначения</h4>
-    <div id="symlist"></div>
-  </div>
-</div>
-
-<div id="pop"></div>
-
-<div id="controls">
-  <button id="zin" title="Приблизить">+</button>
-  <button id="zout" title="Отдалить">−</button>
-  <button id="zfit" title="Вся карта">⤢</button>
-</div>
-
-<div id="dock">
-  <div id="dock-head"><span>♪ Музыка</span><button id="mute" title="Звук вкл/выкл">🔊</button></div>
-  <div id="yt"></div>
-  <div id="dock-err"></div>
-</div>
-
-<div id="gate">
-  <h1>Welcome to the Teyvat</h1>
-  <button id="enter">Войти</button>
-  <small>сайт со звуком</small>
-</div>
-
-<script>
-/* ======================= НАСТРОЙКИ ======================= */
-const VIDEO_ID  = 'IisYtJGfVFU';  // id ролика YouTube
-const START_SEC = 0;              // с какой секунды играть
-const VOLUME    = 40;             // громкость 0–100
-
-// 4 типа точек: id, подпись, форма значка, цвет
-const PTYPES = [
-  { id: 'capital', name: 'Столица',  shape: 'star',    color: '#f2c94c' },
-  { id: 'city',    name: 'Город',    shape: 'circle',  color: '#ffffff' },
-  { id: 'fort',    name: 'Крепость', shape: 'square',  color: '#e0604f' },
-  { id: 'port',    name: 'Порт',     shape: 'diamond', color: '#5cc8f0' },
-];
-const DEFAULT_FACTIONS = [
-  { id: 1, name: 'Держава 1', color: '#3b6fd6' },
-  { id: 2, name: 'Держава 2', color: '#d64545' },
-  { id: 3, name: 'Держава 3', color: '#3fae6a' },
-  { id: 4, name: 'Держава 4', color: '#e0a63a' },
-];
-const TS = 3;            // 1 пиксель территорий = 3 пикселя карты
-const FILL_A = 125;      // прозрачность заливки (0–255)
-const STORE_KEY = 'teyvat-map-v1';
-/* ========================================================= */
-
-const $ = id => document.getElementById(id);
-const vp = $('viewport'), world = $('world'), img = $('map');
-const tcan = $('terr'), tctx = tcan.getContext('2d');
-const ov = $('overlay'), octx = ov.getContext('2d');
-
-let W = 0, H = 0, TW = 0, TH = 0;
-let owner, land, vis, tImg, landTotal = 0;
-let factions = [], points = [], roads = [];
-let activeF = 1, tool = 'pan', ptype = 'city';
-const view = { s: 1, tx: 0, ty: 0, min: .05, max: 2 };
-const colorTab = new Uint8Array(256 * 6); // r,g,b, тёмные r,g,b
-let mouse = { x: -999, y: -999, in: false };
-
-/* ---------------- Утилиты ---------------- */
-const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-const hex2rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
-const toWorld = (x, y) => [(x - view.tx) / view.s, (y - view.ty) / view.s];
-const toScreen = (x, y) => [x * view.s + view.tx, y * view.s + view.ty];
-const newId = arr => arr.reduce((m, o) => Math.max(m, o.id), 0) + 1;
-const fById = id => factions.find(f => f.id === id);
-const pById = id => points.find(p => p.id === id);
-const ptDef = id => PTYPES.find(t => t.id === id) || PTYPES[1];
-
-function updateColors() {
-  colorTab.fill(0);
-  for (const f of factions) {
-    const [r, g, b] = hex2rgb(f.color), o = f.id * 6;
-    colorTab[o] = r; colorTab[o + 1] = g; colorTab[o + 2] = b;
-    colorTab[o + 3] = r * .45; colorTab[o + 4] = g * .45; colorTab[o + 5] = b * .45;
-  }
-}
-
-/* ---------------- Отрисовка территорий ---------------- */
-function renderTerr(x0, y0, x1, y1) {
-  x0 = clamp(x0 | 0, 0, TW); y0 = clamp(y0 | 0, 0, TH); x1 = clamp(Math.ceil(x1), 0, TW); y1 = clamp(Math.ceil(y1), 0, TH);
-  if (x1 <= x0 || y1 <= y0) return;
-  const d = tImg.data;
-  for (let y = y0; y < y1; y++) {
-    let i = y * TW + x0;
-    for (let x = x0; x < x1; x++, i++) {
-      const p = i * 4, o = owner[i];
-      if (!o || !vis[i]) { d[p + 3] = 0; continue; }
-      let n, border = false;
-      if (x > 0      && land[i - 1]  && (n = owner[i - 1])  !== o && n < o) border = true;
-      else if (x < TW - 1 && land[i + 1]  && (n = owner[i + 1])  !== o && n < o) border = true;
-      else if (y > 0      && land[i - TW] && (n = owner[i - TW]) !== o && n < o) border = true;
-      else if (y < TH - 1 && land[i + TW] && (n = owner[i + TW]) !== o && n < o) border = true;
-      const c = o * 6 + (border ? 3 : 0);
-      d[p] = colorTab[c]; d[p + 1] = colorTab[c + 1]; d[p + 2] = colorTab[c + 2]; d[p + 3] = border ? 235 : FILL_A;
-    }
-  }
-  tctx.putImageData(tImg, 0, 0, x0, y0, x1 - x0, y1 - y0);
-}
-const renderAll = () => renderTerr(0, 0, TW, TH);
-
-let dirty = null, rafT = 0;
-function markDirty(x0, y0, x1, y1) {
-  if (!dirty) dirty = [x0, y0, x1, y1];
-  else { dirty[0] = Math.min(dirty[0], x0); dirty[1] = Math.min(dirty[1], y0); dirty[2] = Math.max(dirty[2], x1); dirty[3] = Math.max(dirty[3], y1); }
-  if (!rafT) rafT = requestAnimationFrame(() => { rafT = 0; const r = dirty; dirty = null; if (r) renderTerr(r[0] - 2, r[1] - 2, r[2] + 2, r[3] + 2); });
-}
-
-/* ---------------- Операции с территорией ---------------- */
-const onlyFree = () => $('onlyfree').checked;
-
-function paintDisk(cx, cy, r, val) {
-  const x0 = Math.max(0, Math.floor(cx - r)), x1 = Math.min(TW - 1, Math.ceil(cx + r));
-  const y0 = Math.max(0, Math.floor(cy - r)), y1 = Math.min(TH - 1, Math.ceil(cy + r));
-  const r2 = r * r, free = val && onlyFree();
-  for (let y = y0; y <= y1; y++) {
-    const dy = y - cy;
-    for (let x = x0; x <= x1; x++) {
-      const dx = x - cx; if (dx * dx + dy * dy > r2) continue;
-      const i = y * TW + x;
-      if (!land[i]) continue;
-      if (free && owner[i] && owner[i] !== val) continue;
-      owner[i] = val;
-    }
-  }
-  markDirty(x0, y0, x1 + 1, y1 + 1);
-}
-
-function paintLine(a, b, val) {
-  const r = Math.max(.7, (+$('bsize').value / 2) / (view.s * TS));
-  const ax = a[0] / TS, ay = a[1] / TS, bx = b[0] / TS, by = b[1] / TS;
-  const dist = Math.hypot(bx - ax, by - ay), steps = Math.max(1, Math.ceil(dist / (r * .4)));
-  for (let k = 1; k <= steps; k++) paintDisk(ax + (bx - ax) * k / steps, ay + (by - ay) * k / steps, r, val);
-}
-
-function fillPolygon(pts, val) {
-  if (pts.length < 3) return 0;
-  const tp = pts.map(p => [p[0] / TS, p[1] / TS]);
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const [x, y] of tp) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
-  x0 = clamp(Math.floor(x0), 0, TW - 1); y0 = clamp(Math.floor(y0), 0, TH - 1);
-  x1 = clamp(Math.ceil(x1), 0, TW - 1);  y1 = clamp(Math.ceil(y1), 0, TH - 1);
-  const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
-  const c = document.createElement('canvas'); c.width = bw; c.height = bh;
-  const g = c.getContext('2d');
-  g.beginPath(); tp.forEach(([x, y], k) => k ? g.lineTo(x - x0, y - y0) : g.moveTo(x - x0, y - y0)); g.closePath();
-  g.fillStyle = '#000'; g.fill();
-  const a = g.getImageData(0, 0, bw, bh).data, free = val && onlyFree();
-  let n = 0;
-  for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
-    if (a[(y * bw + x) * 4 + 3] < 128) continue;
-    const i = (y + y0) * TW + x + x0;
-    if (!land[i] || (free && owner[i] && owner[i] !== val) || owner[i] === val) continue;
-    owner[i] = val; n++;
-  }
-  markDirty(x0, y0, x1 + 1, y1 + 1);
-  return n;
-}
-
-let fillStack = null;
-function floodFill(wx, wy, val) {
-  const sx = Math.floor(wx / TS), sy = Math.floor(wy / TS);
-  if (sx < 0 || sy < 0 || sx >= TW || sy >= TH) return 0;
-  const s = sy * TW + sx;
-  if (!land[s]) return 0;
-  const target = owner[s];
-  if (target === val) return 0;
-  if (!fillStack) fillStack = new Int32Array(TW * TH);
-  let sp = 0, n = 0, x0 = sx, y0 = sy, x1 = sx, y1 = sy;
-  fillStack[sp++] = s; owner[s] = val;
-  while (sp) {
-    const i = fillStack[--sp], x = i % TW, y = (i - x) / TW; n++;
-    if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
-    if (x > 0      && land[i - 1]  && owner[i - 1]  === target) { owner[i - 1]  = val; fillStack[sp++] = i - 1; }
-    if (x < TW - 1 && land[i + 1]  && owner[i + 1]  === target) { owner[i + 1]  = val; fillStack[sp++] = i + 1; }
-    if (y > 0      && land[i - TW] && owner[i - TW] === target) { owner[i - TW] = val; fillStack[sp++] = i - TW; }
-    if (y < TH - 1 && land[i + TW] && owner[i + TW] === target) { owner[i + TW] = val; fillStack[sp++] = i + TW; }
-  }
-  markDirty(x0, y0, x1 + 1, y1 + 1);
-  return n;
-}
-
-/* ---------------- Сжатие, отмена, сохранение ---------------- */
-function rleEncode(a) {
-  const out = []; let v = a[0], c = 1;
-  for (let i = 1; i < a.length; i++) { if (a[i] === v) c++; else { out.push(v, c); v = a[i]; c = 1; } }
-  out.push(v, c); return out;
-}
-function rleDecode(r, a) {
-  let p = 0;
-  for (let k = 0; k < r.length; k += 2) { a.fill(r[k], p, p + r[k + 1]); p += r[k + 1]; }
-}
-
-const undoStack = [];
-function snapshot() { return { t: Int32Array.from(rleEncode(owner)), d: JSON.stringify({ factions, points, roads, activeF }) }; }
-function pushUndo() { undoStack.push(snapshot()); if (undoStack.length > 40) undoStack.shift(); }
-function undo() {
-  const s = undoStack.pop(); if (!s) return;
-  rleDecode(s.t, owner);
-  ({ factions, points, roads, activeF } = JSON.parse(s.d));
-  roadDraft = null; hidePop();
-  afterBigChange();
-}
-
-function serialize() { return { v: 1, tw: TW, th: TH, factions, points, roads, terr: rleEncode(owner) }; }
-function deserialize(o) {
-  factions = Array.isArray(o.factions) ? o.factions : DEFAULT_FACTIONS.map(f => ({ ...f }));
-  points = Array.isArray(o.points) ? o.points : [];
-  roads = Array.isArray(o.roads) ? o.roads : [];
-  owner.fill(0);
-  if (o.terr && o.tw === TW && o.th === TH) rleDecode(o.terr, owner);
-  activeF = factions[0] ? factions[0].id : 0;
-}
-let saveT = 0, savePending = false;
-function saveNow() {
-  clearTimeout(saveT); if (!owner) return; savePending = false;
-  try { localStorage.setItem(STORE_KEY, JSON.stringify(serialize())); } catch (e) { console.warn('Не удалось сохранить', e); }
-}
-function scheduleSave() { savePending = true; clearTimeout(saveT); saveT = setTimeout(saveNow, 250); }
-window.addEventListener('pagehide', () => { if (savePending) saveNow(); });
-document.addEventListener('visibilitychange', () => { if (document.hidden && savePending) saveNow(); });
-
-function afterBigChange() { updateColors(); renderAll(); buildLegend(); updateStats(); requestDraw(); scheduleSave(); }
-function afterTerrChange() { updateStats(); scheduleSave(); }
-
-/* ---------------- Статистика ---------------- */
-let statsT = 0;
-function updateStats() {
-  clearTimeout(statsT);
-  statsT = setTimeout(() => {
-    const cnt = new Uint32Array(256);
-    for (let i = 0; i < owner.length; i++) if (vis[i]) cnt[owner[i]]++;
-    document.querySelectorAll('.frow').forEach(r => {
-      const id = +r.dataset.id;
-      r.querySelector('.fpct').textContent = (cnt[id] / landTotal * 100).toFixed(1) + '%';
-    });
-  }, 150);
-}
-
-/* ---------------- Значки точек ---------------- */
-function drawIcon(g, type, x, y, r) {
-  const t = ptDef(type);
-  g.beginPath();
-  if (t.shape === 'star') {
-    for (let k = 0; k < 10; k++) {
-      const a = -Math.PI / 2 + k * Math.PI / 5, rr = k % 2 ? r * .55 : r * 1.35;
-      const px = x + Math.cos(a) * rr, py = y + Math.sin(a) * rr; k ? g.lineTo(px, py) : g.moveTo(px, py);
-    }
-    g.closePath();
-  } else if (t.shape === 'circle') g.arc(x, y, r * .8, 0, Math.PI * 2);
-  else if (t.shape === 'square') g.rect(x - r * .8, y - r * .8, r * 1.6, r * 1.6);
-  else { g.moveTo(x, y - r * 1.1); g.lineTo(x + r * 1.1, y); g.lineTo(x, y + r * 1.1); g.lineTo(x - r * 1.1, y); g.closePath(); }
-  g.fillStyle = t.color; g.fill();
-  g.lineWidth = 1.6; g.strokeStyle = '#14181a'; g.stroke();
-}
-function iconCanvas(type, size = 22) {
-  const c = document.createElement('canvas'), dpr = window.devicePixelRatio || 1;
-  c.width = c.height = size * dpr; c.style.width = c.style.height = size + 'px';
-  const g = c.getContext('2d'); g.scale(dpr, dpr);
-  if (type === '__road') {
-    g.lineCap = 'round'; g.strokeStyle = '#2a2016'; g.lineWidth = 5; g.beginPath(); g.moveTo(2, size - 6); g.quadraticCurveTo(size / 2, 2, size - 2, size / 2); g.stroke();
-    g.strokeStyle = '#e9d9a6'; g.lineWidth = 2.5; g.stroke();
-  } else drawIcon(g, type, size / 2, size / 2, 6.5);
-  return c;
-}
-
-/* ---------------- Слой точек и дорог ---------------- */
-let roadDraft = null, lasso = null, drawQ = false;
-function requestDraw() { if (!drawQ) { drawQ = true; requestAnimationFrame(drawOverlay); } }
-
-function roadScreenPath(r) {
-  const a = pById(r.from), b = pById(r.to); if (!a || !b) return null;
-  return [[a.x, a.y], ...(r.via || []), [b.x, b.y]].map(p => toScreen(p[0], p[1]));
-}
-function strokeRoad(pts) {
-  octx.beginPath(); pts.forEach(([x, y], k) => k ? octx.lineTo(x, y) : octx.moveTo(x, y));
-  octx.strokeStyle = '#2a2016'; octx.lineWidth = 5; octx.stroke();
-  octx.strokeStyle = '#e9d9a6'; octx.lineWidth = 2.5; octx.stroke();
-}
-
-function drawOverlay() {
-  drawQ = false;
-  const dpr = window.devicePixelRatio || 1;
-  octx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  octx.clearRect(0, 0, ov.width, ov.height);
-  octx.lineCap = octx.lineJoin = 'round';
-
-  for (const r of roads) { const p = roadScreenPath(r); if (p) strokeRoad(p); }
-
-  if (roadDraft) {
-    const a = pById(roadDraft.from);
-    if (a) {
-      const pts = [[a.x, a.y], ...roadDraft.via].map(p => toScreen(p[0], p[1]));
-      strokeRoad(pts);
-      const last = pts[pts.length - 1];
-      octx.setLineDash([6, 6]); octx.strokeStyle = '#e9d9a6'; octx.lineWidth = 2;
-      octx.beginPath(); octx.moveTo(last[0], last[1]); octx.lineTo(mouse.x, mouse.y); octx.stroke(); octx.setLineDash([]);
-      const [sx, sy] = toScreen(a.x, a.y);
-      octx.beginPath(); octx.arc(sx, sy, 14, 0, Math.PI * 2); octx.strokeStyle = '#8fd0d8'; octx.lineWidth = 2; octx.stroke();
-    }
-  }
-
-  octx.textAlign = 'center'; octx.textBaseline = 'top';
-  for (const p of points) {
-    const [x, y] = toScreen(p.x, p.y);
-    if (x < -60 || y < -60 || x > innerWidth + 60 || y > innerHeight + 60) continue;
-    drawIcon(octx, p.type, x, y, p.type === 'capital' ? 8 : 6.5);
-    if (p.name) {
-      octx.font = (p.type === 'capital' ? '700 13px' : '600 12px') + ' "Segoe UI", Roboto, Arial, sans-serif';
-      octx.lineWidth = 3.5; octx.strokeStyle = 'rgba(10,12,14,.9)'; octx.strokeText(p.name, x, y + 11);
-      octx.fillStyle = '#fff'; octx.fillText(p.name, x, y + 11);
-    }
-  }
-
-  if (lasso && lasso.length > 1) {
-    const f = fById(activeF);
-    octx.beginPath(); lasso.forEach((p, k) => { const [x, y] = toScreen(p[0], p[1]); k ? octx.lineTo(x, y) : octx.moveTo(x, y); }); octx.closePath();
-    octx.fillStyle = f ? f.color + '44' : 'rgba(255,255,255,.2)'; octx.fill();
-    octx.setLineDash([5, 4]); octx.strokeStyle = '#fff'; octx.lineWidth = 1.5; octx.stroke(); octx.setLineDash([]);
-  }
-
-  if ((tool === 'brush' || tool === 'erase') && mouse.in) {
-    const r = +$('bsize').value / 2;
-    octx.beginPath(); octx.arc(mouse.x, mouse.y, r, 0, Math.PI * 2);
-    octx.strokeStyle = 'rgba(0,0,0,.7)'; octx.lineWidth = 3; octx.stroke();
-    octx.strokeStyle = tool === 'erase' ? '#fff' : (fById(activeF)?.color || '#fff'); octx.lineWidth = 1.5; octx.stroke();
-  }
-}
-
-function resizeOverlay() {
-  const dpr = window.devicePixelRatio || 1;
-  ov.width = innerWidth * dpr; ov.height = innerHeight * dpr;
-  ov.style.width = innerWidth + 'px'; ov.style.height = innerHeight + 'px';
-  requestDraw();
-}
-
-/* ---------------- Вид: масштаб и сдвиг ---------------- */
-function applyView() { world.style.transform = `translate(${view.tx}px, ${view.ty}px) scale(${view.s})`; requestDraw(); }
-function clampView() {
-  const w = W * view.s, h = H * view.s, vw = innerWidth, vh = innerHeight, m = 120;
-  view.tx = w + 2 * m <= vw ? (vw - w) / 2 : clamp(view.tx, vw - w - m, m);
-  view.ty = h + 2 * m <= vh ? (vh - h) / 2 : clamp(view.ty, vh - h - m, m);
-}
-function fit() { view.min = Math.min(innerWidth / W, innerHeight / H) * .9; view.s = Math.min(innerWidth / W, innerHeight / H); view.tx = (innerWidth - W * view.s) / 2; view.ty = (innerHeight - H * view.s) / 2; applyView(); }
-function zoomAt(f, cx, cy) {
-  const ns = clamp(view.s * f, view.min, view.max);
-  view.tx = cx - (cx - view.tx) * ns / view.s; view.ty = cy - (cy - view.ty) * ns / view.s; view.s = ns;
-  clampView(); applyView();
-}
-
-/* ---------------- Попапы ---------------- */
-const pop = $('pop');
-function hidePop() { pop.style.display = 'none'; pop.innerHTML = ''; }
-function placePop(x, y) {
-  pop.style.display = 'block';
-  const w = pop.offsetWidth, h = pop.offsetHeight;
-  pop.style.left = clamp(x + 16, 8, innerWidth - w - 8) + 'px';
-  pop.style.top = clamp(y - h / 2, 8, innerHeight - h - 8) + 'px';
-}
-function openPointPop(p, focus) {
-  pop.innerHTML = `
-    <input id="pp-name" placeholder="Название" maxlength="60">
-    <select id="pp-type">${PTYPES.map(t => `<option value="${t.id}">${t.name}</option>`).join('')}</select>
-    <div class="row"><button class="btn del" id="pp-del">Удалить</button><button class="btn" id="pp-ok">Готово</button></div>`;
-  const n = $('pp-name'), t = $('pp-type');
-  n.value = p.name || ''; t.value = p.type;
-  n.oninput = () => { p.name = n.value; requestDraw(); scheduleSave(); };
-  n.onkeydown = e => { if (e.key === 'Enter') hidePop(); e.stopPropagation(); };
-  t.onchange = () => { pushUndo(); p.type = t.value; requestDraw(); scheduleSave(); };
-  $('pp-del').onclick = () => { pushUndo(); points = points.filter(q => q !== p); roads = roads.filter(r => r.from !== p.id && r.to !== p.id); hidePop(); requestDraw(); scheduleSave(); };
-  $('pp-ok').onclick = hidePop;
-  const [x, y] = toScreen(p.x, p.y); placePop(x, y);
-  if (focus) n.focus();
-}
-function openRoadPop(r, x, y) {
-  const a = pById(r.from), b = pById(r.to);
-  pop.innerHTML = `<div style="margin-bottom:8px">Дорога: <b>${esc(a?.name || '…')}</b> — <b>${esc(b?.name || '…')}</b></div>
-    <div class="row"><button class="btn del" id="rp-del">Удалить</button><button class="btn" id="rp-ok">Закрыть</button></div>`;
-  $('rp-del').onclick = () => { pushUndo(); roads = roads.filter(q => q !== r); hidePop(); requestDraw(); scheduleSave(); };
-  $('rp-ok').onclick = hidePop;
-  placePop(x, y);
-}
-const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-
-/* ---------------- Попадание по объектам ---------------- */
-function hitPoint(x, y) {
-  for (let k = points.length - 1; k >= 0; k--) { const [sx, sy] = toScreen(points[k].x, points[k].y); if (Math.hypot(sx - x, sy - y) < 12) return points[k]; }
-  return null;
-}
-function segDist(px, py, ax, ay, bx, by) {
-  const dx = bx - ax, dy = by - ay, l = dx * dx + dy * dy;
-  const t = l ? clamp(((px - ax) * dx + (py - ay) * dy) / l, 0, 1) : 0;
-  return Math.hypot(px - ax - t * dx, py - ay - t * dy);
-}
-function hitRoad(x, y) {
-  for (let k = roads.length - 1; k >= 0; k--) {
-    const p = roadScreenPath(roads[k]); if (!p) continue;
-    for (let i = 1; i < p.length; i++) if (segDist(x, y, p[i - 1][0], p[i - 1][1], p[i][0], p[i][1]) < 6) return roads[k];
-  }
-  return null;
-}
-
-/* ---------------- Ввод мышью и пальцами ---------------- */
-const ptrs = new Map();
-let act = null, pinchD = 0;
-
-vp.addEventListener('contextmenu', e => e.preventDefault());
-vp.addEventListener('wheel', e => { e.preventDefault(); zoomAt(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX, e.clientY); }, { passive: false });
-vp.addEventListener('pointerenter', () => { mouse.in = true; });
-vp.addEventListener('pointerleave', () => { mouse.in = false; requestDraw(); });
-
-vp.addEventListener('pointerdown', e => {
-  if (!owner) return;
-  vp.setPointerCapture(e.pointerId);
-  ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
-  hidePop();
-  if (ptrs.size === 2) { cancelAct(); act = { type: 'pinch' }; pinchD = 0; return; }
-  if (ptrs.size > 2) return;
-  const x = e.clientX, y = e.clientY, w = toWorld(x, y);
-  const base = { down: { x, y }, last: { x, y }, moved: false };
-  if (e.button === 1 || e.button === 2) { act = { type: 'pan', ...base }; return; }
-  switch (tool) {
-    case 'pan': {
-      const p = hitPoint(x, y);
-      act = p ? { type: 'dragPoint', p, snap: false, ...base } : { type: 'pan', click: true, ...base };
-      break;
-    }
-    case 'brush': case 'erase': {
-      const val = tool === 'erase' ? 0 : activeF;
-      if (tool === 'brush' && !fById(activeF)) { flashHint('Сначала добавьте державу в легенде.'); return; }
-      pushUndo(); act = { type: 'paint', val, lastW: w, ...base }; paintLine(w, w, val); break;
-    }
-    case 'lasso':
-      if (!fById(activeF)) { flashHint('Сначала добавьте державу в легенде.'); return; }
-      lasso = [w]; act = { type: 'lasso', ...base }; break;
-    default: act = { type: 'click', ...base };
-  }
-});
-
-vp.addEventListener('pointermove', e => {
-  mouse.x = e.clientX; mouse.y = e.clientY; mouse.in = true;
-  if (ptrs.has(e.pointerId)) ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
-  if (!act) { if (tool === 'brush' || tool === 'erase' || roadDraft) requestDraw(); return; }
-  if (act.type === 'pinch') {
-    if (ptrs.size !== 2) return;
-    const [a, b] = [...ptrs.values()], d = Math.hypot(a.x - b.x, a.y - b.y);
-    if (pinchD) zoomAt(d / pinchD, (a.x + b.x) / 2, (a.y + b.y) / 2);
-    pinchD = d; return;
-  }
-  const x = e.clientX, y = e.clientY;
-  if (!act.moved && Math.hypot(x - act.down.x, y - act.down.y) > 4) act.moved = true;
-  const dx = x - act.last.x, dy = y - act.last.y; act.last = { x, y };
-  switch (act.type) {
-    case 'click': if (!act.moved) break; act.type = 'pan'; // перетаскивание в «кликовых» инструментах двигает карту
-    case 'pan': view.tx += dx; view.ty += dy; clampView(); applyView(); break;
-    case 'dragPoint':
-      if (!act.moved) break;
-      if (!act.snap) { pushUndo(); act.snap = true; }
-      [act.p.x, act.p.y] = toWorld(x, y); requestDraw(); break;
-    case 'paint': { const w = toWorld(x, y); paintLine(act.lastW, w, act.val); act.lastW = w; requestDraw(); break; }
-    case 'lasso': {
-      const l = lasso[lasso.length - 1], [lx, ly] = toScreen(l[0], l[1]);
-      if (Math.hypot(x - lx, y - ly) > 3) { lasso.push(toWorld(x, y)); requestDraw(); }
-      break;
-    }
-  }
-});
-
-function endPointer(e) {
-  ptrs.delete(e.pointerId);
-  if (!act) return;
-  if (act.type === 'pinch') { if (!ptrs.size) act = null; pinchD = 0; return; }
-  const a = act; act = null;
-  const x = a.last.x, y = a.last.y;
-  switch (a.type) {
-    case 'pan':
-      if (a.click && !a.moved) { const r = hitRoad(x, y); if (r) openRoadPop(r, x, y); }
-      break;
-    case 'dragPoint': if (!a.moved) openPointPop(a.p); else scheduleSave(); break;
-    case 'paint': afterTerrChange(); break;
-    case 'lasso': {
-      const pts = lasso; lasso = null;
-      if (e.type !== 'pointercancel' && pts.length > 2) { pushUndo(); if (!fillPolygon(pts, activeF)) undoStack.pop(); else afterTerrChange(); }
-      requestDraw(); break;
-    }
-    case 'click': if (e.type !== 'pointercancel') toolClick(x, y); break;
-  }
-}
-vp.addEventListener('pointerup', endPointer);
-vp.addEventListener('pointercancel', endPointer);
-
-function cancelAct() {
-  if (act && act.type === 'lasso') { lasso = null; requestDraw(); }
-  if (act && act.type === 'paint') afterTerrChange();
-  act = null;
-}
-
-function toolClick(x, y) {
-  const [wx, wy] = toWorld(x, y);
-  if (tool === 'fill') {
-    if (!fById(activeF)) return flashHint('Сначала добавьте державу в легенде.');
-    const sx = Math.floor(wx / TS), sy = Math.floor(wy / TS);
-    if (sx < 0 || sy < 0 || sx >= TW || sy >= TH || !land[sy * TW + sx]) return flashHint('Здесь вода — кликните по суше.');
-    pushUndo(); if (!floodFill(wx, wy, activeF)) undoStack.pop(); else afterTerrChange();
-  } else if (tool === 'point') {
-    if (wx < 0 || wy < 0 || wx > W || wy > H) return;
-    pushUndo();
-    const p = { id: newId(points), type: ptype, x: wx, y: wy, name: '' };
-    points.push(p); requestDraw(); scheduleSave(); openPointPop(p, true);
-  } else if (tool === 'road') {
-    const p = hitPoint(x, y);
-    if (!roadDraft) {
-      if (p) { roadDraft = { from: p.id, via: [] }; requestDraw(); }
-      else { const r = hitRoad(x, y); if (r) openRoadPop(r, x, y); else flashHint('Начните дорогу с клика по точке.'); }
-    } else if (p && p.id !== roadDraft.from) {
-      pushUndo(); roads.push({ id: newId(roads), from: roadDraft.from, to: p.id, via: roadDraft.via });
-      roadDraft = null; requestDraw(); scheduleSave();
-    } else if (!p) { roadDraft.via.push([wx, wy]); requestDraw(); }
-  }
-}
-
-window.addEventListener('keydown', e => {
-  if (e.target.matches('input, select, textarea')) return;
-  if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') { e.preventDefault(); undo(); }
-  if (e.key === 'Escape') { roadDraft = null; cancelAct(); hidePop(); requestDraw(); }
-  if (e.key === 'Backspace' && roadDraft && roadDraft.via.length) { roadDraft.via.pop(); requestDraw(); }
-});
-
-/* ---------------- Панель инструментов ---------------- */
-const HINTS = {
-  pan:   'Тяните карту, колесо — масштаб. Клик по точке — изменить, перетаскивание точки — переместить. Клик по дороге — удалить её.',
-  brush: 'Рисуйте территорию державы, выбранной в легенде. Правая кнопка мыши — сдвиг карты.',
-  lasso: 'Обведите область — суша внутри зальётся цветом державы.',
-  fill:  'Клик по суше — заливка всей связной области до границ другой державы или берега.',
-  erase: 'Стирает территорию под кистью.',
-  point: 'Выберите тип и кликните по карте.',
-  road:  'Клик по точке → клики по карте задают изгибы → клик по второй точке. Esc — отмена, Backspace — убрать изгиб.',
-};
-let hintT = 0;
-function flashHint(t) { const h = $('tool-hint'); h.textContent = t; h.style.color = '#f0b27a'; clearTimeout(hintT); hintT = setTimeout(() => setTool(tool), 2200); }
-function setTool(t) {
-  tool = t;
-  if (t !== 'road') roadDraft = null;
-  document.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t));
-  $('opt-brush').style.display = (t === 'brush' || t === 'erase' || t === 'lasso') ? '' : 'none';
-  $('bsize').parentElement.querySelector('div').style.display = $('bsize').style.display = t === 'lasso' ? 'none' : '';
-  $('opt-point').style.display = t === 'point' ? '' : 'none';
-  const h = $('tool-hint'); h.textContent = HINTS[t]; h.style.color = '';
-  vp.style.cursor = t === 'pan' ? 'grab' : (t === 'brush' || t === 'erase') ? 'none' : 'crosshair';
-  requestDraw();
-}
-document.querySelectorAll('[data-tool]').forEach(b => b.onclick = () => setTool(b.dataset.tool));
-$('undo').onclick = undo;
-$('bsize').oninput = () => { $('bsize-v').textContent = $('bsize').value + ' px'; requestDraw(); };
-$('bsize').oninput();
-
-PTYPES.forEach(t => {
-  const b = document.createElement('button'); b.className = 'btn'; b.dataset.pt = t.id;
-  b.append(iconCanvas(t.id, 20), document.createTextNode(t.name));
-  b.onclick = () => { ptype = t.id; document.querySelectorAll('[data-pt]').forEach(x => x.classList.toggle('on', x.dataset.pt === ptype)); };
-  $('ptypes').append(b);
-});
-document.querySelector(`[data-pt="${ptype}"]`).classList.add('on');
-
-$('export').onclick = () => {
-  const blob = new Blob([JSON.stringify(serialize())], { type: 'application/json' });
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'map-data.json'; a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-};
-$('import').onclick = () => $('import-file').click();
-$('import-file').onchange = async e => {
-  const f = e.target.files[0]; if (!f) return;
-  try { const o = JSON.parse(await f.text()); pushUndo(); deserialize(o); afterBigChange(); }
-  catch (err) { flashHint('Не удалось прочитать файл.'); }
-  e.target.value = '';
-};
-$('clear-terr').onclick = () => { pushUndo(); owner.fill(0); afterBigChange(); flashHint('Земли стёрты. Ctrl+Z — вернуть.'); };
-$('clear-all').onclick = () => { pushUndo(); owner.fill(0); points = []; roads = []; roadDraft = null; afterBigChange(); flashHint('Всё стёрто. Ctrl+Z — вернуть.'); };
-
-/* ---------------- Легенда ---------------- */
-function setActive(id) { activeF = id; document.querySelectorAll('.frow').forEach(r => r.classList.toggle('active', +r.dataset.id === id)); updateCur(); requestDraw(); }
-function updateCur() { const f = fById(activeF); $('cur-sw').style.background = f ? f.color : 'transparent'; $('cur-name').textContent = f ? f.name : '— нет —'; }
-function buildLegend() {
-  const list = $('flist'); list.innerHTML = '';
-  for (const f of factions) {
-    const r = document.createElement('div'); r.className = 'frow' + (f.id === activeF ? ' active' : ''); r.dataset.id = f.id;
-    r.innerHTML = `<input type="color"><input type="text" maxlength="40"><span class="fpct"></span><button class="fdel" title="Удалить державу">×</button>`;
-    const [c, n] = r.querySelectorAll('input');
-    c.value = f.color; n.value = f.name;
-    c.oninput = () => { f.color = c.value; updateColors(); renderAll(); updateCur(); scheduleSave(); };
-    c.onclick = n.onfocus = () => setActive(f.id);
-    n.oninput = () => { f.name = n.value; updateCur(); scheduleSave(); };
-    n.onkeydown = e => e.stopPropagation();
-    r.querySelector('.fdel').onclick = e => {
-      e.stopPropagation(); pushUndo();
-      for (let i = 0; i < owner.length; i++) if (owner[i] === f.id) owner[i] = 0;
-      factions = factions.filter(q => q !== f);
-      if (activeF === f.id) activeF = factions[0] ? factions[0].id : 0;
-      afterBigChange();
-    };
-    r.onclick = () => setActive(f.id);
-    list.append(r);
-  }
-  updateCur(); updateStats();
-}
-$('fadd').onclick = () => {
-  if (factions.length >= 250) return;
-  pushUndo();
-  const hue = (factions.length * 137.5) % 360;
-  const col = hsl2hex(hue, 62, 52);
-  const f = { id: newId(factions), name: 'Держава ' + (factions.length + 1), color: col };
-  factions.push(f); activeF = f.id; afterBigChange();
-};
-function hsl2hex(h, s, l) {
-  s /= 100; l /= 100; const k = n => (n + h / 30) % 12, a = s * Math.min(l, 1 - l);
-  const f = n => Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1)))).toString(16).padStart(2, '0');
-  return '#' + f(0) + f(8) + f(4);
-}
-
-PTYPES.forEach(t => { const r = document.createElement('div'); r.className = 'srow'; r.append(iconCanvas(t.id), document.createTextNode(t.name)); $('symlist').append(r); });
-{ const r = document.createElement('div'); r.className = 'srow'; r.append(iconCanvas('__road'), document.createTextNode('Дорога')); $('symlist').append(r); }
-
-/* ---------------- Перетаскиваемые окна ---------------- */
-document.querySelectorAll('.win').forEach(win => {
-  const h = win.querySelector('.win-h');
-  win.querySelector('.min').onclick = () => { win.classList.toggle('collapsed'); win.querySelector('.min').textContent = win.classList.contains('collapsed') ? '+' : '–'; };
-  h.addEventListener('pointerdown', e => {
-    if (e.target.closest('button')) return;
-    const r = win.getBoundingClientRect(), ox = e.clientX - r.left, oy = e.clientY - r.top;
-    h.setPointerCapture(e.pointerId);
-    const mv = ev => { win.style.left = clamp(ev.clientX - ox, 0, innerWidth - 60) + 'px'; win.style.top = clamp(ev.clientY - oy, 0, innerHeight - 30) + 'px'; win.style.right = 'auto'; };
-    const up = () => { h.removeEventListener('pointermove', mv); h.removeEventListener('pointerup', up); };
-    h.addEventListener('pointermove', mv); h.addEventListener('pointerup', up);
-  });
-});
-
-/* ---------------- Масштаб-кнопки ---------------- */
-$('zin').onclick = () => zoomAt(1.4, innerWidth / 2, innerHeight / 2);
-$('zout').onclick = () => zoomAt(1 / 1.4, innerWidth / 2, innerHeight / 2);
-$('zfit').onclick = fit;
-window.addEventListener('resize', () => { resizeOverlay(); clampView(); applyView(); });
-
-/* ---------------- Загрузка ---------------- */
-function loadImage(src) { return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; }); }
-
-(async function init() {
-  resizeOverlay();
-  try {
-    const baseReady = new Promise((res, rej) => {
-      if (img.complete && img.naturalWidth) return res();
-      img.addEventListener('load', res, { once: true }); img.addEventListener('error', rej, { once: true });
-    });
-    const [, maskImg] = await Promise.all([baseReady, loadImage('land.png')]);
-    W = img.naturalWidth; H = img.naturalHeight;
-    TW = maskImg.naturalWidth; TH = maskImg.naturalHeight;
-    const c = document.createElement('canvas'); c.width = TW; c.height = TH;
-    const g = c.getContext('2d'); g.drawImage(maskImg, 0, 0);
-    const md = g.getImageData(0, 0, TW, TH).data;
-    land = new Uint8Array(TW * TH); vis = new Uint8Array(TW * TH); owner = new Uint8Array(TW * TH);
-    for (let i = 0; i < TW * TH; i++) { const v = md[i * 4]; land[i] = v > 64 ? 1 : 0; vis[i] = v > 200 ? 1 : 0; landTotal += vis[i]; }
-
-    tcan.width = TW; tcan.height = TH; tcan.style.width = TW * TS + 'px'; tcan.style.height = TH * TS + 'px';
-    tImg = tctx.createImageData(TW, TH);
-
-    let data = null;
-    try { data = JSON.parse(localStorage.getItem(STORE_KEY) || 'null'); } catch (e) {}
-    if (!data) { try { const r = await fetch('map-data.json', { cache: 'no-store' }); if (r.ok) data = await r.json(); } catch (e) {} }
-    deserialize(data || {});
-    $('loading').remove();
-    fit(); setTool('pan'); afterBigChange();
-  } catch (err) {
-    $('loading').textContent = 'Не удалось загрузить карту: ' + err;
-  }
-})();
-
-/* ---------------- Музыка с YouTube ---------------- */
-let player, ytReady = false, entered = false;
-const muteBtn = $('mute'), errBox = $('dock-err');
-window.onYouTubeIframeAPIReady = function () {
-  player = new YT.Player('yt', {
-    videoId: VIDEO_ID, width: 200, height: 200,
-    playerVars: { start: START_SEC, playsinline: 1, rel: 0, controls: 1 },
-    events: {
-      onReady: () => { ytReady = true; player.setVolume(VOLUME); if (entered) playMusic(); },
-      onStateChange: e => { if (e.data === YT.PlayerState.ENDED) { player.seekTo(START_SEC, true); player.playVideo(); } },
-      onError: e => {
-        errBox.style.display = 'block';
-        errBox.textContent = (e.data === 101 || e.data === 150) ? 'Автор ролика запретил встраивание — нужен другой ролик.' : 'Не удалось загрузить видео (код ' + e.data + ').';
-      }
-    }
-  });
-};
-{
-  const tag = document.createElement('script');
-  tag.src = 'https://www.youtube.com/iframe_api';
-  tag.onerror = () => { errBox.style.display = 'block'; errBox.textContent = 'YouTube недоступен — музыка не загрузилась.'; };
-  document.head.appendChild(tag);
-}
-function playMusic() { player.unMute(); player.playVideo(); muteBtn.textContent = '🔊'; }
-$('enter').addEventListener('click', () => { entered = true; $('gate').classList.add('hide'); if (ytReady) playMusic(); });
-muteBtn.addEventListener('click', () => {
-  if (!ytReady) return;
-  if (player.isMuted()) { player.unMute(); muteBtn.textContent = '🔊'; } else { player.mute(); muteBtn.textContent = '🔇'; }
-});
-</script>
+<script src="data/countries.js"></script>
+<script src="data/cities.js"></script>
+<script src="js/app.js"></script>
+<script src="js/map.js"></script>
 </body>
 </html>
