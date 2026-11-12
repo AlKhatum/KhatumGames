@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Welcome to the Teyvat</title>
+<style>
+  :root {
+    --bg: #000;
+    --accent: #8fd0d8;
+    --accent-dim: #4f8d95;
+    --panel: rgba(10, 16, 20, .88);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: #dfe; overflow: hidden;
+    font-family: "Segoe UI", Roboto, Arial, sans-serif; }
+
+  /* ---------- Карта ---------- */
+  #viewport { position: fixed; inset: 0; overflow: hidden; cursor: grab; touch-action: none; }
+  #viewport.dragging { cursor: grabbing; }
+  #map { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform;
+    user-select: none; -webkit-user-drag: none; opacity: 0; transition: opacity .4s; }
+  #map.loaded { opacity: 1; }
+
+  #controls { position: fixed; left: 14px; bottom: 14px; z-index: 20; display: flex; flex-direction: column; gap: 6px; }
+  #controls button { width: 40px; height: 40px; font-size: 20px; line-height: 1; cursor: pointer;
+    background: var(--panel); color: var(--accent); border: 1px solid var(--accent-dim); border-radius: 6px; }
+  #controls button:hover { border-color: var(--accent); }
+  #hint { position: fixed; left: 64px; bottom: 14px; z-index: 20; font-size: 12px; color: #9cc; pointer-events: none;
+    background: var(--panel); padding: 4px 8px; border-radius: 4px; }
+
+  /* ---------- Музыка ---------- */
+  #dock { position: fixed; right: 14px; bottom: 14px; z-index: 20; background: var(--panel);
+    border: 1px solid var(--accent-dim); border-radius: 8px; padding: 6px; display: flex; flex-direction: column; gap: 6px; }
+  #dock-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--accent); }
+  #dock-head button { background: none; border: 1px solid var(--accent-dim); color: var(--accent); border-radius: 4px;
+    cursor: pointer; font-size: 14px; padding: 2px 8px; }
+  #dock iframe { display: block; width: 200px; height: 200px; border: 0; border-radius: 4px; }
+  #dock-err { display: none; max-width: 200px; font-size: 12px; color: #e9a; }
+
+  /* ---------- Заставка ---------- */
+  #gate { position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 22px; background: radial-gradient(ellipse at center, #0b1418 0%, #000 70%); transition: opacity .6s; }
+  #gate.hide { opacity: 0; pointer-events: none; }
+  #gate h1 { margin: 0; font-size: clamp(32px, 6vw, 72px); color: var(--accent); letter-spacing: .02em; text-align: center;
+    text-shadow: 0 0 24px rgba(143, 208, 216, .35); }
+  #enter { font-size: 20px; padding: 14px 36px; cursor: pointer; color: var(--accent); background: transparent;
+    border: 2px solid var(--accent); border-radius: 6px; letter-spacing: .08em; text-transform: uppercase; transition: background .2s, color .2s; }
+  #enter:hover { background: var(--accent); color: #000; }
+  #gate small { color: #6a8; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div id="viewport"><img id="map" src="map.png" alt="Карта Тейвата" draggable="false"></div>
+
+<div id="controls">
+  <button id="zin" title="Приблизить">+</button>
+  <button id="zout" title="Отдалить">−</button>
+  <button id="zfit" title="Вся карта">⤢</button>
+</div>
+<div id="hint">колесо — масштаб, перетаскивание — сдвиг</div>
+
+<div id="dock">
+  <div id="dock-head"><span>♪ Музыка</span><button id="mute" title="Звук вкл/выкл">🔊</button></div>
+  <div id="yt"></div>
+  <div id="dock-err"></div>
+</div>
+
+<div id="gate">
+  <h1>Welcome to the Teyvat</h1>
+  <button id="enter">Войти</button>
+  <small>сайт со звуком</small>
+</div>
+
+<script>
+/* ================= НАСТРОЙКИ МУЗЫКИ ================= */
+const VIDEO_ID  = 'IisYtJGfVFU'; // id ролика: youtube.com/watch?v=IisYtJGfVFU
+const START_SEC = 0;             // с какой секунды играть и куда возвращаться при повторе
+const VOLUME    = 40;            // громкость 0–100
+/* ==================================================== */
+
+/* ---------- Карта: масштаб и перетаскивание ---------- */
+const vp = document.getElementById('viewport');
+const img = document.getElementById('map');
+let scale = 1, tx = 0, ty = 0, minScale = .1, maxScale = 2;
+
+function apply() { img.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`; }
+
+function clampPos() {
+  const w = img.naturalWidth * scale, h = img.naturalHeight * scale;
+  const vw = vp.clientWidth, vh = vp.clientHeight;
+  tx = w <= vw ? (vw - w) / 2 : Math.min(0, Math.max(vw - w, tx));
+  ty = h <= vh ? (vh - h) / 2 : Math.min(0, Math.max(vh - h, ty));
+}
+
+function fit() {
+  const s = Math.min(vp.clientWidth / img.naturalWidth, vp.clientHeight / img.naturalHeight);
+  minScale = s; scale = s; clampPos(); apply();
+}
+
+function zoomAt(factor, cx, cy) {
+  const ns = Math.min(maxScale, Math.max(minScale, scale * factor));
+  tx = cx - (cx - tx) * (ns / scale);
+  ty = cy - (cy - ty) * (ns / scale);
+  scale = ns; clampPos(); apply();
+}
+
+function onImgReady() { fit(); img.classList.add('loaded'); }
+if (img.complete && img.naturalWidth) onImgReady(); else img.addEventListener('load', onImgReady);
+window.addEventListener('resize', () => { const was = scale === minScale; minScale = Math.min(vp.clientWidth / img.naturalWidth, vp.clientHeight / img.naturalHeight); if (was || scale < minScale) scale = minScale; clampPos(); apply(); });
+
+vp.addEventListener('wheel', e => {
+  e.preventDefault();
+  zoomAt(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX, e.clientY);
+}, { passive: false });
+
+vp.addEventListener('dblclick', e => zoomAt(2, e.clientX, e.clientY));
+
+// Перетаскивание мышью и пальцами (включая щипок двумя пальцами)
+const pts = new Map();
+let lastPinch = 0;
+vp.addEventListener('pointerdown', e => { vp.setPointerCapture(e.pointerId); pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); vp.classList.add('dragging'); });
+vp.addEventListener('pointermove', e => {
+  if (!pts.has(e.pointerId)) return;
+  const prev = pts.get(e.pointerId);
+  pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pts.size === 1) {
+    tx += e.clientX - prev.x; ty += e.clientY - prev.y; clampPos(); apply();
+  } else if (pts.size === 2) {
+    const [a, b] = [...pts.values()];
+    const d = Math.hypot(a.x - b.x, a.y - b.y);
+    if (lastPinch) zoomAt(d / lastPinch, (a.x + b.x) / 2, (a.y + b.y) / 2);
+    lastPinch = d;
+  }
+});
+function endPtr(e) { pts.delete(e.pointerId); if (pts.size < 2) lastPinch = 0; if (!pts.size) vp.classList.remove('dragging'); }
+vp.addEventListener('pointerup', endPtr);
+vp.addEventListener('pointercancel', endPtr);
+
+const center = () => [vp.clientWidth / 2, vp.clientHeight / 2];
+document.getElementById('zin').onclick  = () => zoomAt(1.4, ...center());
+document.getElementById('zout').onclick = () => zoomAt(1 / 1.4, ...center());
+document.getElementById('zfit').onclick = fit;
+
+/* ---------- Музыка с YouTube ---------- */
+let player, ready = false, entered = false;
+const muteBtn = document.getElementById('mute');
+const errBox = document.getElementById('dock-err');
+
+window.onYouTubeIframeAPIReady = function () {
+  player = new YT.Player('yt', {
+    videoId: VIDEO_ID, width: 200, height: 200,
+    playerVars: { start: START_SEC, playsinline: 1, rel: 0, controls: 1 },
+    events: {
+      onReady: () => { ready = true; player.setVolume(VOLUME); if (entered) play(); },
+      onStateChange: e => { if (e.data === YT.PlayerState.ENDED) { player.seekTo(START_SEC, true); player.playVideo(); } },
+      onError: e => {
+        errBox.style.display = 'block';
+        errBox.textContent = (e.data === 101 || e.data === 150)
+          ? 'Автор ролика запретил встраивание — нужен другой ролик.'
+          : 'Не удалось загрузить видео (код ' + e.data + ').';
+      }
+    }
+  });
+};
+const tag = document.createElement('script');
+tag.src = 'https://www.youtube.com/iframe_api';
+tag.onerror = () => { errBox.style.display = 'block'; errBox.textContent = 'YouTube недоступен — музыка не загрузилась.'; };
+document.head.appendChild(tag);
+
+function play() { player.unMute(); player.playVideo(); muteBtn.textContent = '🔊'; }
+
+document.getElementById('enter').addEventListener('click', () => {
+  entered = true;
+  document.getElementById('gate').classList.add('hide');
+  if (ready) play(); // если YouTube ещё грузится — включится сам в onReady
+});
+
+muteBtn.addEventListener('click', () => {
+  if (!ready) return;
+  if (player.isMuted()) { player.unMute(); muteBtn.textContent = '🔊'; }
+  else { player.mute(); muteBtn.textContent = '🔇'; }
+});
+</script>
+</body>
+</html>
