@@ -180,7 +180,7 @@
     e.setAttribute("d", d || "");
     if (selProv === id) provSelPath.setAttribute("d", d || "");
   }
-  const els = { cfill: {}, cborder: {}, clabel: {}, cities: {}, labels: {} };
+  const els = { cfill: {}, cborder: {}, clabel: {}, cities: {}, labels: {}, satellites: {}, satTypes: {} };
   const paths = new Map(); // id страны -> d
   const flagCache = {};   // id -> dataURL (флаги, загруженные в этой сессии)
 
@@ -254,8 +254,9 @@
     t.setAttribute("x", e.label[0]); t.setAttribute("y", e.label[1]); t.style.setProperty("--fs", e.size + "px");
     t.textContent = e.name;
   }
-  const RENDER = { countries: renderCountry, cities: renderCity, labels: renderLabel, provinces: renderProvince };
-  const COLS = ["countries", "cities", "labels", "provinces"];
+  const renderSatsAny = () => { try { refreshSats(); } catch (e) { /* глобус ещё не готов */ } };
+  const RENDER = { countries: renderCountry, cities: renderCity, labels: renderLabel, provinces: renderProvince, satellites: renderSatsAny, satTypes: renderSatsAny };
+  const COLS = ["countries", "cities", "labels", "provinces", "satellites", "satTypes"];
 
   // ---------- вид ----------
   let s = 0.3, tx = 0, ty = 0, fitS = 0.3;
@@ -549,6 +550,7 @@
     setTool("pan");
     buildCountryList();
     updateCard();
+    try { refreshSats(); } catch (e) { /* */ }
   }
   $("gmLoginBtn").onclick = login;
   $("logoutBtn").onclick = logout;
@@ -1099,7 +1101,16 @@
   const HINT_GLOBE = "Глобус: тяните — вращать, колесо — масштаб, клик по стране — легенда, клик по спутнику — его орбита. Редактирование и измерения — на плоской карте.";
   const Sat = window.KGSats;
   let viewMode = "flat", globe = null, globeRaf = 0, globeLoop = 0, globeReady = null;
-  const satUi = { items: Sat.list.map(s => ({ s, on: true, pos: null, ring: null, screen: null })), sel: "kovcheg", orbits: true, names: true, speed: 60, time: Date.now(), follow: false, last: 0 };
+  const satUi = { items: [], sel: "kovcheg", orbits: true, names: true, speed: 60, time: Date.now(), follow: false, last: 0, hidden: {} };
+  // элементы списка спутников из данных карты (state.satellites + state.satTypes)
+  function rebuildSatItems() {
+    const types = state.satTypes || {};
+    satUi.items = Object.values(state.satellites || {}).sort((a, b) => a.name.localeCompare(b.name, "ru")).map(raw => {
+      const t = types[raw.type] || { name: "Без типа", color: "#ffffff", shape: "dot" };
+      return { raw, s: { id: raw.id, name: raw.name, note: raw.note || "", color: t.color, shape: t.shape, typeName: t.name }, on: !satUi.hidden[raw.id], pos: null, ring: null, screen: null };
+    });
+    if (satUi.sel && !(state.satellites || {})[satUi.sel]) satUi.sel = null;
+  }
   function globeShow() {
     const sh = {};
     flat.forEach(l => { if (!l.internal) { sh[l.id] = isVisible(l); if (ui.hl[l.id]) sh["hl_" + l.id] = true; } });
@@ -1133,8 +1144,8 @@
   function updateSats() {
     globe.sats = satUi;
     for (const it of satUi.items) {
-      it.pos = Sat.at(it.s, satUi.time);
-      it.ring = satUi.orbits && it.on ? Sat.ring(it.s, satUi.time, it.s.e > 0 ? 240 : 160) : null;
+      it.pos = Sat.at(it.raw, satUi.time);
+      it.ring = satUi.orbits && it.on ? Sat.ring(it.raw, satUi.time, it.raw.orbit === "ell" ? 240 : 160) : null;
     }
     if (satUi.follow && satUi.sel) {
       const it = satUi.items.find(x => x.s.id === satUi.sel);
@@ -1196,7 +1207,7 @@
       const c = Geo.toLL((viewport.clientWidth / 2 - tx) / s, (viewport.clientHeight / 2 - ty) / s);
       globe.lat = Math.max(-60, Math.min(70, c[0])) * Math.PI / 180; globe.lon = c[1] * Math.PI / 180;
       syncGlobe(true);
-      if (!satUi.listBuilt) buildSatList();
+      rebuildSatItems(); buildSatList(); buildTypeList();
       satUi.time = Date.now();
       startLoop();
       if (globeReady) globeReady.then(globeDirty);
@@ -1207,18 +1218,146 @@
 
   // панель спутников
   function buildSatList() {
-    satUi.listBuilt = true;
     const list = $("satList"); list.innerHTML = "";
     for (const it of satUi.items) {
       const r = document.createElement("div"); r.className = "sat-row"; r.dataset.id = it.s.id;
-      r.innerHTML = `<input type="checkbox" checked title="Показывать"><span class="sat-dot" style="background:${it.s.color};box-shadow:0 0 6px ${it.s.color}"></span>` +
-        `<span class="sat-name">${esc(it.s.name)}</span><span class="sat-type">${esc(it.s.typeRu)}</span>`;
-      r.querySelector("input").addEventListener("change", e => { it.on = e.target.checked; globeDirty(); });
-      r.addEventListener("click", e => { if (e.target.tagName !== "INPUT") selectSat(it.s.id, true); });
+      r.innerHTML = `<input type="checkbox" ${it.on ? "checked" : ""} title="Показывать"><span class="sat-dot" style="background:${it.s.color};box-shadow:0 0 6px ${it.s.color}"></span>` +
+        `<span class="sat-name">${esc(it.s.name)}</span><span class="sat-type">${esc(it.s.typeName)}</span>` +
+        (gm ? `<button class="c-go sat-edit" title="Изменить">✎</button><button class="c-del sat-del" title="Удалить">✕</button>` : "");
+      r.querySelector("input").addEventListener("change", e => { it.on = e.target.checked; satUi.hidden[it.s.id] = !it.on; globeDirty(); });
+      r.addEventListener("click", e => {
+        if (e.target.tagName === "INPUT") return;
+        if (e.target.classList.contains("sat-edit")) { editSat(it.s.id); return; }
+        if (e.target.classList.contains("sat-del")) { deleteSat(it.s.id); return; }
+        selectSat(it.s.id, true);
+      });
       list.append(r);
     }
     markSatRows();
   }
+  function buildTypeList() {
+    const box = $("satTypeList"); if (!box) return;
+    box.innerHTML = "";
+    for (const t of Object.values(state.satTypes || {})) {
+      const used = Object.values(state.satellites || {}).filter(x => x.type === t.id).length;
+      const r = document.createElement("div"); r.className = "sat-row";
+      r.innerHTML = `<span class="sat-dot" style="background:${t.color}"></span><span class="sat-name">${esc(t.name)}</span>` +
+        `<span class="sat-type">${esc(Sat.SHAPES[t.shape] || t.shape)} · ${used}</span>` +
+        `<button class="c-go" title="Изменить тип">✎</button><button class="c-del" title="Удалить тип">✕</button>`;
+      r.querySelector(".c-go").addEventListener("click", () => editType(t.id));
+      r.querySelector(".c-del").addEventListener("click", () => deleteType(t.id));
+      box.append(r);
+    }
+  }
+  function refreshSats() { if (!state) return; rebuildSatItems(); if (viewMode === "globe" || $("satList").childElementCount) { buildSatList(); buildTypeList(); } globeDirty(); }
+
+  // ---------- формы ГМа (спутник, тип) ----------
+  function openForm(title, fields, values) {
+    return new Promise(resolve => {
+      const m = $("formModal"), body = $("formBody"), err = $("formError");
+      $("formTitle").textContent = title; err.textContent = "";
+      body.innerHTML = "";
+      const inputs = {};
+      for (const f of fields) {
+        const row = document.createElement("label"); row.className = "f-row"; row.dataset.key = f.key;
+        const lb = document.createElement("span"); lb.textContent = f.label; row.append(lb);
+        let inp;
+        if (f.type === "select") {
+          inp = document.createElement("select");
+          for (const [v, t] of f.options) { const o = document.createElement("option"); o.value = v; o.textContent = t; inp.append(o); }
+        } else {
+          inp = document.createElement("input"); inp.type = f.type || "text";
+          if (f.step) inp.step = f.step; if (f.min != null) inp.min = f.min; if (f.max != null) inp.max = f.max;
+        }
+        inp.value = values[f.key] != null ? values[f.key] : "";
+        inp.addEventListener("keydown", e => e.stopPropagation());
+        row.append(inp);
+        if (f.hint) { const h = document.createElement("small"); h.textContent = f.hint; row.append(h); }
+        body.append(row); inputs[f.key] = inp;
+      }
+      const read = () => { const v = {}; for (const f of fields) v[f.key] = f.type === "number" ? (inputs[f.key].value === "" ? "" : +inputs[f.key].value) : inputs[f.key].value.trim(); return v; };
+      const vis = () => { const v = read(); for (const f of fields) body.querySelector(`[data-key="${f.key}"]`).style.display = !f.show || f.show(v) ? "" : "none"; };
+      Object.values(inputs).forEach(i => i.addEventListener("change", vis)); vis();
+      m.classList.remove("hidden");
+      setTimeout(() => { const first = body.querySelector("input,select"); if (first) first.focus(); }, 0);
+      const ok = $("formOk"), cancel = $("formCancel");
+      function done(v) { m.classList.add("hidden"); ok.onclick = cancel.onclick = null; resolve(v); }
+      ok.onclick = () => {
+        const v = read();
+        const e = opts.validate ? opts.validate(v) : "";
+        if (e) { err.textContent = e; return; }
+        done(v);
+      };
+      cancel.onclick = () => done(null);
+      const opts = values.__opts || {};
+    });
+  }
+  const typeOptions = () => Object.values(state.satTypes || {}).map(t => [t.id, t.name]);
+  const SAT_FIELDS = () => [
+    { key: "name", label: "Название" },
+    { key: "type", label: "Тип", type: "select", options: typeOptions() },
+    { key: "note", label: "Описание" },
+    { key: "orbit", label: "Орбита", type: "select", options: Object.entries(Sat.ORBITS) },
+    { key: "h", label: "Высота, км", type: "number", min: 160, show: v => v.orbit === "circ", hint: "МКС ≈ 420, навигация ≈ 20 000" },
+    { key: "hp", label: "Перигей, км", type: "number", min: 160, show: v => v.orbit === "ell" },
+    { key: "ha", label: "Апогей, км", type: "number", min: 160, show: v => v.orbit === "ell" },
+    { key: "argp", label: "Аргумент перигея, °", type: "number", show: v => v.orbit === "ell", hint: "270° — апогей над северным полушарием" },
+    { key: "i", label: "Наклонение, °", type: "number", min: 0, max: 180, show: v => v.orbit !== "geo", hint: "0 — над экватором, 90 — через полюса" },
+    { key: "raan", label: "Долгота восходящего узла, °", type: "number", show: v => v.orbit !== "geo", hint: "Поворот плоскости орбиты вокруг оси Земли" },
+    { key: "phase", label: "Начальное положение на орбите, °", type: "number", show: v => v.orbit !== "geo" },
+    { key: "lon", label: "Долгота над экватором, °", type: "number", min: -180, max: 180, show: v => v.orbit === "geo" }
+  ];
+  async function editSat(id) {
+    if (!gm) return;
+    if (!Object.keys(state.satTypes || {}).length) { toast("Сначала создайте тип спутника"); return; }
+    const before = id ? state.satellites[id] : null;
+    const base = before ? clone(before) : { name: "", type: Object.keys(state.satTypes)[0], note: "", orbit: "circ", h: 400, hp: 500, ha: 20000, argp: 270, i: 51.6, raan: 0, phase: 0, lon: 0 };
+    base.__opts = { validate: Sat.validate };
+    const v = await openForm(before ? "Спутник: " + before.name : "Новый спутник", SAT_FIELDS(), base);
+    if (!v) return;
+    const nid = before ? id : uid("sat");
+    const rec = { id: nid, name: v.name, type: v.type, note: v.note, orbit: v.orbit };
+    if (v.orbit === "geo") rec.lon = v.lon;
+    else {
+      Object.assign(rec, { i: v.i, raan: v.raan || 0, phase: v.phase || 0 });
+      if (v.orbit === "ell") Object.assign(rec, { hp: v.hp, ha: v.ha, argp: v.argp || 0 }); else rec.h = v.h;
+    }
+    commit("satellites", nid, before, rec);
+    satUi.sel = nid; refreshSats();
+    toast(before ? "Спутник изменён" : "Спутник добавлен — он уже на орбите");
+  }
+  async function deleteSat(id) {
+    const c = state.satellites[id]; if (!c || !gm) return;
+    const ok = await ask("Удалить спутник «" + c.name + "»?", "", { confirm: true, note: "Ctrl+Z — вернуть." });
+    if (!ok) return;
+    commit("satellites", id, c, null); refreshSats();
+  }
+  const TYPE_FIELDS = [
+    { key: "name", label: "Название типа" },
+    { key: "color", label: "Цвет", type: "color" },
+    { key: "shape", label: "Значок", type: "select", options: Object.entries(Sat.SHAPES) }
+  ];
+  async function editType(id) {
+    if (!gm) return;
+    const before = id ? state.satTypes[id] : null;
+    const base = before ? clone(before) : { name: "", color: "#7fe8ff", shape: "dot" };
+    base.__opts = { validate: v => (v.name ? "" : "Укажите название типа") };
+    const v = await openForm(before ? "Тип: " + before.name : "Новый тип спутника", TYPE_FIELDS, base);
+    if (!v) return;
+    const nid = before ? id : uid("type");
+    commit("satTypes", nid, before, { id: nid, name: v.name, color: v.color, shape: v.shape });
+    refreshSats();
+  }
+  async function deleteType(id) {
+    const t = state.satTypes[id]; if (!t || !gm) return;
+    const users = Object.values(state.satellites || {}).filter(x => x.type === id);
+    if (users.length) { toast("Тип используют: " + users.map(u => u.name).join(", ")); return; }
+    const ok = await ask("Удалить тип «" + t.name + "»?", "", { confirm: true });
+    if (!ok) return;
+    commit("satTypes", id, t, null); refreshSats();
+  }
+  $("addSatBtn").onclick = () => editSat(null);
+  $("addTypeBtn").onclick = () => editType(null);
   function markSatRows() { document.querySelectorAll("#satList .sat-row").forEach(r => r.classList.toggle("active", r.dataset.id === satUi.sel)); }
   function selectSat(id, center) {
     satUi.sel = id; markSatRows();
@@ -1229,10 +1368,10 @@
   function renderSatInfo() {
     const it = satUi.items.find(x => x.s.id === satUi.sel);
     const box = $("satInfo");
-    if (!it || !it.pos) { box.textContent = ""; return; }
+    if (!it || !it.pos) { box.textContent = ""; box.dataset.h = ""; return; }
     const p = it.pos, ns = p.lat >= 0 ? "с. ш." : "ю. ш.", ew = p.lon >= 0 ? "в. д." : "з. д.";
-    const html = `<b style="color:${it.s.color}">${esc(it.s.name)}</b> — ${esc(it.s.note)}<br>` +
-      `Высота ${Math.round(p.alt).toLocaleString("ru-RU")} км · скорость ${Sat.speed(it.s, p.alt).toFixed(2).replace(".", ",")} км/с · виток ${Sat.fmtPeriod(it.s.period)}<br>` +
+    const html = `<b style="color:${it.s.color}">${esc(it.s.name)}</b> · ${esc(it.s.typeName)}${it.s.note ? " — " + esc(it.s.note) : ""}<br>` +
+      `Высота ${Math.round(p.alt).toLocaleString("ru-RU")} км · скорость ${Sat.speed(it.raw, p.alt).toFixed(2).replace(".", ",")} км/с · виток ${Sat.fmtPeriod(Sat.period(it.raw))}<br>` +
       `Над точкой ${Math.abs(p.lat).toFixed(1)}° ${ns}, ${Math.abs(p.lon).toFixed(1)}° ${ew}`;
     if (box.dataset.h !== html) { box.innerHTML = html; box.dataset.h = html; }
     const t = new Date(satUi.time);

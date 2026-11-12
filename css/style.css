@@ -400,3 +400,21 @@ body.is-gm .prov-title { display: none; }
 .sat-info { font-size: 11px; line-height: 1.5; color: var(--text); border-top: 1px solid var(--line-dim); padding-top: 6px; }
 .sat-info:empty { display: none; }
 @media (max-width: 900px) { .sat-panel { width: auto; left: 6px; right: 6px; top: auto; bottom: 50px; max-height: 45%; } }
+
+/* ---------- ГМ: спутники и типы ---------- */
+.sat-gm { display: flex; gap: 6px; }
+.sat-gm .small-btn { margin: 0; flex: 1; }
+.sat-row .c-go, .sat-row .c-del { padding: 0 2px; }
+.sat-types summary { cursor: pointer; font-size: 11px; color: var(--muted); letter-spacing: .1em; text-transform: uppercase; padding: 2px 0; }
+.form-box { width: min(460px, 100%); max-height: 90vh; overflow-y: auto; }
+.form-body { display: flex; flex-direction: column; gap: 8px; }
+.f-row { display: grid; grid-template-columns: 1fr 1.2fr; gap: 4px 10px; align-items: center; font-size: 13px; }
+.f-row small { grid-column: 2; font-size: 10px; color: var(--muted); margin-top: -2px; }
+.f-row input, .f-row select {
+  width: 100%; background: rgba(0, 0, 0, .35); border: 1px solid var(--line-dim); border-radius: 3px; color: var(--text);
+  font: inherit; padding: 5px 7px;
+}
+.f-row input[type=color] { height: 30px; padding: 2px; }
+.f-row select option { background: #071630; }
+.f-row input:focus, .f-row select:focus { outline: none; border-color: var(--line); }
+.form-error { color: var(--danger); font-size: 12px; min-height: 1em; }

@@ -336,13 +336,22 @@ void main(){
         }
         ctx.shadowColor = it.s.color; ctx.shadowBlur = sel ? 14 : 8;
         ctx.fillStyle = it.s.color;
-        if (it.s.type === "station") {
-          // станция: корпус + солнечные панели
-          ctx.fillRect(x - 3, y - 2, 6, 4);
-          ctx.fillRect(x - 10, y - 1, 6, 2); ctx.fillRect(x + 4, y - 1, 6, 2);
-          ctx.fillStyle = "rgba(255,255,255,.9)"; ctx.fillRect(x - 1, y - 1, 2, 2);
-        } else {
-          ctx.beginPath(); ctx.arc(x, y, sel ? 4.5 : 3.2, 0, Math.PI * 2); ctx.fill();
+        const k = sel ? 1.35 : 1;
+        ctx.beginPath();
+        switch (it.s.shape) {
+          case "station": // корпус и солнечные панели
+            ctx.fillRect(x - 3 * k, y - 2 * k, 6 * k, 4 * k);
+            ctx.fillRect(x - 10 * k, y - k, 6 * k, 2 * k); ctx.fillRect(x + 4 * k, y - k, 6 * k, 2 * k);
+            ctx.fillStyle = "rgba(255,255,255,.9)"; ctx.fillRect(x - 1, y - 1, 2, 2);
+            break;
+          case "diamond":
+            ctx.moveTo(x, y - 5 * k); ctx.lineTo(x + 4 * k, y); ctx.lineTo(x, y + 5 * k); ctx.lineTo(x - 4 * k, y); ctx.closePath(); ctx.fill(); break;
+          case "triangle":
+            ctx.moveTo(x, y - 5 * k); ctx.lineTo(x + 4.5 * k, y + 3.5 * k); ctx.lineTo(x - 4.5 * k, y + 3.5 * k); ctx.closePath(); ctx.fill(); break;
+          case "square":
+            ctx.fillRect(x - 3.5 * k, y - 3.5 * k, 7 * k, 7 * k); break;
+          default:
+            ctx.arc(x, y, 3.4 * k, 0, Math.PI * 2); ctx.fill();
         }
         ctx.shadowBlur = 0;
         if (S.names || sel) {

@@ -69,7 +69,15 @@
               <button data-speed="60" class="active" title="Минута за секунду">×60</button>
               <button data-speed="600" title="10 минут за секунду">×600</button>
             </div>
+            <div class="sat-gm gm-only">
+              <button id="addSatBtn" class="small-btn" type="button">+ Спутник</button>
+              <button id="addTypeBtn" class="small-btn" type="button">+ Тип</button>
+            </div>
             <div class="sat-list" id="satList"></div>
+            <details class="sat-types gm-only">
+              <summary>Типы спутников</summary>
+              <div id="satTypeList"></div>
+            </details>
             <div class="sat-info" id="satInfo"></div>
           </div>
         </div>
@@ -220,6 +228,14 @@
 </main>
 
 <div class="toast" id="toast"></div>
+<div class="modal hidden" id="formModal">
+  <div class="modal-box panel form-box">
+    <div class="modal-title" id="formTitle"></div>
+    <div class="form-body" id="formBody"></div>
+    <div class="form-error" id="formError"></div>
+    <div class="modal-btns"><button id="formOk">Сохранить</button><button id="formCancel">Отмена</button></div>
+  </div>
+</div>
 <div class="modal hidden" id="modal">
   <div class="modal-box panel">
     <div class="modal-title" id="modalTitle"></div>
