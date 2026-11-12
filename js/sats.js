@@ -67,6 +67,22 @@
       for (let k = 0; k <= n; k++) out.push(toEarth(inertial(o, k / n * 2 * Math.PI), th));
       return out;
     },
+    // Луна: средние элементы орбиты (точность — единицы градусов, для игры достаточно)
+    moonAt(ms, uOverride) {
+      const d = (ms - Date.UTC(2000, 0, 1, 12)) / 86400000;
+      const node = (125.04 - 0.0529539 * d) * D;           // долгота восходящего узла (регрессия 18,6 года)
+      const L = (218.316 + 13.176396 * d) * D;             // средняя долгота
+      const u = uOverride != null ? uOverride : L - node;  // аргумент широты
+      const inc = 5.145 * D, eps = 23.4393 * D, dist = 384400;
+      const x = Math.cos(node) * Math.cos(u) - Math.sin(node) * Math.sin(u) * Math.cos(inc);
+      const y = Math.sin(node) * Math.cos(u) + Math.cos(node) * Math.sin(u) * Math.cos(inc);
+      const z = Math.sin(u) * Math.sin(inc);
+      const v = [x * dist, y * Math.cos(eps) - z * Math.sin(eps), y * Math.sin(eps) + z * Math.cos(eps)];
+      v[1] *= dist; v[2] *= dist;
+      return toEarth(v, gmst(ms));
+    },
+    moonRing(ms, n) { const out = []; for (let k = 0; k <= n; k++) out.push(S.moonAt(ms, k / n * 2 * Math.PI)); return out; },
+    MOON_R: 1737.4,
     speed(s, alt) { const o = prep(s); return Math.sqrt(MU * (2 / (RE + alt) - 1 / o.a)); },
     period(s) { return prep(s).period; },
     fmtPeriod(sec) { const m = Math.round(sec / 60); return m < 120 ? m + " мин" : (m / 60).toFixed(1).replace(".", ",") + " ч"; },

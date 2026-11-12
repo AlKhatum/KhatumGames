@@ -418,3 +418,50 @@ body.is-gm .prov-title { display: none; }
 .f-row select option { background: #071630; }
 .f-row input:focus, .f-row select:focus { outline: none; border-color: var(--line); }
 .form-error { color: var(--danger); font-size: 12px; min-height: 1em; }
+
+/* ---------- Луна ---------- */
+.moon-wrap { position: absolute; inset: 0; z-index: 9; background: radial-gradient(ellipse at center, #10131c 0%, #05060b 80%); }
+.map-frame .view-switch, .map-frame .gm-bar { z-index: 12; }
+body.moon-mode .legend { display: none; }
+body.moon-mode .map-frame::before, body.moon-mode .map-frame::after { z-index: 10; }
+.moon-world { width: 2048px; height: 1024px; }
+.moon-world > img.layer { filter: saturate(.6) brightness(.95); }
+.moon-sub { top: 48px; }
+.moon-toolbar { top: 50%; }
+.moon-measure { left: 10px; bottom: 10px; }
+#moonViewport[data-tool="brush"] { cursor: none; }
+#moonViewport[data-tool="fill"], #moonViewport[data-tool="picker"], #moonViewport[data-tool="mark"], #moonViewport[data-tool="road"],
+#moonViewport[data-tool="ruler"], #moonViewport[data-tool="compass"] { cursor: crosshair; }
+#moonViewport[data-tool="erase"] { cursor: not-allowed; }
+.moon-panel { position: absolute; z-index: 8; right: 10px; top: 50px; bottom: 10px; width: 300px; display: flex; flex-direction: column; min-height: 0; }
+.moon-card { padding: 10px 12px; border-bottom: 1px solid var(--line-dim); display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+.moon-card input[type=text] { width: 100%; background: rgba(0, 0, 0, .35); border: 1px solid var(--line-dim); border-radius: 3px; color: var(--pink-soft); font-family: var(--font-wide); font-weight: 300; font-size: 12px; padding: 6px 8px; }
+.moon-card select { background: #071630; color: var(--text); border: 1px solid var(--line-dim); border-radius: 3px; padding: 3px 6px; }
+.moon-panel .lp-tools .small-btn { margin: 0; }
+#moonTypeList .legend-label { margin: 8px 0 3px; }
+#mFill path { fill-opacity: .42; pointer-events: visiblePainted; }
+#mBorder path { fill: none; stroke: rgba(20, 10, 30, .75); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+#mBorder.hl { filter: drop-shadow(0 0 1.2px #ff3fd0) drop-shadow(0 0 4px #ff3fd0); }
+#mBorder.hl path { stroke: #ff9be9; stroke-width: 1.7px; }
+#mNames.hl { filter: drop-shadow(0 0 1.5px #ff7fd8) drop-shadow(0 0 5px #ff3fd0); }
+.m-lbl.lbl-country { fill: url(#mLblGrad); }
+.m-feat { font-family: var(--font-wide); font-weight: 300; fill: rgba(235, 242, 255, .78); stroke: rgba(8, 8, 16, .7); stroke-width: 1.5px; paint-order: stroke; text-anchor: middle; dominant-baseline: middle; pointer-events: none; font-style: italic; letter-spacing: .05em; }
+.m-road { fill: none; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, .9)); }
+.m-road.hl, .m-road.sel { filter: drop-shadow(0 0 2px var(--glow)) drop-shadow(0 0 6px var(--glow)); }
+.m-road-hit { fill: none; stroke: transparent; stroke-width: 12px; vector-effect: non-scaling-stroke; pointer-events: stroke; cursor: pointer; }
+.m-draft { fill: none; stroke: #fff; stroke-width: 2px; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; pointer-events: none; }
+.m-mark { cursor: pointer; pointer-events: all; }
+.m-mark .m-mark-ring { fill: rgba(8, 10, 22, .8); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.m-mark text { font-family: var(--font-wide); font-weight: 300; font-size: 9px; fill: #fff; stroke: rgba(5, 5, 15, .9); stroke-width: 2.5px; paint-order: stroke; text-anchor: middle; }
+.m-mark.sel .m-mark-ring, .m-mark.hl .m-mark-ring { stroke-width: 3; filter: drop-shadow(0 0 4px var(--glow)); }
+#mMeasure .m-line { fill: none; stroke: #ffe14d; stroke-width: 2px; vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 2px rgba(0, 0, 0, .9)); }
+#mMeasure .m-line.live { stroke-dasharray: 6 4; }
+#mMeasure .m-circle { fill: none; stroke: #ffe14d; stroke-width: 2px; stroke-dasharray: 8 4; vector-effect: non-scaling-stroke; }
+#mMeasure .m-dot { fill: #ffe14d; stroke: #1a1400; stroke-width: 1px; vector-effect: non-scaling-stroke; }
+#mMeasure .m-lbl { font-family: var(--font-wide); font-weight: 400; fill: #ffe14d; stroke: rgba(10, 8, 0, .9); paint-order: stroke; text-anchor: middle; }
+#mOver .vertex { fill: #fff; stroke: var(--pink); stroke-width: 1.5; vector-effect: non-scaling-stroke; cursor: move; pointer-events: all; }
+.moon-wrap .hint { right: 320px; }
+@media (max-width: 900px) { .moon-panel { left: 6px; right: 6px; width: auto; top: auto; height: 40%; } .moon-wrap .hint { display: none; } }
+.moon-vp, .moon-globe-wrap { right: 320px; }
+@media (max-width: 900px) { .moon-vp, .moon-globe-wrap { right: 0; bottom: 40%; } }
+.moon-wrap.moon-globe .moon-measure, .moon-wrap.moon-globe .moon-toolbar, .moon-wrap.moon-globe #mBrushBar { display: none !important; }

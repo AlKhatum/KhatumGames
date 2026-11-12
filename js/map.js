@@ -551,6 +551,7 @@
     buildCountryList();
     updateCard();
     try { refreshSats(); } catch (e) { /* */ }
+    if (window.KGMoon) window.KGMoon.onGmChange();
   }
   $("gmLoginBtn").onclick = login;
   $("logoutBtn").onclick = logout;
@@ -577,7 +578,8 @@
 
   $("publishBtn").onclick = async () => {
     if (!gm) return;
-    if (!dirty) { toast("Нет новых правок"); return; }
+    const moonDirty = window.KGMoon && window.KGMoon.isDirty();
+    if (!dirty && !moonDirty) { toast("Нет новых правок"); return; }
     if (!(await ensureToken())) return;
     const btn = $("publishBtn"); btn.disabled = true;
     try {
@@ -594,6 +596,8 @@
       files.push({ path: "data/map.json", content: JSON.stringify(st) });
       if (terrDirty) files.push({ path: "data/territories.png", content: await T.toPngBlob() });
       if (provDirty) files.push({ path: "data/provinces.png", content: await P.toPngBlob() });
+      if (moonDirty) files.push(...(await window.KGMoon.files()));
+      if (!dirty) files.splice(files.findIndex(f => f.path === "data/map.json"), 1); // только Луна
       await GH.commit(config.repo, files, "Карта: правки ГМа " + new Date().toLocaleString("ru-RU"), m => ($("hint").textContent = m));
       // локально храним флаги как dataURL (на сайте файлы появятся после сборки Pages)
       for (const id in st.countries) {
@@ -602,6 +606,7 @@
       }
       state.updated = loadedStamp = st.updated;
       dirty = terrDirty = provDirty = false;
+      if (moonDirty) window.KGMoon.published();
       $("gmDirty").classList.add("hidden");
       DB.del("draft").catch(() => {});
       toast("Опубликовано. Сайт обновится примерно через минуту.");
@@ -999,6 +1004,7 @@
 
   window.addEventListener("keydown", e => {
     if (!$("page-map").classList.contains("active")) return;
+    if (document.body.classList.contains("moon-mode")) return; // на Луне свои клавиши
     if (e.target.matches && e.target.matches("input, textarea, select")) return;
     if (!$("modal").classList.contains("hidden")) return;
     if (e.code === "Space") { spaceDown = true; if (gm) e.preventDefault(); }
@@ -1143,6 +1149,7 @@
   }
   function updateSats() {
     globe.sats = satUi;
+    satUi.moon = satUi.showMoon ? { pos: Sat.moonAt(satUi.time), ring: satUi.orbits ? Sat.moonRing(satUi.time, 240) : null } : null;
     for (const it of satUi.items) {
       it.pos = Sat.at(it.raw, satUi.time);
       it.ring = satUi.orbits && it.on ? Sat.ring(it.raw, satUi.time, it.raw.orbit === "ell" ? 240 : 160) : null;
@@ -1190,7 +1197,7 @@
     globe.setProvLabels(Object.values(state.provinces || {}).map(p => { const ll = Geo.toLL(p.label[0], p.label[1]); return { name: p.name, lat: ll[0], lon: ll[1], size: p.size }; }));
     globeDirty();
   }
-  function globeZoom(f) { if (!globe) return; globe.zoom = f ? Math.min(8, Math.max(0.18, globe.zoom * f)) : 1; globeDirty(); }
+  function globeZoom(f) { if (!globe) return; globe.zoom = f ? Math.min(8, Math.max(0.012, globe.zoom * f)) : 1; globeDirty(); }
   async function setView3(mode) {
     if (mode === "globe" && !globe) {
       try { globe = new window.KGGlobe($("globeCanvas"), $("globeOverlay"), $("globeLabels")); } catch (e) { console.error(e); globe = null; }
@@ -1214,7 +1221,18 @@
     }
     setTool(mode === "globe" ? "pan" : tool);
   }
-  document.querySelectorAll("#viewSwitch button").forEach(b => b.addEventListener("click", () => setView3(b.dataset.view)));
+  function markViewButtons(v) { document.querySelectorAll("#viewSwitch button").forEach(b => b.classList.toggle("active", b.dataset.view === v)); }
+  async function openMoon(globeView) {
+    await setView3("flat");
+    markViewButtons("moon");
+    if (globeView) window.KGMoon.open3d(); else window.KGMoon.open();
+  }
+  document.querySelectorAll("#viewSwitch button").forEach(b => b.addEventListener("click", async () => {
+    if (b.dataset.view === "moon") { openMoon(false); return; }
+    if (window.KGMoon && window.KGMoon.active) window.KGMoon.close();
+    await setView3(b.dataset.view);
+    markViewButtons(b.dataset.view);
+  }));
 
   // панель спутников
   function buildSatList() {
@@ -1292,6 +1310,7 @@
       const opts = values.__opts || {};
     });
   }
+  window.KGForm = (t, f, v, val) => openForm(t, f, Object.assign({}, v, { __opts: { validate: val } }));
   const typeOptions = () => Object.values(state.satTypes || {}).map(t => [t.id, t.name]);
   const SAT_FIELDS = () => [
     { key: "name", label: "Название" },
@@ -1381,6 +1400,9 @@
   $("satOrbits").addEventListener("change", e => { satUi.orbits = e.target.checked; globeDirty(); });
   $("satNames").addEventListener("change", e => { satUi.names = e.target.checked; globeDirty(); });
   $("satFollow").addEventListener("change", e => { satUi.follow = e.target.checked; globeDirty(); });
+  satUi.showMoon = true;
+  $("satMoon").addEventListener("change", e => { satUi.showMoon = e.target.checked; globeDirty(); });
+  $("satMoonBtn").addEventListener("click", () => { if (!globe) return; satUi.showMoon = true; $("satMoon").checked = true; satUi.follow = false; $("satFollow").checked = false; globe.zoom = 0.0145; globeDirty(); });
   document.querySelectorAll("#satSpeed button").forEach(b => b.addEventListener("click", () => {
     satUi.speed = +b.dataset.speed;
     if (b.dataset.speed === "now") { satUi.time = Date.now(); satUi.speed = 1; }
@@ -1411,6 +1433,7 @@
         if (d < bd) { bd = d; best = it; }
       }
       if (best) { selectSat(best.s.id, false); return; }
+      if (satUi.moon && satUi.moon.screen && Math.hypot(satUi.moon.screen[0] - mx, satUi.moon.screen[1] - my) < Math.max(14, satUi.moon.screen[2])) { openMoon(true); return; }
       const ll = globe.unproject(mx - rc.width / 2, my - rc.height / 2);
       if (!ll) { selProv = null; select(null); return; }
       const [x, y] = Geo.toXY(ll[0], ll[1]);

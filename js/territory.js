@@ -343,4 +343,5 @@
 
   window.KGTerritory = make(false);
   window.KGProvinces = make(true);
+  window.KGTerritoryMake = make; // для Луны: отдельный экземпляр движка
 })();

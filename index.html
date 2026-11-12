@@ -62,6 +62,8 @@
               <label><input type="checkbox" id="satOrbits" checked> Траектории</label>
               <label><input type="checkbox" id="satNames" checked> Названия</label>
               <label><input type="checkbox" id="satFollow"> Следить</label>
+              <label><input type="checkbox" id="satMoon" checked> Луна</label>
+              <button type="button" class="small-btn" id="satMoonBtn" title="Отдалить, чтобы увидеть Луну и её орбиту">🌙 К Луне</button>
             </div>
             <div class="sat-speed" id="satSpeed">
               <button data-speed="0" title="Пауза">⏸</button>
@@ -81,12 +83,84 @@
             <div class="sat-info" id="satInfo"></div>
           </div>
         </div>
+
+        <!-- ================= ЛУНА ================= -->
+        <div class="moon-wrap hidden" id="moonWrap">
+          <div class="viewport moon-vp" id="moonViewport" data-tool="pan">
+            <div class="world moon-world" id="moonWorld"></div>
+          </div>
+          <div class="globe-wrap moon-globe-wrap hidden" id="moonGlobeWrap">
+            <canvas id="moonGlobe"></canvas>
+            <canvas id="moonGlobeOv" class="g-overlay"></canvas>
+          </div>
+          <div class="map-loading hidden" id="moonLoading">Загрузка Луны…</div>
+          <div class="view-switch moon-sub" id="moonSubSwitch">
+            <button data-msub="flat" class="active">Плоская</button>
+            <button data-msub="globe">Шар</button>
+          </div>
+
+          <div class="toolbar panel moon-toolbar" id="moonToolbar">
+            <button data-mtool="pan" class="active" title="Выбор и перемещение">✥<span>Выбор</span></button>
+            <button class="gm-only" data-mtool="brush" title="Кисть: территория">🖌<span>Кисть</span></button>
+            <button class="gm-only" data-mtool="pencil" title="Карандаш: точная граница">✎<span>Карандаш</span></button>
+            <button class="gm-only" data-mtool="eraser" title="Ластик">⌫<span>Ластик</span></button>
+            <button class="gm-only" data-mtool="fill" title="Заливка области">◧<span>Заливка</span></button>
+            <button class="gm-only" data-mtool="picker" title="Пипетка">⊙<span>Пипетка</span></button>
+            <div class="sep gm-only"></div>
+            <button class="gm-only" data-mtool="mark" title="Поставить отметку">⌖<span>Отметка</span></button>
+            <button class="gm-only" data-mtool="road" title="Проложить дорогу">⛙<span>Дорога</span></button>
+            <button class="gm-only" data-mtool="erase" title="Удалить объект">✕<span>Удалить</span></button>
+            <div class="sep gm-only"></div>
+            <button class="gm-only" id="mUndo" title="Отменить (Ctrl+Z)">↶<span>Назад</span></button>
+            <button class="gm-only" id="mRedo" title="Вернуть (Ctrl+Y)">↷<span>Вперёд</span></button>
+          </div>
+
+          <div class="brushbar panel gm-only hidden" id="mBrushBar">
+            <span id="mbTerrBox">Территория <select id="mbTerr"></select></span>
+            <label id="mbSizeBox">Размер <input type="range" id="mbSize" min="1" max="80" value="20"><b id="mbSizeVal">20</b></label>
+            <span id="mbMarkBox" class="hidden">Тип отметки <select id="mbMark"></select></span>
+            <span id="mbRoadBox" class="hidden">Тип дороги <select id="mbRoad"></select></span>
+          </div>
+
+          <div class="measure panel moon-measure">
+            <button data-mtool="ruler" title="Линейка (по радиусу Луны)">📏<span>Линейка</span></button>
+            <button data-mtool="compass" title="Циркуль (по радиусу Луны)">◎<span>Циркуль</span></button>
+            <button id="mMeasClear" title="Убрать измерения">✕<span>Очистить</span></button>
+            <div class="m-out hidden" id="mMeasOut"></div>
+          </div>
+          <div class="hint" id="moonHint"></div>
+          <div class="zoom panel">
+            <button id="moonZoomIn" title="Приблизить">+</button>
+            <button id="moonZoomOut" title="Отдалить">−</button>
+            <button id="moonZoomFit" title="Вся Луна">⤢</button>
+          </div>
+
+          <aside class="moon-panel panel" id="moonPanel">
+            <div class="legend-head"><span>Луна</span></div>
+            <div class="moon-card" id="moonCard"></div>
+            <div class="legend-tabs moon-tabs">
+              <button data-mtab="Terr" class="active">Территории</button>
+              <button data-mtab="Layers">Слои</button>
+              <button data-mtab="Types" class="gm-only">Типы</button>
+            </div>
+            <div class="legend-pane" id="moonPaneTerr">
+              <div class="lp-tools gm-only"><button id="mAddTerr" class="small-btn">+ Территория</button></div>
+              <div id="moonTerrList"></div>
+            </div>
+            <div class="legend-pane hidden" id="moonPaneLayers"><div id="moonLayerList"></div></div>
+            <div class="legend-pane hidden" id="moonPaneTypes">
+              <div class="lp-tools"><button id="mAddMarkType" class="small-btn">+ Тип отметки</button><button id="mAddRoadType" class="small-btn">+ Тип дороги</button></div>
+              <div id="moonTypeList"></div>
+            </div>
+          </aside>
+        </div>
         <div class="map-loading" id="mapLoading">Загрузка карты…</div>
 
         <!-- Вид: плоская карта / глобус -->
         <div class="view-switch" id="viewSwitch">
           <button data-view="flat" class="active">Карта</button>
           <button data-view="globe">Глобус</button>
+          <button data-view="moon">Луна</button>
         </div>
 
         <!-- Измерения (для всех) -->
@@ -252,5 +326,6 @@
 <script src="js/globe.js"></script>
 <script src="js/github.js"></script>
 <script src="js/map.js"></script>
+<script src="js/moon.js"></script>
 </body>
 </html>

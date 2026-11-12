@@ -296,6 +296,28 @@ void main(){
       }
       ctx.textAlign = "center";
     }
+    // Луна (реальный масштаб: 60 радиусов Земли — видна при сильном отдалении)
+    const SM = this.sats && this.sats.moon;
+    if (SM) {
+      if (SM.ring) {
+        ctx.strokeStyle = "rgba(220,226,240,.45)"; ctx.lineWidth = 1.2; ctx.setLineDash([3, 5]);
+        ctx.beginPath(); let first = true;
+        for (const pt of SM.ring) { const q = this.project(pt.lat, pt.lon, pt.rho); if (first) ctx.moveTo(cx + q[0], cy + q[1]); else ctx.lineTo(cx + q[0], cy + q[1]); first = false; }
+        ctx.stroke(); ctx.setLineDash([]);
+      }
+      const q = this.project(SM.pos.lat, SM.pos.lon, SM.pos.rho);
+      const rr = Math.max(5, R * 1737.4 / 6371.0088), x = cx + q[0], y = cy + q[1];
+      SM.screen = this.hidden(q) ? null : [x, y, rr];
+      if (SM.screen) {
+        if (!this.moonImg) { this.moonImg = new Image(); this.moonImg.src = "assets/moon/moon_disc.png"; }
+        ctx.shadowColor = "rgba(230,235,255,.8)"; ctx.shadowBlur = 12;
+        if (this.moonImg.complete && this.moonImg.naturalWidth) ctx.drawImage(this.moonImg, x - rr, y - rr, rr * 2, rr * 2);
+        else { ctx.fillStyle = "#c9ccd4"; ctx.beginPath(); ctx.arc(x, y, rr, 0, Math.PI * 2); ctx.fill(); }
+        ctx.shadowBlur = 0;
+        ctx.font = "400 12px Unbounded, sans-serif"; ctx.fillStyle = "#e8ecf6"; ctx.strokeStyle = "rgba(3,8,20,.9)"; ctx.lineWidth = 3;
+        ctx.strokeText("Луна", x, y - rr - 10); ctx.fillText("Луна", x, y - rr - 10);
+      }
+    }
     // спутники и орбиты
     const S = this.sats;
     if (S && S.items.length) {
@@ -354,7 +376,7 @@ void main(){
             ctx.arc(x, y, 3.4 * k, 0, Math.PI * 2); ctx.fill();
         }
         ctx.shadowBlur = 0;
-        if (S.names || sel) {
+        if ((S.names && this.zoom > 0.12) || sel) {
           ctx.font = `${sel ? 400 : 300} ${sel ? 12 : 10}px Unbounded, "Exo 2", sans-serif`;
           ctx.fillStyle = it.s.color; ctx.strokeStyle = "rgba(3,8,20,.9)"; ctx.lineWidth = 3;
           ctx.strokeText(it.s.name, x, y - 11); ctx.fillText(it.s.name, x, y - 11);
