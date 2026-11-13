@@ -18,10 +18,10 @@
 <h1>Автотесты карты Khatum Games</h1>
 <div id="summary">Выполняется…</div>
 <div id="out"></div>
-<script src="../js/geo.js?v=20261113a"></script>
-<script src="../js/territory.js?v=20261113a"></script>
-<script src="../js/sats.js?v=20261113a"></script>
-<script src="../js/moon-names.js?v=20261113a"></script>
+<script src="../js/geo.js?v=20261113b"></script>
+<script src="../js/territory.js?v=20261113b"></script>
+<script src="../js/sats.js?v=20261113b"></script>
+<script src="../js/moon-names.js?v=20261113b"></script>
 <script>
 (async function () {
   "use strict";
@@ -208,6 +208,18 @@
   await test("Города внутри карты", () => {
     const n = Object.values(map.cities).filter(c => c.x < 0 || c.y < 0 || c.x > G.W || c.y > G.H).length;
     assert(n === 0, n + " городов вне карты"); return Object.keys(map.cities).length + " городов";
+  });
+  await test("Города: население, тип, столица и описание в допустимом виде", () => {
+    const TYPES = ["mega", "agglo", "million", "large", "big", "medium", "small"], bad = [];
+    for (const c of Object.values(map.cities)) {
+      if (c.pop != null && !(Number.isInteger(c.pop) && c.pop > 0)) bad.push(c.name + ": население");
+      if (c.type != null && !TYPES.includes(c.type)) bad.push(c.name + ": тип");
+      if (c.capital != null && c.capital !== true) bad.push(c.name + ": столица");
+      if (c.desc != null && (typeof c.desc !== "string" || c.desc.length > 600)) bad.push(c.name + ": описание");
+    }
+    assert(!bad.length, bad.slice(0, 5).join("; "));
+    const all = Object.values(map.cities);
+    return `население у ${all.filter(c => c.pop).length}, описание у ${all.filter(c => c.desc).length}, столиц ${all.filter(c => c.capital).length} из ${all.length}`;
   });
   await test("Провинции ссылаются на существующие страны", () => {
     const bad = Object.values(map.provinces).filter(p => p.c && !map.countries[p.c]);

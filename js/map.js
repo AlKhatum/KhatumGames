@@ -128,6 +128,7 @@
       l.children.slice().reverse().forEach(c => list.append(row(c, true)));
     });
     syncGroups();
+    try { refreshCityKey(); } catch (e) { /* при первом построении города ещё не готовы */ }
   }
   function syncGroups() {
     LAYERS.filter(l => l.group).forEach(l => {
@@ -139,6 +140,7 @@
   }
   flat.forEach(applyLayer);
   buildLayerList();
+  setTimeout(() => { applyCityTypeVis(); refreshCityKey(); }, 0);
 
   // ---------- SVG-хелперы и группы ----------
   const svgEl = (tag, attrs, parent) => {
@@ -161,7 +163,8 @@
       <rect x="-2.5" y="-4.6" width="0.9" height="2.7"/><rect x="-0.9" y="-1" width="1.6" height="0.6"/><rect x="-0.9" y="0.5" width="1.6" height="0.6"/><rect x="-0.9" y="2" width="1.6" height="0.6"/>
       <rect x="4.9" y="-1.8" width="0.7" height="0.7"/><rect x="4.9" y="-0.4" width="0.7" height="0.7"/><rect x="4.9" y="1" width="0.7" height="0.7"/><rect x="4.9" y="2.4" width="0.7" height="0.7"/>
       <rect x="-7" y="1" width="0.8" height="1.5"/><rect x="-5.6" y="2.7" width="1" height="0.6"/>
-    </g></symbol></defs>`;
+    </g></symbol>
+    <symbol id="capStar" viewBox="-12 -12 24 24"><path d="M0-11 3.2-3.6 11.2-3.4 4.9 1.6 7.1 9.3 0 4.8-7.1 9.3-4.9 1.6-11.2-3.4-3.2-3.6Z" fill="#ffd34d" stroke="#3a2600" stroke-width="1.8" stroke-linejoin="round"/></symbol></defs>`;
   // градиент для названий стран — светлый, чтобы не сливаться с тёмными границами
   L.labels.insertAdjacentHTML("afterbegin", `<defs><linearGradient id="lblGrad" x1="0" y1="0" x2="0" y2="1">
     <stop offset="0" stop-color="#fff4fd"/><stop offset=".5" stop-color="#ffc3ef"/><stop offset="1" stop-color="#ff74d4"/></linearGradient></defs>`);
@@ -210,29 +213,146 @@
     t.setAttribute("stroke-width", Math.max(0.8, c.size * 0.14).toFixed(1));
     window.KG.lines.svg(t, c.name);
   }
-  function cityText(c) {
-    // подпись не должна налезать на крупный значок: отодвигаем от центра
-    let dx = c.dx, dy = c.dy;
-    if (c.a === "start") dx = Math.max(dx, 5.2);
-    else if (c.a === "end") dx = Math.min(dx, -5.2);
-    else dy = dy < 0 ? Math.min(dy, -6.5) : Math.max(dy, 7.5);
-    return { dx, dy };
+  // ---------- города: типы по населению, столицы, всплывающая карточка ----------
+  // Тип берётся из населения (или задаётся ГМом вручную). Размер значка и кольцо зависят от типа,
+  // у столиц — золотая звезда. Названия на карте не пишутся: они в подсказке и в карточке города.
+  const CITY_TYPES = [
+    { id: "mega", name: "Мегаполис", range: "свыше 10 млн", min: 1e7, size: 16, ring: "#ff3fd0", z: 0 },
+    { id: "agglo", name: "Агломерация", range: "5–10 млн", min: 5e6, size: 14, ring: "#ff9b3d", z: 0 },
+    { id: "million", name: "Крупнейший город", range: "1–5 млн", min: 1e6, size: 12, ring: "#ffe14d", z: 0 },
+    { id: "large", name: "Крупный город", range: "250 тыс. – 1 млн", min: 2.5e5, size: 10, ring: "", z: 1 },
+    { id: "big", name: "Большой город", range: "100–250 тыс.", min: 1e5, size: 8.5, ring: "", z: 2 },
+    { id: "medium", name: "Средний город", range: "50–100 тыс.", min: 5e4, size: 7.2, ring: "", z: 2 },
+    { id: "small", name: "Малый город", range: "до 50 тыс.", min: 0, size: 6, ring: "", z: 3 }
+  ];
+  const CT = Object.fromEntries(CITY_TYPES.map(t => [t.id, t]));
+  function cityType(c) {
+    if (c.type && CT[c.type]) return CT[c.type];
+    const p = +c.pop;
+    if (!(p > 0)) return CT.medium; // население неизвестно
+    return CITY_TYPES.find(t => p >= t.min) || CT.small;
   }
+  const fmtPop = p => (p >= 1e6 ? (p / 1e6).toFixed(p >= 1e7 ? 1 : 2).replace(/\.?0+$/, "").replace(".", ",") + " млн"
+    : p >= 1e4 ? Math.round(p / 1e3).toLocaleString("ru-RU") + " тыс." : Math.round(p).toLocaleString("ru-RU")) + " жителей";
   function renderCity(id) {
     const c = state.cities[id];
     let g = els.cities[id];
-    if (!c) { if (g) { g.remove(); delete els.cities[id]; } return; }
+    if (!c) { if (g) { g.remove(); delete els.cities[id]; } if (popCity === id) closeCityPop(); return; }
     if (!g) {
-      g = svgEl("g", { class: "city", "data-col": "cities", "data-id": id }, L.cities);
-      svgEl("use", { href: "#cityIcon", x: -3.6, y: -3.6, width: 7.2, height: 7.2, "data-col": "cities", "data-id": id, "data-part": "icon" }, g);
-      svgEl("text", { "data-col": "cities", "data-id": id, "data-part": "text" }, g);
+      g = svgEl("g", { "data-col": "cities", "data-id": id }, L.cities);
+      const ci = svgEl("g", { class: "ci" }, g);
+      svgEl("circle", { class: "c-ring", r: 0 }, ci);
+      svgEl("use", { href: "#cityIcon", "data-col": "cities", "data-id": id, "data-part": "icon" }, ci);
+      svgEl("use", { href: "#capStar", class: "c-cap", "data-col": "cities", "data-id": id, "data-part": "icon" }, ci);
+      svgEl("title", {}, g);
       els.cities[id] = g;
     }
+    const t = cityType(c), sz = t.size, ci = g.firstChild, [ring, icon, star] = ci.childNodes;
+    g.setAttribute("class", "city t-" + t.id + (c.capital ? " cap" : "") + (sel && sel.col === "cities" && sel.id === id ? " is-sel" : ""));
     g.setAttribute("transform", `translate(${c.x} ${c.y})`);
-    const tx = g.lastChild, o = cityText(c);
-    tx.setAttribute("x", o.dx); tx.setAttribute("y", o.dy);
-    tx.setAttribute("text-anchor", c.a === "end" ? "end" : c.a === "middle" ? "middle" : "start");
-    window.KG.lines.svg(tx, c.name);
+    icon.setAttribute("x", -sz / 2); icon.setAttribute("y", -sz / 2); icon.setAttribute("width", sz); icon.setAttribute("height", sz);
+    ring.setAttribute("r", (sz / 2 + 1.1).toFixed(2)); ring.style.stroke = t.ring || "none";
+    const ss = Math.max(5, sz * 0.6);
+    star.setAttribute("x", (sz * 0.18).toFixed(2)); star.setAttribute("y", (-sz * 0.5 - ss * 0.35).toFixed(2));
+    star.setAttribute("width", ss.toFixed(2)); star.setAttribute("height", ss.toFixed(2));
+    g.lastChild.textContent = window.KG.lines.oneLine(c.name) + " — " + t.name.toLowerCase() + (c.capital ? ", столица" : "");
+    if (popCity === id) fillCityPop();
+  }
+
+  // всплывающая карточка города
+  let popCity = null, popAt = null; // popAt — точка на экране для глобуса
+  const pop = $("cityPop");
+  function cityCountry(c) { const v = T.at(c.x, c.y); const k = v && state.countries[String(v)]; return k ? window.KG.lines.oneLine(k.name) : ""; }
+  function fillCityPop() {
+    const c = state.cities[popCity]; if (!c) { closeCityPop(); return; }
+    const t = cityType(c), country = cityCountry(c);
+    const rows = [];
+    rows.push(`<div class="cp-row"><span>Тип</span><b>${esc(t.name)}</b><small>${esc(t.range)}${c.type ? "" : c.pop ? " · по населению" : ""}</small></div>`);
+    rows.push(`<div class="cp-row"><span>Население</span><b>${c.pop ? esc(fmtPop(+c.pop)) : "нет данных"}</b>${c.popYear ? `<small>${esc(String(c.popYear))} г.</small>` : ""}</div>`);
+    if (country) rows.push(`<div class="cp-row"><span>Страна</span><b>${esc(country)}</b></div>`);
+    pop.innerHTML = `<button class="cp-close" title="Закрыть">✕</button>` +
+      `<div class="cp-head"><span class="cp-ico t-${t.id}${c.capital ? " cap" : ""}"></span><div><div class="cp-name">${esc(window.KG.lines.oneLine(c.name))}</div>` +
+      (c.capital ? `<div class="cp-cap">★ Столица${country ? " · " + esc(country) : ""}</div>` : "") + `</div></div>` +
+      rows.join("") +
+      (c.desc ? `<p class="cp-desc">${esc(c.desc)}</p>` : `<p class="cp-desc cp-empty">${gm ? "Описания пока нет — нажмите «Изменить»." : "Описания пока нет."}</p>`) +
+      `<div class="cp-foot">` + (c.wiki ? `<a href="https://ru.wikipedia.org/wiki/${encodeURIComponent(c.wiki.replace(/ /g, "_"))}" target="_blank" rel="noopener">Википедия</a><small>текст — CC BY-SA</small>` : "<span></span>") +
+      (gm ? `<button class="small-btn" id="cpEdit">Изменить</button>` : "") + `</div>`;
+    pop.querySelector(".cp-close").onclick = closeCityPop;
+    const ed = $("cpEdit"); if (ed) ed.onclick = () => editCity(popCity);
+    placeCityPop();
+  }
+  function placeCityPop() {
+    if (!popCity) return;
+    const c = state.cities[popCity]; if (!c) return;
+    const fr = frame.getBoundingClientRect(), vr = viewport.getBoundingClientRect();
+    let x, y;
+    if (popAt) { x = popAt[0]; y = popAt[1]; }
+    else { x = vr.left - fr.left + tx + c.x * s; y = vr.top - fr.top + ty + c.y * s; }
+    const w = pop.offsetWidth || 280, h = pop.offsetHeight || 160, pad = 8;
+    let left = x + 14, top = y - h / 2;
+    if (left + w > fr.width - pad) left = x - w - 14;
+    left = Math.max(pad, Math.min(fr.width - w - pad, left));
+    top = Math.max(pad, Math.min(fr.height - h - pad, top));
+    pop.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
+    const off = !popAt && (x < 0 || y < 0 || x > fr.width || y > fr.height);
+    pop.classList.toggle("off", off);
+  }
+  function showCityPop(id, at) {
+    popCity = String(id); popAt = at || null;
+    pop.classList.remove("hidden");
+    fillCityPop();
+  }
+  function closeCityPop() {
+    popCity = null; popAt = null; pop.classList.add("hidden");
+    if (sel && sel.col === "cities") select(null);
+  }
+  async function editCity(id) {
+    if (!gm) return;
+    const before = state.cities[id]; if (!before) return;
+    const v = await openForm("Город: " + window.KG.lines.oneLine(before.name), [
+      { key: "name", label: "Название", hint: "« ↵ » — перенос строки" },
+      { key: "type", label: "Тип", type: "select", options: [["", "Авто — по населению"]].concat(CITY_TYPES.map(t => [t.id, t.name + " (" + t.range + ")"])) },
+      { key: "pop", label: "Население, чел.", type: "number", min: 0, step: 1 },
+      { key: "capital", label: "Столица", type: "select", options: [["", "Нет"], ["1", "Да — столица страны"]] },
+      { key: "desc", label: "Краткое описание", type: "textarea" },
+      { key: "wiki", label: "Статья Википедии", hint: "Название статьи, например: Москва" }
+    ], { name: window.KG.lines.toInput(before.name), type: before.type || "", pop: before.pop || "", capital: before.capital ? "1" : "", desc: before.desc || "", wiki: before.wiki || "",
+      __opts: { validate: x => (!x.name ? "Укажите название" : x.pop !== "" && (+x.pop < 0 || !isFinite(+x.pop)) ? "Население — неотрицательное число" : "") } });
+    if (!v) return;
+    const a = clone(before);
+    a.name = window.KG.lines.fromInput(v.name) || before.name;
+    if (v.type) a.type = v.type; else delete a.type;
+    if (v.pop !== "" && +v.pop > 0) a.pop = Math.round(+v.pop); else delete a.pop;
+    if (v.capital) a.capital = true; else delete a.capital;
+    if (v.desc) a.desc = v.desc; else delete a.desc;
+    if (v.wiki) a.wiki = v.wiki; else delete a.wiki;
+    if (a.pop !== before.pop) delete a.popYear;
+    commit("cities", id, before, a);
+    toast("Город обновлён (опубликуйте, чтобы увидели все)");
+  }
+  // подписи типов городов в «Слоях»: значок, название, сколько таких, переключатель
+  function cityKey() {
+    const box = document.createElement("div"); box.className = "city-key";
+    const counts = {};
+    for (const c of Object.values(state ? state.cities : {})) { const t = cityType(c).id; counts[t] = (counts[t] || 0) + 1; }
+    for (const t of CITY_TYPES) {
+      const r = document.createElement("label"); r.className = "layer-row sub";
+      const on = ui.vis["ct_" + t.id] !== false;
+      r.innerHTML = `<input type="checkbox" ${on ? "checked" : ""}><span class="cp-ico t-${t.id}"></span><span class="lname">${t.name}<small> ${t.range}</small></span><span class="ck-n">${counts[t.id] || 0}</span>`;
+      r.querySelector("input").addEventListener("change", e => { ui.vis["ct_" + t.id] = e.target.checked; applyCityTypeVis(); saveUi(); });
+      box.append(r);
+    }
+    const cap = document.createElement("div"); cap.className = "layer-row sub ck-cap";
+    cap.innerHTML = `<span class="cp-ico t-large cap"></span><span class="lname">Столица — звезда у значка</span><span class="ck-n">${Object.values(state ? state.cities : {}).filter(c => c.capital).length}</span>`;
+    box.append(cap);
+    return box;
+  }
+  function applyCityTypeVis() { for (const t of CITY_TYPES) L.cities.classList.toggle("hide-" + t.id, ui.vis["ct_" + t.id] === false); }
+  function refreshCityKey() {
+    const l = flat.find(x => x.id === "cities"); if (!l || !l._cb) return;
+    const row = l._cb.closest(".layer-row"); if (!row) return;
+    const old = row.parentElement.querySelector(".city-key"); if (old) old.remove();
+    row.after(cityKey());
   }
   function renderLabel(id) {
     const e = state.labels[id];
@@ -271,7 +391,11 @@
     world.style.transform = `translate(${tx}px, ${ty}px) scale(${s})`;
     // Всё, что ниже, меняем только при переходе порога: любая смена стиля на рамке заставляет
     // браузер пересчитать тысячи элементов карты, а это и есть «подлагивание» при масштабировании.
-    const cityVis = s < 0.85 ? "hidden" : "", z = String(s >= 3.2 ? 3 : s >= 1.9 ? 2 : s >= 1.1 ? 1 : 0);
+    const cityVis = s < 0.3 ? "hidden" : "", z = String(s >= 3.2 ? 3 : s >= 1.9 ? 2 : s >= 1.1 ? 1 : 0);
+    const cz = String(s >= 1.8 ? 3 : s >= 1.1 ? 2 : s >= 0.6 ? 1 : 0);
+    const ck = s > 1.8 ? (Math.round(1.8 / s * 20) / 20).toFixed(2) : "1"; // значки не раздуваются при приближении
+    if (frame.dataset.cz !== cz) frame.dataset.cz = cz;
+    if (L.cities.style.getPropertyValue("--ck") !== ck) L.cities.style.setProperty("--ck", ck);
     const lod = s < 0.5 ? "far" : "near"; // издалека границы провинций не читаются, а рисовать их дорого
     const pk = Math.min(1, 2.4 / s).toFixed(2); // названия провинций не раздуваются при приближении
     if (L.cities.style.visibility !== cityVis) L.cities.style.visibility = cityVis;
@@ -279,6 +403,7 @@
     if (frame.dataset.lod !== lod) frame.dataset.lod = lod;
     if (L.provLabels.style.getPropertyValue("--pk") !== pk) L.provLabels.style.setProperty("--pk", pk);
     if (typeof renderMeasure === "function") renderMeasure();
+    if (typeof popCity !== "undefined" && popCity && !popAt) placeCityPop();
   }
   function fit() {
     const vw = viewport.clientWidth, vh = viewport.clientHeight;
@@ -331,6 +456,8 @@
     selPath.setAttribute("d", sel && sel.col === "countries" ? paths.get(sel.id) || "" : "");
     provSelPath.setAttribute("d", selProv ? provPaths.get(selProv) || "" : "");
     try { if (globe) globeDirty(); } catch (e) { /* */ }
+    if (sel && sel.col === "cities") { if (popCity !== sel.id || popAt) showCityPop(sel.id); }
+    else if (popCity && !popAt) { popCity = null; pop.classList.add("hidden"); }
     updateCard();
     markListSelection();
   }
@@ -451,6 +578,7 @@
     RENDER[col](id);
     if (sel && sel.col === col && sel.id === id) { if (val == null) select(null); else { select(sel); } }
     if (col === "countries") { buildCountryList(); fillBrushSelect(); if (globe && viewMode === "globe") syncGlobe(false); }
+    if (col === "cities") { refreshCityKey(); if (globe && viewMode === "globe") syncGlobe(false); }
   }
   function commit(col, id, before, after) {
     pushUndo({ kind: "entity", col, id: String(id), before: clone(before), after: clone(after) });
@@ -657,7 +785,7 @@
   // ---------- инструменты ГМа ----------
   let tool = "pan", brushCountry = null, pencilSize = 2;
   const HINTS = {
-    pan: "Перетаскивайте карту, колесо — масштаб. Клик по стране — легенда. Двойной клик — переименовать. Города и подписи можно перетаскивать (подпись города — отдельно от значка).",
+    pan: "Перетаскивайте карту, колесо — масштаб. Клик по стране — легенда. Двойной клик — переименовать (по городу — карточка города). Города и подписи можно перетаскивать.",
     brush: "Кисть: рисуйте территорию выбранной страны. [ и ] — размер, Alt+клик — взять страну с карты, правая кнопка — двигать карту.",
     pencil: "Карандаш: точная правка границы (1–4 px). Alt+клик — взять страну с карты, правая кнопка — двигать карту.",
     eraser: "Ластик: убирает территорию (суша становится ничьей).",
@@ -681,7 +809,7 @@
     $("brushBar").classList.toggle("hidden", !gm || !PAINT.includes(t) || t === "picker");
     // панель инструментов опускается под панель кисти, если та переносится на несколько строк
     requestAnimationFrame(() => { const bb = $("brushBar"); frame.style.setProperty("--bbh", bb.classList.contains("hidden") ? "0px" : bb.offsetHeight + "px"); });
-    $("hint").textContent = viewMode === "globe" ? HINT_GLOBE : MEASURE.includes(t) ? HINTS[t] : gm ? HINTS[t] || "" : "Перетаскивайте карту, колесо — масштаб. Клик по стране — её флаг и название в легенде. Слои — во вкладке «Слои».";
+    $("hint").textContent = viewMode === "globe" ? HINT_GLOBE : MEASURE.includes(t) ? HINTS[t] : gm ? HINTS[t] || "" : "Перетаскивайте карту, колесо — масштаб. Клик по стране — её флаг и название в легенде, по значку города — карточка города. Слои — во вкладке «Слои».";
     const sz = $("bbSize");
     if (t === "pencil") { sz.max = 4; sz.value = pencilSize; } else { sz.max = 120; sz.value = brushSize; }
     $("bbSizeVal").textContent = sz.value;
@@ -912,7 +1040,8 @@
       const name = await ask("Название нового города", "", { multiline: true });
       if (!name) return;
       const id = uid("ct");
-      commit("cities", id, null, { id, name, x: Math.round(p[0] * 10) / 10, y: Math.round(p[1] * 10) / 10, dx: 5.2, dy: 2.2, a: "start" });
+      commit("cities", id, null, { id, name, x: Math.round(p[0] * 10) / 10, y: Math.round(p[1] * 10) / 10 });
+      select({ col: "cities", id }); editCity(id);
       return;
     }
     if (tool === "label") {
@@ -988,9 +1117,7 @@
       const dx = p[0] - drag.p0[0], dy = p[1] - drag.p0[1], b = drag.before, en = state[drag.ent.col][drag.ent.id];
       const r1 = v => Math.round(v * 10) / 10;
       if (drag.ent.col === "countries") en.label = [Math.round(b.label[0] + dx), Math.round(b.label[1] + dy)];
-      else if (drag.ent.col === "cities" && drag.ent.part === "text") {
-        const o = cityText(b); en.dx = r1(o.dx + dx); en.dy = r1(o.dy + dy);
-      } else { en.x = r1(b.x + dx); en.y = r1(b.y + dy); }
+      else { en.x = r1(b.x + dx); en.y = r1(b.y + dy); }
       RENDER[drag.ent.col](drag.ent.id);
     }
   });
@@ -1008,7 +1135,7 @@
     const dbl = now - lastClick.t < 380 && lastClick.key === key && Math.hypot(e.clientX - lastClick.x, e.clientY - lastClick.y) < 8;
     lastClick = { t: dbl ? 0 : now, key, x: e.clientX, y: e.clientY };
     if (dbl && tool === "ruler") { finishRuler(); return; }
-    if (dbl && gm && ent && (tool === "pan")) { rename(ent); return; }
+    if (dbl && gm && ent && (tool === "pan")) { if (ent.col === "cities") editCity(ent.id); else rename(ent); return; }
     if (dbl) return;
     handleClick(ent, p);
   }
@@ -1021,6 +1148,7 @@
     if (document.body.classList.contains("moon-mode")) return; // на Луне свои клавиши
     if (e.target.matches && e.target.matches("input, textarea, select")) return;
     if (!$("modal").classList.contains("hidden")) return;
+    if (e.key === "Escape" && popCity) closeCityPop();
     if (e.code === "Space") { spaceDown = true; if (gm) e.preventDefault(); }
     if (MEASURE.includes(tool)) {
       if (e.key === "Enter") { finishRuler(); return; }
@@ -1118,7 +1246,7 @@
   }
 
   // ---------- глобус ----------
-  const HINT_GLOBE = "Глобус: тяните — вращать, колесо — масштаб, клик по стране — легенда, клик по спутнику — его орбита. Редактирование и измерения — на плоской карте.";
+  const HINT_GLOBE = "Глобус: тяните — вращать, колесо — масштаб, клик по стране — легенда, по городу — его карточка, по спутнику — орбита. Редактирование и измерения — на плоской карте.";
   const Sat = window.KGSats;
   let viewMode = "flat", globe = null, globeRaf = 0, globeLoop = 0, globeReady = null;
   const satUi = { items: [], sel: "kovcheg", orbits: true, names: true, speed: 60, time: Date.now(), follow: false, last: 0, hidden: {} };
@@ -1208,7 +1336,7 @@
     }
     globe.setPalette(pal);
     globe.setLabels(labels);
-    globe.setCities(Object.values(state.cities).map(c => { const ll = Geo.toLL(c.x, c.y); return { name: c.name, lat: ll[0], lon: ll[1] }; }));
+    globe.setCities(Object.values(state.cities).map(c => { const ll = Geo.toLL(c.x, c.y), t = cityType(c); return { id: c.id, lat: ll[0], lon: ll[1], k: t.size / 7.2, z: t.z, ring: t.ring, cap: !!c.capital, hide: ui.vis["ct_" + t.id] === false }; }));
     globe.setProvLabels(Object.values(state.provinces || {}).map(p => { const ll = Geo.toLL(p.label[0], p.label[1]); return { name: p.name, lat: ll[0], lon: ll[1], size: p.size }; }));
     globeDirty();
   }
@@ -1295,7 +1423,9 @@
         const row = document.createElement("label"); row.className = "f-row"; row.dataset.key = f.key;
         const lb = document.createElement("span"); lb.textContent = f.label; row.append(lb);
         let inp;
-        if (f.type === "select") {
+        if (f.type === "textarea") {
+          inp = document.createElement("textarea"); inp.rows = 4; inp.className = "f-area";
+        } else if (f.type === "select") {
           inp = document.createElement("select");
           for (const [v, t] of f.options) { const o = document.createElement("option"); o.value = v; o.textContent = t; inp.append(o); }
         } else {
@@ -1435,6 +1565,7 @@
       if (Math.hypot(e.clientX - g.sx, e.clientY - g.sy) > 4) { g.moved = true; if (satUi.follow) { satUi.follow = false; $("satFollow").checked = false; } }
       globe.lon -= dx / r; globe.lat = Math.max(-1.5, Math.min(1.5, globe.lat + dy / r));
       g.x = e.clientX; g.y = e.clientY; globeDirty();
+      if (popAt && g.moved) closeCityPop(); // карточка привязана к точке экрана — при вращении закрываем
     });
     cv.addEventListener("pointerup", e => {
       const was = g; g = null;
@@ -1448,6 +1579,10 @@
         if (d < bd) { bd = d; best = it; }
       }
       if (best) { selectSat(best.s.id, false); return; }
+      // города на глобусе
+      let city = null, cd = 10;
+      for (const c of (globe.cities || [])) { if (!c.screen) continue; const dd = Math.hypot(c.screen[0] - mx, c.screen[1] - my); if (dd < Math.max(cd, c.screen[2])) { cd = dd; city = c; } }
+      if (city) { const fr = frame.getBoundingClientRect(); sel = { col: "cities", id: city.id }; showCityPop(city.id, [rc.left - fr.left + city.screen[0], rc.top - fr.top + city.screen[1]]); return; }
       if (satUi.moon && satUi.moon.screen && Math.hypot(satUi.moon.screen[0] - mx, satUi.moon.screen[1] - my) < Math.max(14, satUi.moon.screen[2])) { openMoon(true); return; }
       const ll = globe.unproject(mx - rc.width / 2, my - rc.height / 2);
       if (!ll) { selProv = null; select(null); return; }
@@ -1574,7 +1709,7 @@
       setCoast(cp.coast);
       console.info("контуры " + (hit ? "из кэша" : "построены") + " за", Math.round(performance.now() - t0), "мс");
       rebuildAll(false);
-      applyFonts();
+      applyFonts(); refreshCityKey();
       buildCountryList(); fillBrushSelect();
       let saved = null; try { saved = sessionStorage.getItem(GM_KEY); } catch (e) { /* */ }
       setGm(!!saved && saved === config.gm.hash);

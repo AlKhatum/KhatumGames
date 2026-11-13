@@ -175,6 +175,12 @@ void main(){
       this.labelsEl.append(el); l.el = el;
     }
   };
+  // звезда столицы на холсте
+  function drawStar(ctx, x, y, r) {
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * 0.45 : r; ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
+    ctx.closePath(); ctx.fillStyle = "#ffd34d"; ctx.strokeStyle = "#3a2600"; ctx.lineWidth = 1.2; ctx.stroke(); ctx.fill();
+  }
   // шрифт надписей, выбранный ГМом (globe.fonts задаёт карта)
   Globe.prototype.fontOf = function (slot) { const f = this.fonts && this.fonts[slot]; return (f ? `"${f}", ` : "") + `Unbounded, "Exo 2", sans-serif`; };
   Globe.prototype.setCities = function (list) { this.cities = list; };        // [{name, lat, lon}]
@@ -282,22 +288,22 @@ void main(){
         window.KG.lines.canvas(ctx, p.name, x, y, 10, true);
       }
     }
-    // города
-    if (this.show.cities && this.zoom >= 2.2) {
-      const icon = getCityIcon(), sz = Math.min(18, 6 + this.zoom * 1.4);
-      const csz = Math.min(12, 6 + this.zoom);
-      ctx.font = `300 ${csz.toFixed(0)}px ${this.fontOf("city")}`;
-      ctx.textAlign = "left";
-      ctx.fillStyle = "#f5f2ff"; ctx.strokeStyle = "rgba(14,10,30,.85)"; ctx.lineWidth = 3;
+    // города: размер значка по типу, звезда у столиц, без подписей (название — в карточке по клику)
+    for (const c of this.cities) c.screen = null;
+    if (this.show.cities && this.zoom >= 1.5) {
+      const icon = getCityIcon(), base = Math.min(16, 5 + this.zoom * 1.3);
+      const zmax = this.zoom >= 4.5 ? 3 : this.zoom >= 3 ? 2 : this.zoom >= 2.2 ? 1 : 0;
       for (const c of this.cities) {
+        if (c.hide || (c.z > zmax && !c.cap)) continue;
         const pr = this.project(c.lat, c.lon);
         if (pr[2] < 0.2) continue;
-        const x = cx + pr[0], y = cy + pr[1];
+        const x = cx + pr[0], y = cy + pr[1], sz = base * (c.k || 1);
         if (x < -40 || y < -20 || x > ov.clientWidth + 40 || y > ov.clientHeight + 20) continue;
+        if (c.ring) { ctx.beginPath(); ctx.arc(x, y, sz / 2 + 1.5, 0, Math.PI * 2); ctx.strokeStyle = c.ring; ctx.lineWidth = 1.6; ctx.stroke(); }
         if (icon.complete) ctx.drawImage(icon, x - sz / 2, y - sz / 2, sz, sz);
-        if (c.name && this.zoom >= 3) window.KG.lines.canvas(ctx, c.name, x + sz / 2 + 2, y, csz, true);
+        if (c.cap) drawStar(ctx, x + sz * 0.42, y - sz * 0.42, Math.max(3.5, sz * 0.3));
+        c.screen = [x, y, sz / 2 + 2];
       }
-      ctx.textAlign = "center";
     }
     // Луна (реальный масштаб: 60 радиусов Земли — видна при сильном отдалении)
     const SM = this.sats && this.sats.moon;

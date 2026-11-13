@@ -608,3 +608,61 @@ body.moon-mode .moon-legend { display: flex; }
 /* производительность: облегчённая отрисовка во время масштабирования и перетаскивания */
 #mapFrame.moving #provBordersLayer, #mapFrame.moving #provLabelsLayer, #mapFrame.moving #citiesLayer, #mapFrame.moving #coastLayer { visibility: hidden; }
 .viewport.panning .world { will-change: transform; }
+
+/* ---------- города: типы, столицы, карточка ---------- */
+.city .ci { transform: scale(var(--ck, 1)); }
+.city .c-ring { fill: rgba(10, 8, 20, .35); stroke-width: 1.3px; }
+.city .c-cap { display: none; }
+.city.cap .c-cap { display: inline; }
+.city use, .city circle { cursor: pointer; pointer-events: all; }
+.city.is-sel .c-ring { fill: rgba(255, 63, 208, .3) !important; stroke: var(--pink) !important; stroke-width: 1.8px; }
+#mapFrame[data-cz="0"] .city:not(.cap):not(.t-mega):not(.t-agglo):not(.t-million) { display: none; }
+#mapFrame[data-cz="1"] .city:not(.cap):is(.t-big, .t-medium, .t-small) { display: none; }
+#mapFrame[data-cz="2"] .city:not(.cap).t-small { display: none; }
+#citiesLayer.hide-mega .city.t-mega { display: none; }
+#citiesLayer.hide-agglo .city.t-agglo { display: none; }
+#citiesLayer.hide-million .city.t-million { display: none; }
+#citiesLayer.hide-large .city.t-large { display: none; }
+#citiesLayer.hide-big .city.t-big { display: none; }
+#citiesLayer.hide-medium .city.t-medium { display: none; }
+#citiesLayer.hide-small .city.t-small { display: none; }
+.city-pop { position: absolute; left: 0; top: 0; z-index: 30; width: 300px; max-width: calc(100% - 16px); padding: 12px 14px 10px; background: rgba(6, 14, 32, .96); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 0 18px rgba(24, 217, 245, .25); font-size: 13px; color: var(--text); }
+.city-pop.off { visibility: hidden; }
+.cp-close { position: absolute; right: 6px; top: 6px; background: none; border: 0; color: var(--muted); font-size: 14px; padding: 2px 6px; }
+.cp-close:hover { color: var(--text); }
+.cp-head { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; padding-right: 20px; }
+.cp-name { font-family: var(--f-city); font-size: 15px; letter-spacing: .06em; text-transform: uppercase; color: var(--pink-soft); overflow-wrap: anywhere; }
+.cp-cap { color: #ffd34d; font-size: 12px; margin-top: 2px; }
+.cp-row { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; border-top: 1px solid var(--line-dim); }
+.cp-row span { color: var(--muted); width: 82px; flex: none; font-size: 12px; }
+.cp-row small { color: var(--muted); margin-left: auto; font-size: 11px; text-align: right; }
+.cp-desc { margin: 8px 0 6px; line-height: 1.45; font-size: 12.5px; max-height: 150px; overflow: auto; }
+.cp-empty { color: var(--muted); font-style: italic; }
+.cp-foot { display: flex; align-items: center; gap: 8px; min-height: 24px; }
+.cp-foot a { color: var(--line); }
+.cp-foot small { color: var(--muted); font-size: 10px; }
+.cp-foot button { margin-left: auto; }
+.cp-ico { --d: 16px; flex: none; position: relative; width: var(--d); height: var(--d); border-radius: 50%; background: url("../assets/map/city_icon.svg") center / contain no-repeat; box-shadow: 0 0 0 2px var(--ring, transparent); }
+.cp-ico.cap::after { content: "★"; position: absolute; right: -7px; top: -9px; color: #ffd34d; font-size: 12px; text-shadow: 0 0 2px #3a2600, 0 0 2px #3a2600; }
+.cp-head .cp-ico { --d: 30px; }
+.cp-ico.t-mega { --d: 26px; --ring: #ff3fd0; }
+.cp-ico.t-agglo { --d: 22px; --ring: #ff9b3d; }
+.cp-ico.t-million { --d: 19px; --ring: #ffe14d; }
+.cp-ico.t-large { --d: 16px; }
+.cp-ico.t-big { --d: 14px; }
+.cp-ico.t-medium { --d: 12px; }
+.cp-ico.t-small { --d: 10px; }
+.cp-head .cp-ico.t-mega { --d: 37px; }
+.cp-head .cp-ico.t-agglo { --d: 35px; }
+.cp-head .cp-ico.t-million { --d: 32px; }
+.cp-head .cp-ico.t-large { --d: 30px; }
+.cp-head .cp-ico.t-big { --d: 28px; }
+.cp-head .cp-ico.t-medium { --d: 27px; }
+.cp-head .cp-ico.t-small { --d: 25px; }
+.city-key { padding: 0 0 4px; }
+.city-key .layer-row { padding-left: 30px; }
+.city-key .lname small { color: var(--muted); font-size: 11px; }
+.city-key .ck-n { color: var(--muted); font-size: 11px; min-width: 24px; text-align: right; }
+.city-key .cp-ico { margin: 0 4px; }
+.f-area { width: 100%; resize: vertical; background: rgba(0, 0, 0, .35); border: 1px solid var(--line-dim); border-radius: 3px; color: var(--text); font: 13px/1.4 var(--font-ui); padding: 6px 8px; }
+@media (max-width: 600px) { .city-pop { width: calc(100% - 16px); } }
