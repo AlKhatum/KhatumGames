@@ -712,3 +712,13 @@ body.moon-mode #stateCard, body.moon-mode #sizeBar { display: none; }
 .sc-gm .flag { width: 84px; height: 56px; }
 .sc-gm-fields { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .sc-hidden { display: none !important; }
+
+/* ---------- облака обломков: список столкновений в панели орбит ---------- */
+.sat-gm { flex-wrap: wrap; }
+.deb-list { max-height: 140px; overflow-y: auto; }
+.deb-list .legend-label { margin: 6px 0 2px; }
+.deb-dot { border-radius: 1px; transform: rotate(45deg); }
+.deb-row .sat-type { white-space: nowrap; }
+.sat-gm #addDebrisBtn { flex-basis: 100%; }
+.deb-list { overflow-x: hidden; }
+.deb-row .sat-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@200;300;400;600&family=Oswald:wght@400;500&family=Exo+2:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20261115a">
+<link rel="stylesheet" href="css/style.css?v=20261115c">
 </head>
 <body>
 
@@ -65,6 +65,7 @@
               <label><input type="checkbox" id="satNames" checked> Названия</label>
               <label><input type="checkbox" id="satFollow"> Следить</label>
               <label><input type="checkbox" id="satMoon" checked> Луна</label>
+              <label title="Облака обломков после столкновений"><input type="checkbox" id="satDebris" checked> Обломки</label>
               <button type="button" class="small-btn" id="satMoonBtn" title="Отдалить, чтобы увидеть Луну и её орбиту">🌙 К Луне</button>
             </div>
             <div class="sat-speed" id="satSpeed">
@@ -76,8 +77,10 @@
             <div class="sat-gm gm-only">
               <button id="addSatBtn" class="small-btn" type="button">+ Спутник</button>
               <button id="addTypeBtn" class="small-btn" type="button">+ Тип</button>
+              <button id="addDebrisBtn" class="small-btn" type="button" title="Столкновение спутников или разрушение одного: облако обломков">+ Столкновение</button>
             </div>
             <div class="sat-list" id="satList"></div>
+            <div class="deb-list" id="debList"></div>
             <details class="sat-types gm-only">
               <summary>Типы спутников</summary>
               <div id="satTypeList"></div>
@@ -414,11 +417,11 @@
 <script src="js/app.js?v=20261115a"></script>
 <script src="js/geo.js?v=20261115a"></script>
 <script src="js/territory.js?v=20261115a"></script>
-<script src="js/sats.js?v=20261115a"></script>
-<script src="js/globe.js?v=20261115a"></script>
+<script src="js/sats.js?v=20261115c"></script>
+<script src="js/globe.js?v=20261115c"></script>
 <script src="js/github.js?v=20261115a"></script>
 <script src="js/wrap.js?v=20261115a"></script>
-<script src="js/map.js?v=20261115b"></script>
+<script src="js/map.js?v=20261115c"></script>
 <script src="js/moon-names.js?v=20261115a"></script>
 <script src="js/moon.js?v=20261115a"></script>
 </body>

@@ -332,10 +332,34 @@ void main(){
   };
   // спутники и их орбиты (общая отрисовка для Земли и Луны): g — шар с project(lat, lon, rho), hidden(pr), zoom
   function drawSats(g, ctx, S, cx, cy) {
+    // облака обломков: точки перед шаром яркие, за шаром не рисуются; в первые минуты — вспышка
+    if (S && S.debris) for (const d of S.debris) {
+      const sz = Math.max(2, Math.min(3.4, 1.7 + g.zoom * 0.45)), xy = d.xy || (d.xy = new Float32Array(d.count * 3));
+      let m = 0;
+      for (let i = 0; i < d.count; i++) {
+        const pr = g.project(d.pts[i * 3], d.pts[i * 3 + 1], d.pts[i * 3 + 2]);
+        if (g.hidden(pr)) continue;
+        xy[m * 3] = cx + pr[0]; xy[m * 3 + 1] = cy + pr[1]; xy[m * 3 + 2] = pr[2] > 0 ? 1 : 0; m++;
+      }
+      // тёмная подложка, чтобы точки читались и на светлых странах, затем сами точки
+      ctx.fillStyle = "rgba(4, 6, 14, .7)";
+      for (let i = 0; i < m; i++) ctx.fillRect(xy[i * 3] - sz / 2 - 1, xy[i * 3 + 1] - sz / 2 - 1, sz + 2, sz + 2);
+      ctx.fillStyle = d.color;
+      for (let i = 0; i < m; i++) { ctx.globalAlpha = xy[i * 3 + 2] ? 1 : 0.45; ctx.fillRect(xy[i * 3] - sz / 2, xy[i * 3 + 1] - sz / 2, sz, sz); }
+      ctx.globalAlpha = 1;
+      for (const f of d.flash || []) {
+        const pr = g.project(f.lat, f.lon, f.rho); if (g.hidden(pr)) continue;
+        const k = f.age / f.life, rr = 4 + k * 26;
+        ctx.globalAlpha = 1 - k; ctx.strokeStyle = "#fff4c2"; ctx.lineWidth = 2; ctx.shadowColor = "#ffd27a"; ctx.shadowBlur = 16;
+        ctx.beginPath(); ctx.arc(cx + pr[0], cy + pr[1], rr, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillStyle = "#fffbe8"; ctx.beginPath(); ctx.arc(cx + pr[0], cy + pr[1], 3 * (1 - k) + 1, 0, Math.PI * 2); ctx.fill();
+        ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+      }
+    }
     if (S && S.items.length) {
       ctx.lineCap = "round";
       for (const it of S.items) {
-        if (!it.on) continue;
+        if (!it.on || it.dead) continue; // разрушенный спутник — уже облако обломков
         const sel = S.sel === it.s.id;
         if (S.orbits && it.ring) {
           // кольцо орбиты: передняя часть сплошная, задняя (за шаром) — пунктир

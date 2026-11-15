@@ -198,7 +198,7 @@
     e.setAttribute("d", d || "");
     if (selProv === id) provSelPath.setAttribute("d", d || "");
   }
-  const els = { cfill: {}, cborder: {}, clabel: {}, cities: {}, labels: {}, satellites: {}, satTypes: {}, settings: {} };
+  const els = { cfill: {}, cborder: {}, clabel: {}, cities: {}, labels: {}, satellites: {}, satTypes: {}, debris: {}, settings: {} };
   const paths = new Map(); // id страны -> d
   const flagCache = {};   // id -> dataURL (флаги, загруженные в этой сессии)
 
@@ -392,8 +392,8 @@
     window.KG.lines.svg(t, e.name);
   }
   const renderSatsAny = () => { try { refreshSats(); } catch (e) { /* глобус ещё не готов */ } };
-  const RENDER = { countries: renderCountry, cities: renderCity, labels: renderLabel, provinces: renderProvince, satellites: renderSatsAny, satTypes: renderSatsAny, settings: () => applyFonts() };
-  const COLS = ["countries", "cities", "labels", "provinces", "satellites", "satTypes", "settings"];
+  const RENDER = { countries: renderCountry, cities: renderCity, labels: renderLabel, provinces: renderProvince, satellites: renderSatsAny, satTypes: renderSatsAny, debris: renderSatsAny, settings: () => applyFonts() };
+  const COLS = ["countries", "cities", "labels", "provinces", "satellites", "satTypes", "debris", "settings"];
 
   // ---------- вид ----------
   let s = 0.3, tx = 0, ty = 0, fitS = 0.3;
@@ -1398,7 +1398,7 @@
   const HINT_GLOBE = "Глобус: тяните — вращать, колесо — масштаб, клик по стране — легенда, по городу — его карточка, по спутнику — орбита. Редактирование и измерения — на плоской карте.";
   const Sat = window.KGSats;
   let viewMode = "flat", globe = null, globeRaf = 0, globeLoop = 0, globeReady = null;
-  const satUi = { items: [], sel: "kovcheg", orbits: true, names: true, speed: 60, time: Date.now(), follow: false, last: 0, hidden: {} };
+  const satUi = { items: [], sel: "kovcheg", orbits: true, names: true, speed: 60, time: Date.now(), follow: false, last: 0, hidden: {}, showDebris: true, debris: [] };
   // элементы списка спутников из данных карты (state.satellites + state.satTypes)
   function rebuildSatItems() {
     const types = state.satTypes || {};
@@ -1407,6 +1407,42 @@
       return { raw, s: { id: raw.id, name: raw.name, note: raw.note || "", color: t.color, shape: t.shape, typeName: t.name }, on: !satUi.hidden[raw.id], pos: null, ring: null, screen: null };
     });
     if (satUi.sel && !(state.satellites || {})[satUi.sel]) satUi.sel = null;
+    // спутник, попавший в столкновение, после его момента исчезает (вместо него — облако обломков)
+    for (const it of satUi.items) {
+      const ev = debrisList().filter(d => d.a === it.raw.id || d.b === it.raw.id)[0];
+      it.deadAt = ev ? Date.parse(ev.t) : Infinity; it.deadBy = ev ? ev.name : "";
+    }
+  }
+
+  // ---------- облака обломков (столкновения спутников) ----------
+  // Событие хранится в data/map.json → debris: { id, name, a, b (второй спутник или ""), t (UTC, ISO), n, dv (м/с), color, seed }.
+  // Облако считается из орбит родителей и зерна случайных чисел — у всех зрителей одинаковое.
+  const debrisList = () => Object.values(state.debris || {}).sort((x, y) => Date.parse(x.t) - Date.parse(y.t));
+  const debrisCache = new Map();
+  function debrisCloud(ev) {
+    const pa = (state.satellites || {})[ev.a], pb = ev.b ? (state.satellites || {})[ev.b] : null;
+    if (!pa) return null;
+    const key = JSON.stringify([ev.t, ev.n, ev.dv, ev.seed, pa, pb]);
+    let c = debrisCache.get(ev.id);
+    if (!c || c.key !== key) {
+      const cloud = Sat.breakup(ev, pb ? [pa, pb] : [pa]);
+      c = { key, cloud, pts: new Float32Array(cloud.count * 3), xy: new Float32Array(cloud.count * 3) };
+      debrisCache.set(ev.id, c);
+    }
+    return c;
+  }
+  const FLASH = 240; // сек модельного времени, пока видна вспышка
+  function updateDebris() {
+    satUi.debris = [];
+    if (!satUi.showDebris) return;
+    for (const ev of debrisList()) {
+      const c = debrisCloud(ev); if (!c) continue;
+      const n = Sat.debrisAt(c.cloud, satUi.time, c.pts);
+      if (!n) continue;
+      const age = (satUi.time - c.cloud.t) / 1000;
+      const flash = age < FLASH ? c.cloud.origins.map(o => Object.assign(Sat.toBody(o, Sat.gmst(satUi.time)), { age, life: FLASH })) : [];
+      satUi.debris.push({ id: ev.id, pts: c.pts, xy: c.xy, count: n, color: ev.color || "#ffd27a", flash });
+    }
   }
   function globeShow() {
     const sh = {};
@@ -1442,7 +1478,10 @@
   function updateSats() {
     globe.sats = satUi;
     satUi.moon = satUi.showMoon ? { pos: Sat.moonAt(satUi.time), ring: satUi.orbits ? Sat.moonRing(satUi.time, 240) : null } : null;
+    updateDebris();
     for (const it of satUi.items) {
+      it.dead = satUi.time >= it.deadAt;
+      if (it.dead) it.screen = null;
       it.pos = Sat.at(it.raw, satUi.time);
       it.ring = satUi.orbits && it.on ? Sat.ring(it.raw, satUi.time, it.raw.orbit === "ell" ? 240 : 160) : null;
     }
@@ -1507,7 +1546,7 @@
       const c = Geo.toLL((viewport.clientWidth / 2 - tx) / s, (viewport.clientHeight / 2 - ty) / s);
       globe.lat = Math.max(-60, Math.min(70, c[0])) * Math.PI / 180; globe.lon = c[1] * Math.PI / 180;
       syncGlobe(true);
-      rebuildSatItems(); buildSatList(); buildTypeList();
+      rebuildSatItems(); buildSatList(); buildTypeList(); buildDebrisList();
       satUi.time = Date.now();
       startLoop();
       if (globeReady) globeReady.then(globeDirty);
@@ -1533,7 +1572,7 @@
     for (const it of satUi.items) {
       const r = document.createElement("div"); r.className = "sat-row"; r.dataset.id = it.s.id;
       r.innerHTML = `<input type="checkbox" ${it.on ? "checked" : ""} title="Показывать"><span class="sat-dot" style="background:${it.s.color};box-shadow:0 0 6px ${it.s.color}"></span>` +
-        `<span class="sat-name">${esc(it.s.name)}</span><span class="sat-type">${esc(it.s.typeName)}</span>` +
+        `<span class="sat-name">${esc(it.s.name)}</span><span class="sat-type">${esc(it.s.typeName)}${isFinite(it.deadAt) ? ` <span title="Столкновение «${esc(it.deadBy)}», ${esc(fmtUtc(it.deadAt))}">💥</span>` : ""}</span>` +
         (gm ? `<button class="c-go sat-edit" title="Изменить">✎</button><button class="c-del sat-del" title="Удалить">✕</button>` : "");
       r.querySelector("input").addEventListener("change", e => { it.on = e.target.checked; satUi.hidden[it.s.id] = !it.on; globeDirty(); });
       r.addEventListener("click", e => {
@@ -1560,7 +1599,39 @@
       box.append(r);
     }
   }
-  function refreshSats() { if (!state) return; rebuildSatItems(); if (viewMode === "globe" || $("satList").childElementCount) { buildSatList(); buildTypeList(); } globeDirty(); }
+  function fmtUtc(ms) { return new Date(ms).toLocaleString("ru-RU", { timeZone: "UTC", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) + " UTC"; }
+  function buildDebrisList() {
+    const box = $("debList"); if (!box) return;
+    const list = debrisList();
+    box.innerHTML = list.length ? `<div class="legend-label">Столкновения</div>` : "";
+    for (const ev of list) {
+      const c = debrisCloud(ev);
+      const r = document.createElement("div"); r.className = "sat-row deb-row"; r.dataset.id = ev.id;
+      r.innerHTML = `<span class="sat-dot deb-dot" style="background:${esc(ev.color || "#ffd27a")}"></span>` +
+        `<span class="sat-name" title="${esc(ev.name)}">${esc(ev.name)}</span><span class="sat-type" title="${esc(fmtUtc(Date.parse(ev.t)))}">${esc(new Date(Date.parse(ev.t)).toLocaleDateString("ru-RU", { timeZone: "UTC", day: "2-digit", month: "2-digit" }))} · ${c ? c.cloud.count : 0}</span>` +
+        `<button class="c-go deb-go" title="Перемотать к моменту столкновения">⏵</button>` +
+        (gm ? `<button class="c-go deb-edit" title="Изменить">✎</button><button class="c-del deb-del" title="Удалить">✕</button>` : "");
+      r.addEventListener("click", e => {
+        if (e.target.classList.contains("deb-edit")) { editDebris(ev.id); return; }
+        if (e.target.classList.contains("deb-del")) { deleteDebris(ev.id); return; }
+        jumpToDebris(ev);
+      });
+      box.append(r);
+    }
+  }
+  // перемотка: за 20 секунд до удара, скорость ×60, глобус смотрит на точку столкновения
+  function jumpToDebris(ev) {
+    const c = debrisCloud(ev); if (!c) return;
+    satUi.time = c.cloud.t - 20000; satUi.speed = 60; satUi.follow = false; $("satFollow").checked = false;
+    document.querySelectorAll("#satSpeed button").forEach(x => x.classList.toggle("active", x.dataset.speed === "60"));
+    if (globe) {
+      const o = Sat.toBody(c.cloud.origins[0], Sat.gmst(c.cloud.t));
+      globe.lat = Math.max(-1.3, Math.min(1.3, o.lat * Math.PI / 180)); globe.lon = o.lon * Math.PI / 180;
+      globe.zoom = Math.min(globe.zoom, 0.8);
+    }
+    globeDirty();
+  }
+  function refreshSats() { if (!state) return; rebuildSatItems(); if (viewMode === "globe" || $("satList").childElementCount) { buildSatList(); buildTypeList(); buildDebrisList(); } globeDirty(); }
 
   // ---------- формы ГМа (спутник, тип) ----------
   function openForm(title, fields, values) {
@@ -1670,6 +1741,56 @@
     if (!ok) return;
     commit("satTypes", id, t, null); refreshSats();
   }
+  // ---------- столкновение (ГМ) ----------
+  const toInputUtc = ms => new Date(ms).toISOString().slice(0, 16); // для поля «дата и время» в UTC
+  async function editDebris(id) {
+    if (!gm) return;
+    const sats = Object.values(state.satellites || {}).sort((a, b) => a.name.localeCompare(b.name, "ru"));
+    if (!sats.length) { toast("Сначала добавьте спутник"); return; }
+    const before = id ? state.debris[id] : null;
+    const base = before ? Object.assign(clone(before), { when: toInputUtc(Date.parse(before.t)), snap: "exact" })
+      : { name: "Столкновение", a: satUi.sel && state.satellites[satUi.sel] ? satUi.sel : sats[0].id, b: "", when: toInputUtc(satUi.time), snap: "near", n: 800, dv: 150, color: "#ffd27a" };
+    const opts = [...sats.map(s => [s.id, s.name])];
+    base.__opts = { validate: v => {
+      if (!v.name) return "Укажите название";
+      if (!state.satellites[v.a]) return "Выберите первый спутник";
+      if (v.b && v.b === v.a) return "Второй спутник должен отличаться от первого";
+      if (!v.when || isNaN(Date.parse(v.when + ":00Z"))) return "Укажите дату и время";
+      if (!(v.n >= 50 && v.n <= 3000)) return "Обломков — от 50 до 3000";
+      if (!(v.dv >= 10 && v.dv <= 1000)) return "Разлёт — от 10 до 1000 м/с";
+      return "";
+    } };
+    const v = await openForm(before ? "Столкновение: " + before.name : "Новое столкновение", [
+      { key: "name", label: "Название" },
+      { key: "a", label: "Спутник", type: "select", options: opts },
+      { key: "b", label: "Второй спутник", type: "select", options: [["", "— нет (взрыв или разрушение одного)"]].concat(opts) },
+      { key: "when", label: "Время, UTC", type: "datetime-local", hint: "Как часы над списком спутников" },
+      { key: "snap", label: "Момент удара", type: "select", options: [["near", "Ближайшее сближение после этого времени"], ["exact", "Ровно в это время"]], show: x => !!x.b },
+      { key: "n", label: "Обломков", type: "number", min: 50, max: 3000, step: 50, hint: "Больше 1500 — тяжелее для слабых компьютеров" },
+      { key: "dv", label: "Разлёт, м/с", type: "number", min: 10, max: 1000, step: 10, hint: "Сила удара: 50 — облако узкое, 300 — широкое" },
+      { key: "color", label: "Цвет обломков", type: "color" }
+    ], base);
+    if (!v) return;
+    let t = Date.parse(v.when + ":00Z");
+    if (v.b && v.snap === "near") {
+      const r = Sat.closest(state.satellites[v.a], state.satellites[v.b], t, 3 * 86400000);
+      t = r.t;
+      toast(r.km < 50 ? "Удар в момент сближения: " + fmtUtc(t) : `Ближе ${Math.round(r.km).toLocaleString("ru-RU")} км спутники за трое суток не сходятся — каждый разлетится из своей точки (${fmtUtc(t)})`);
+    }
+    const nid = before ? id : uid("deb");
+    const rec = { id: nid, name: v.name, a: v.a, b: v.b || "", t: new Date(t).toISOString(), n: Math.round(v.n), dv: Math.round(v.dv), color: v.color, seed: before ? before.seed : nid };
+    commit("debris", nid, before, rec);
+    refreshSats();
+    jumpToDebris(rec);
+  }
+  async function deleteDebris(id) {
+    const d = state.debris[id]; if (!d || !gm) return;
+    const ok = await ask("Удалить столкновение «" + d.name + "»?", "", { confirm: true, note: "Спутники вернутся на орбиты. Ctrl+Z — вернуть." });
+    if (!ok) return;
+    commit("debris", id, d, null); refreshSats();
+  }
+  $("addDebrisBtn").onclick = () => editDebris(null);
+  $("satDebris").addEventListener("change", e => { satUi.showDebris = e.target.checked; globeDirty(); });
   $("addSatBtn").onclick = () => editSat(null);
   $("addTypeBtn").onclick = () => editType(null);
   function markSatRows() { document.querySelectorAll("#satList .sat-row").forEach(r => r.classList.toggle("active", r.dataset.id === satUi.sel)); }
@@ -1680,9 +1801,17 @@
     globeDirty();
   }
   function renderSatInfo() {
+    // часы модели — всегда, даже если спутник не выбран
+    const tsNow = new Date(satUi.time).toLocaleString("ru-RU", { timeZone: "UTC", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) + " UTC";
+    if ($("satTime").textContent !== tsNow) $("satTime").textContent = tsNow;
     const it = satUi.items.find(x => x.s.id === satUi.sel);
     const box = $("satInfo");
     if (!it || !it.pos) { box.textContent = ""; box.dataset.h = ""; return; }
+    if (it.dead) {
+      const html = `<b style="color:${it.s.color}">${esc(it.s.name)}</b> · разрушен (${esc(it.deadBy)}, ${esc(fmtUtc(it.deadAt))}) — теперь это облако обломков`;
+      if (box.dataset.h !== html) { box.innerHTML = html; box.dataset.h = html; }
+      return;
+    }
     const p = it.pos, ns = p.lat >= 0 ? "с. ш." : "ю. ш.", ew = p.lon >= 0 ? "в. д." : "з. д.";
     const html = `<b style="color:${it.s.color}">${esc(it.s.name)}</b> · ${esc(it.s.typeName)}${it.s.note ? " — " + esc(it.s.note) : ""}<br>` +
       `Высота ${Math.round(p.alt).toLocaleString("ru-RU")} км · скорость ${Sat.speed(it.raw, p.alt).toFixed(2).replace(".", ",")} км/с · виток ${Sat.fmtPeriod(Sat.period(it.raw))}<br>` +
@@ -1912,5 +2041,5 @@
   setTool("pan");
   requestAnimationFrame(fit);
   load();
-  window.KGMap = { get state() { return state; }, select, setTool, fit, T, setView3, measures, get globe() { return globe; }, get view() { return { s, tx, ty }; }, get gm() { return gm; }, get fonts() { return currentFonts(); }, get fontScale() { return fontScales(); } };
+  window.KGMap = { get state() { return state; }, select, setTool, fit, T, setView3, measures, get globe() { return globe; }, get view() { return { s, tx, ty }; }, get gm() { return gm; }, get fonts() { return currentFonts(); }, get fontScale() { return fontScales(); }, get sat() { return satUi; } };
 })();

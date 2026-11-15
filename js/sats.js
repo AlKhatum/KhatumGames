@@ -51,9 +51,88 @@
       const r = Math.hypot(x, y, z);
       return { lat: Math.asin(z / r) / D, lon: Math.atan2(y, x) / D, rho: r / R, alt: r - R };
     }
+    // положение спутника в инерциальной системе, км
+    function inertialAt(s, ms) {
+      const o = prep(s);
+      if (o.geo != null) { const th = cfg.rot(ms) + o.geo * D; return [o.a * Math.cos(th), o.a * Math.sin(th), 0]; }
+      return inertial(o, (o.phase * D + o.n * (ms - EPOCH) / 1000) % (2 * Math.PI));
+    }
+    const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    const len = a => Math.hypot(a[0], a[1], a[2]);
+    // детерминированный генератор: у всех зрителей одно и то же облако
+    function rng(seed) {
+      let h = 1779033703 ^ String(seed).length;
+      for (const ch of String(seed)) { h = Math.imul(h ^ ch.charCodeAt(0), 3432918353); h = (h << 13) | (h >>> 19); }
+      return () => { h = Math.imul(h ^ (h >>> 16), 2246822507); h = Math.imul(h ^ (h >>> 13), 3266489909); h ^= h >>> 16; return (h >>> 0) / 4294967296; };
+    }
+    const J2 = cfg.J2 || 0, MIN_RP = R + (cfg.burnAlt || 120);
+    // Облако обломков: ev = { t (ISO или мс), n — число обломков, dv — разлёт, м/с, seed }, parents — 1–2 спутника.
+    // Каждый обломок получает скорость родителя + случайный толчок и дальше летит по своей кеплеровой орбите
+    // с прецессией от сжатия планеты (J2): за минуты облако вытягивается в шлейфы вдоль орбит родителей,
+    // за сутки расползается в кольцо. Обломки, ушедшие в атмосферу или на слишком вытянутую орбиту, отбрасываются.
+    function breakup(ev, parents) {
+      const t = typeof ev.t === "number" ? ev.t : Date.parse(ev.t);
+      const n = Math.max(1, Math.min(5000, Math.round(+ev.n || 500))), dv = Math.max(0, +ev.dv || 0) / 1000;
+      const rnd = rng(ev.seed || ev.id || "debris");
+      const K = 12, el = new Float64Array(n * K), who = new Uint8Array(n);
+      const origins = [];
+      let k = 0;
+      parents.forEach((p, pi) => {
+        const r0 = inertialAt(p, t), v0 = sub(inertialAt(p, t + 500), inertialAt(p, t - 500)); // км/с
+        origins.push(r0);
+        const cnt = Math.round(n * (pi + 1) / parents.length) - Math.round(n * pi / parents.length);
+        for (let j = 0; j < cnt; j++) {
+          const z = 2 * rnd() - 1, ph = 2 * Math.PI * rnd(), q = Math.sqrt(1 - z * z);
+          const m = dv * Math.min(3, -Math.log(1 - rnd() * 0.999) * 0.6); // экспоненциальный разлёт: мелких толчков больше
+          const v = [v0[0] + q * Math.cos(ph) * m, v0[1] + q * Math.sin(ph) * m, v0[2] + z * m];
+          const r = len(r0), vv = dot(v, v), a = 1 / (2 / r - vv / MU);
+          if (!(a > 0) || !isFinite(a)) continue;
+          const h = cross(r0, v), hm = len(h);
+          const ev3 = sub(cross(v, h).map(x => x / MU), r0.map(x => x / r)), e = len(ev3);
+          if (e >= 0.97 || a * (1 - e) < MIN_RP) continue;
+          const P = e > 1e-9 ? ev3.map(x => x / e) : r0.map(x => x / r), Wv = h.map(x => x / hm), Q = cross(Wv, P);
+          const nu = Math.atan2(dot(r0, Q), dot(r0, P));
+          const E0 = 2 * Math.atan2(Math.sqrt(1 - e) * Math.sin(nu / 2), Math.sqrt(1 + e) * Math.cos(nu / 2));
+          const nn = Math.sqrt(MU / (a * a * a)), p = a * (1 - e * e), kj = 1.5 * J2 * (R / p) * (R / p) * nn, ci = Wv[2];
+          el.set([P[0], P[1], P[2], Q[0], Q[1], Q[2], a, e, nn, E0 - e * Math.sin(E0), -kj * ci, kj * (5 * ci * ci - 1) / 2], k * K);
+          who[k] = pi; k++;
+        }
+      });
+      return { t, count: k, el, who, origins };
+    }
+    // положения обломков на момент ms: out — Float32Array(count·3) широта, долгота, rho; вернёт число обломков
+    function debrisAt(cloud, ms, out) {
+      const dt = (ms - cloud.t) / 1000; if (dt < 0) return 0;
+      const th = cfg.rot(ms), K = 12, el = cloud.el;
+      for (let i = 0; i < cloud.count; i++) {
+        const o = i * K, a = el[o + 6], e = el[o + 7], M = el[o + 9] + el[o + 8] * dt;
+        let E = M + e * Math.sin(M);
+        for (let it = 0; it < 6; it++) E -= (E - e * Math.sin(E) - M) / (1 - e * Math.cos(E));
+        let x = a * (Math.cos(E) - e), y = a * Math.sqrt(1 - e * e) * Math.sin(E);
+        const dw = el[o + 11] * dt, cw = Math.cos(dw), sw = Math.sin(dw); // поворот перигея
+        const x2 = x * cw - y * sw, y2 = x * sw + y * cw;
+        let X = x2 * el[o] + y2 * el[o + 3], Y = x2 * el[o + 1] + y2 * el[o + 4], Z = x2 * el[o + 2] + y2 * el[o + 5];
+        const dO = el[o + 10] * dt - th, cO = Math.cos(dO), sO = Math.sin(dO); // поворот узла и вращение планеты
+        const bx = X * cO - Y * sO, by = X * sO + Y * cO, r = Math.hypot(bx, by, Z);
+        out[i * 3] = Math.asin(Z / r) / D; out[i * 3 + 1] = Math.atan2(by, bx) / D; out[i * 3 + 2] = r / R;
+      }
+      return cloud.count;
+    }
+    // ближайшее сближение двух спутников в окне [from, from + span] (мс): { t, km }
+    function closest(a, b, from, span) {
+      const d = ms => len(sub(inertialAt(a, ms), inertialAt(b, ms)));
+      let best = from, bd = d(from);
+      for (let ms = from; ms <= from + span; ms += 15000) { const v = d(ms); if (v < bd) { bd = v; best = ms; } }
+      let lo = best - 15000, hi = best + 15000;
+      for (let it = 0; it < 40; it++) { const m1 = lo + (hi - lo) / 3, m2 = hi - (hi - lo) / 3; if (d(m1) < d(m2)) hi = m2; else lo = m1; }
+      const t = Math.round((lo + hi) / 2);
+      return { t, km: d(t) };
+    }
     const M = {
       SHAPES, ORBITS, RE: R, R, MU, toBody, gmst: cfg.rot,
-      prep,
+      prep, inertialAt, breakup, debrisAt, closest,
       at(s, ms) {
         const o = prep(s);
         if (o.geo != null) return { lat: 0, lon: o.geo, rho: o.a / R, alt: o.a - R };
@@ -92,13 +171,13 @@
 
   // Земля
   const S = make({
-    name: "Земля", MU: 398600.4418, R: 6371.0088, rate: 7.2921159e-5, rot: gmst, geo: true,
+    name: "Земля", MU: 398600.4418, R: 6371.0088, rate: 7.2921159e-5, rot: gmst, geo: true, J2: 1.08263e-3, burnAlt: 120,
     minAlt: 160, lowWhy: "иначе спутник сгорит в атмосфере", maxAlt: 400000, highWhy: "дальше — уже орбита Луны"
   });
   // Луна: вращается синхронно, один оборот за 27,32 суток
   const MOON_DAY = 27.321661 * 86400;
   S.Moon = make({
-    name: "Луна", MU: 4902.800, R: 1737.4, rate: 2 * Math.PI / MOON_DAY,
+    name: "Луна", MU: 4902.800, R: 1737.4, rate: 2 * Math.PI / MOON_DAY, J2: 2.03e-4, burnAlt: 5,
     rot: ms => ((ms - EPOCH) / 1000 / MOON_DAY % 1) * 2 * Math.PI, geo: false,
     minAlt: 10, lowWhy: "иначе спутник врежется в горы", maxAlt: 40000, highWhy: "дальше Земля утащит спутник с орбиты Луны"
   });

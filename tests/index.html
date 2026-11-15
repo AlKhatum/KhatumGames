@@ -20,7 +20,7 @@
 <div id="out"></div>
 <script src="../js/geo.js?v=20261115a"></script>
 <script src="../js/territory.js?v=20261115a"></script>
-<script src="../js/sats.js?v=20261115a"></script>
+<script src="../js/sats.js?v=20261115c"></script>
 <script src="../js/moon-names.js?v=20261115a"></script>
 <script src="../js/wrap.js?v=20261115a"></script>
 <script>
@@ -257,6 +257,33 @@
     }
     assert(Wr.wrapX(-10, W) === W - 10 && Wr.wrapX(W + 5, W) === 5 && Wr.wrapX(100, W) === 100, "wrapX");
     return "ок";
+  });
+  await test("Обломки: без разлёта совпадают с родителем, облако повторяется, в атмосферу не уходят", () => {
+    const k = map.satellites.kovcheg, t0 = Date.UTC(2026, 5, 1, 12);
+    const toXYZ = p => [p.rho * Math.cos(p.lat * Math.PI / 180) * Math.cos(p.lon * Math.PI / 180), p.rho * Math.cos(p.lat * Math.PI / 180) * Math.sin(p.lon * Math.PI / 180), p.rho * Math.sin(p.lat * Math.PI / 180)].map(v => v * S.R);
+    const c0 = S.breakup({ t: t0, n: 50, dv: 0, seed: "x" }, [k]), out = new Float32Array(c0.count * 3);
+    assert(c0.count === 50, "без разлёта все обломки должны остаться: " + c0.count);
+    S.debrisAt(c0, t0 + 1, out);
+    const a = toXYZ(S.at(k, t0 + 1)), b = toXYZ({ lat: out[0], lon: out[1], rho: out[2] });
+    const d = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+    assert(d < 2, "обломок без толчка не в точке спутника: " + d.toFixed(2) + " км");
+    const ev = { t: t0, n: 800, dv: 200, seed: "test" }, c1 = S.breakup(ev, [k]), c2 = S.breakup(ev, [k]);
+    assert(c1.count === c2.count && c1.el.every((v, i) => v === c2.el[i]), "одно зерно — разные облака");
+    for (let i = 0; i < c1.count; i++) assert(c1.el[i * 12 + 6] * (1 - c1.el[i * 12 + 7]) >= S.R + 119, "обломок с перигеем в атмосфере");
+    const o2 = new Float32Array(c1.count * 3); S.debrisAt(c1, t0 + 50 * 60000, o2);
+    let lo = 1e9, hi = -1e9; for (let i = 0; i < c1.count; i++) { const r = (o2[i * 3 + 2] - 1) * S.R; lo = Math.min(lo, r); hi = Math.max(hi, r); }
+    assert(hi - lo > 20, "за 50 минут облако не разошлось по высоте");
+    assert(S.debrisAt(c1, t0 - 1000, o2) === 0, "до столкновения обломков быть не должно");
+    return c1.count + " из 800 обломков, разброс высот " + Math.round(hi - lo) + " км через 50 мин";
+  });
+  await test("Столкновения (если заданы ГМом): спутники существуют, параметры в пределах", () => {
+    const list = Object.values(map.debris || {});
+    for (const d of list) {
+      assert(map.satellites[d.a], d.name + ": нет спутника " + d.a);
+      assert(!d.b || (map.satellites[d.b] && d.b !== d.a), d.name + ": второй спутник");
+      assert(!isNaN(Date.parse(d.t)) && d.n >= 50 && d.n <= 3000 && d.dv >= 10 && d.dv <= 1000, d.name + ": параметры");
+    }
+    return list.length ? list.length + " столкновений" : "нет";
   });
   await test("Луна: названия корректны", () => {
     const cats = new Set(window.KGMoonNameCats.map(c => c.id)), names = window.KGMoonNames;
