@@ -1020,6 +1020,8 @@
     const items = [];
     if (stroke.idx.length) items.push({ kind: "paint", stroke });
     items.push({ kind: "entity", col: "countries", id: String(id), before: clone(c), after: null });
+    // провинции удалённой страны теперь на ничьей земле — не оставляем ссылку на несуществующую страну
+    for (const p of Object.values(state.provinces || {})) if (p.c === String(id)) items.push({ kind: "entity", col: "provinces", id: p.id, before: clone(p), after: Object.assign(clone(p), { c: "" }) });
     const entry = { kind: "multi", items };
     applyEntry({ kind: "multi", items: items.filter(i => i.kind === "entity") }, false);
     recompute(stroke.labels);
