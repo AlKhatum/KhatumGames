@@ -686,7 +686,7 @@ body.moon-mode .moon-legend { display: flex; }
 .sc-rows { display: grid; grid-template-columns: auto 1fr; gap: 5px 12px; margin: 12px 0 10px; }
 .sc-rows dt { color: var(--muted); font-size: 12px; }
 .sc-rows dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
-.sc-rows dd.sc-tbd { color: var(--muted); font-style: italic; }
+.sc-rows dd.sc-tbd { color: var(--muted); }
 .sc-note { font-size: 11px; line-height: 1.45; color: var(--muted); border-top: 1px solid var(--line-dim); padding-top: 8px; }
 .sc-actions { margin-top: 10px; display: flex; gap: 6px; }
 @media (max-width: 900px) { .state-card { top: auto; bottom: 56px; left: 6px; right: 6px; width: auto; max-height: 45%; } .map-frame.globe-mode > .state-card { right: 6px; } }
@@ -722,3 +722,13 @@ body.moon-mode #stateCard, body.moon-mode #sizeBar { display: none; }
 .sat-gm #addDebrisBtn { flex-basis: 100%; }
 .deb-list { overflow-x: hidden; }
 .deb-row .sat-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* правка карточки государства прямо в ней (ГМ) */
+.sc-rows dd:has(> .sc-in) { text-align: left; }
+.sc-in { width: 100%; min-width: 0; background: rgba(0, 0, 0, .3); border: 1px solid var(--line-dim); border-radius: 3px; color: var(--text); font: 13px var(--font-ui); padding: 3px 6px; }
+.sc-in::placeholder { color: var(--muted); opacity: .8; }
+.sc-in:focus { outline: none; border-color: var(--line); box-shadow: 0 0 8px rgba(24, 217, 245, .3); }
+.sc-desc { display: block; margin: 4px 0 2px; resize: vertical; line-height: 1.4; }
+.sc-desc-view { font-size: 12px; line-height: 1.5; white-space: pre-line; border-top: 1px solid var(--line-dim); padding-top: 8px; }
+.sc-flag.can-edit { cursor: pointer; }
+.sc-flag.can-edit:hover { box-shadow: 0 0 10px rgba(24, 217, 245, .4); }
+.sc-rows { align-items: center; }

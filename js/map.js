@@ -540,30 +540,67 @@
     return a;
   }
   const fmtArea = a => (a >= 1e6 ? (a / 1e6).toFixed(2).replace(/\.?0+$/, "").replace(".", ",") + " млн км²" : Math.round(a).toLocaleString("ru-RU") + " км²");
+  // Поля карточки, которые ГМ пишет сам (хранятся в countries[id].info). Пустое поле — показываем
+  // то, что посчитано по карте (столица — по отметкам столиц, население — по городам), или «—».
+  const INFO = [
+    ["capital", "Столица"], ["gov", "Форма правления"], ["head", "Глава государства"],
+    ["lang", "Язык"], ["currency", "Валюта"], ["pop", "Население"]
+  ];
   function renderStateCard() {
     const c = sel && sel.col === "countries" ? state.countries[sel.id] : null;
     if (!c || stateCardClosed === sel.id) { stateCard.classList.add("hidden"); return; }
-    const id = sel.id, inC = Object.values(state.cities).filter(ct => String(T.at(ct.x, ct.y)) === id);
+    const body = $("stateCardBody");
+    // ГМ печатает в поле карточки — не перерисовываем её под ним
+    if (body.dataset.id === sel.id && body.contains(document.activeElement) && document.activeElement.matches(".sc-in")) return;
+    const id = sel.id, info = c.info || {}, inC = Object.values(state.cities).filter(ct => String(T.at(ct.x, ct.y)) === id);
     const caps = inC.filter(ct => ct.capital).map(ct => window.KG.lines.oneLine(ct.name));
     const big = inC.filter(ct => +ct.pop > 0).sort((a, b) => b.pop - a.pop)[0];
     const pop = inC.reduce((acc, ct) => acc + (+ct.pop > 0 ? +ct.pop : 0), 0);
     const provs = Object.values(state.provinces || {}).filter(p => p.label && String(T.at(p.label[0], p.label[1])) === id).length; // по положению на карте
     const area = countryArea(id), src = flagSrc(c);
-    const row = (k, v) => `<dt>${k}</dt><dd>${esc(v)}</dd>`, tbd = k => `<dt>${k}</dt><dd class="sc-tbd">скоро</dd>`;
-    $("stateCardBody").innerHTML = `<div class="sc-head"><div class="sc-flag"${src ? ` style="background-image:url('${esc(src)}')"` : ""}>${src ? "" : "ФЛАГ"}</div>` +
+    const auto = { capital: caps.join(", "), pop: pop ? "≈ " + fmtPop(pop) + " (по городам)" : "" };
+    const row = (k, v) => `<dt>${k}</dt><dd>${esc(v)}</dd>`;
+    const field = (k, label) => {
+      const v = info[k] || "";
+      if (gm) return `<dt>${label}</dt><dd><input class="sc-in" data-k="${k}" value="${esc(v)}" placeholder="${esc(auto[k] || "—")}" maxlength="200"></dd>`;
+      const shown = v || auto[k] || "";
+      return `<dt>${label}</dt><dd${shown ? "" : ' class="sc-tbd"'}>${esc(shown || "—")}</dd>`;
+    };
+    const desc = info.desc || "";
+    body.dataset.id = id;
+    body.innerHTML = `<div class="sc-head"><div class="sc-flag${gm ? " can-edit" : ""}"${gm ? ' title="Загрузить флаг"' : ""}${src ? ` style="background-image:url('${esc(src)}')"` : ""}>${src ? "" : "ФЛАГ"}</div>` +
       `<div><div class="sc-kind"><span class="sc-swatch" style="background:${esc(c.color)}"></span>Государство</div>` +
       `<div class="sc-name">${esc(window.KG.lines.oneLine(c.name))}</div></div></div>` +
       `<dl class="sc-rows">` +
-      row("Столица", caps.length ? caps.join(", ") : "—") +
+      INFO.slice(0, 1).map(([k, l]) => field(k, l)).join("") +
       row("Площадь", area ? "≈ " + fmtArea(area) : "—") +
       row("Провинций", provs ? String(provs) : "—") +
       row("Городов на карте", inC.length ? String(inC.length) : "—") +
       (big ? row("Крупнейший город", window.KG.lines.oneLine(big.name)) : "") +
-      (pop ? row("Население городов", "≈ " + fmtPop(pop)) : "") +
-      tbd("Форма правления") + tbd("Глава государства") + tbd("Язык и валюта") +
-      `</dl><div class="sc-note">Карточка-заглушка: история, правительство, армия и экономика появятся здесь позже. Площадь посчитана по карте, население — по городам с известной численностью.</div>`;
+      INFO.slice(1).map(([k, l]) => field(k, l)).join("") +
+      `</dl>` +
+      (gm ? `<div class="legend-label">Описание</div><textarea class="sc-in sc-desc" data-k="desc" rows="3" maxlength="2000" placeholder="История, особенности, армия, экономика…">${esc(desc)}</textarea>`
+        : desc ? `<div class="sc-desc-view">${esc(desc)}</div>` : "");
     stateCard.classList.remove("hidden");
   }
+  // правка полей карточки: сохраняем при уходе из поля (Enter — тоже), одна правка — один шаг Ctrl+Z
+  function saveInfo(inp) {
+    const c = sel && sel.col === "countries" ? state.countries[sel.id] : null;
+    if (!c || !gm) return;
+    const k = inp.dataset.k, v = inp.value.trim(), old = (c.info || {})[k] || "";
+    if (v === old) return;
+    const after = clone(c); after.info = Object.assign({}, after.info); if (v) after.info[k] = v; else delete after.info[k];
+    if (!Object.keys(after.info).length) delete after.info;
+    commit("countries", sel.id, c, after);
+  }
+  $("stateCardBody").addEventListener("change", e => { if (e.target.matches(".sc-in")) saveInfo(e.target); });
+  $("stateCardBody").addEventListener("keydown", e => {
+    if (!e.target.matches(".sc-in")) return;
+    e.stopPropagation(); // буквы в поле — не горячие клавиши инструментов
+    if (e.key === "Enter" && e.target.tagName === "INPUT") e.target.blur();
+    if (e.key === "Escape") { e.target.value = ((state.countries[sel.id] || {}).info || {})[e.target.dataset.k] || ""; e.target.blur(); }
+  });
+  $("stateCardBody").addEventListener("click", e => { if (gm && e.target.closest(".sc-flag")) $("flagInput").click(); });
   $("stateCardClose").onclick = () => { if (sel) stateCardClosed = sel.id; stateCard.classList.add("hidden"); };
 
   // ---------- размер шрифта выбранной подписи — прямо на карте (ГМ) ----------

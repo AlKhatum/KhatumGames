@@ -285,6 +285,15 @@
     }
     return list.length ? list.length + " столкновений" : "нет";
   });
+  await test("Карточки государств: поля ГМа — строки разумной длины", () => {
+    const keys = ["capital", "gov", "head", "lang", "currency", "pop", "desc"];
+    const withInfo = Object.values(map.countries).filter(c => c.info);
+    for (const c of withInfo) for (const k in c.info) {
+      assert(keys.includes(k), c.name + ": неизвестное поле " + k);
+      assert(typeof c.info[k] === "string" && c.info[k].length <= (k === "desc" ? 2000 : 200), c.name + ": поле " + k);
+    }
+    return withInfo.length ? withInfo.length + " заполнено" : "пока пусто";
+  });
   await test("Луна: названия корректны", () => {
     const cats = new Set(window.KGMoonNameCats.map(c => c.id)), names = window.KGMoonNames;
     const bad = names.filter(([n, la, lo, sz, c]) => !n || Math.abs(la) > 90 || Math.abs(lo) > 180 || !(sz > 0) || !cats.has(c));
