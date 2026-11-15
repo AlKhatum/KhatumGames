@@ -148,7 +148,7 @@ main { position: relative; z-index: 5; height: calc(100% - 58px); }
 .coast-line { fill: none; stroke: rgba(70, 215, 240, .8); stroke-width: 1.1px; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
 .sel-outline {
   fill: none; stroke: var(--pink); stroke-width: 2.4px; stroke-dasharray: 7 3 1.5 3; vector-effect: non-scaling-stroke;
-  filter: drop-shadow(0 0 3px var(--pink)) drop-shadow(0 0 6px var(--pink)); pointer-events: none;
+  pointer-events: none; /* без свечения: только сам контур */
 }
 .brush-cursor { fill: rgba(255, 255, 255, .08); stroke: #fff; stroke-width: 1.2px; vector-effect: non-scaling-stroke; pointer-events: none; }
 
