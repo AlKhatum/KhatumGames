@@ -184,7 +184,6 @@
   const gCountryLabels = svgEl("g", {}, L.labels);
   const gCustom = svgEl("g", {}, L.labels);
   const provSelPath = svgEl("path", { class: "prov-sel-outline" }, L.over);
-  const selPath = svgEl("path", { class: "sel-outline" }, L.over);
   const cursorEl = svgEl("circle", { class: "brush-cursor", r: 10, cx: -100, cy: -100 }, L.cursor);
 
   // ---------- состояние ----------
@@ -209,7 +208,6 @@
     if (!f) { f = svgEl("path", { "data-col": "countries", "data-id": id }, L.countries); els.cfill[id] = f; }
     if (!b) { b = svgEl("path", {}, L.borders); els.cborder[id] = b; }
     f.setAttribute("d", d || ""); b.setAttribute("d", d || "");
-    if (sel && sel.col === "countries" && sel.id === id) selPath.setAttribute("d", d || "");
   }
   function renderCountry(id) {
     const c = state.countries[id];
@@ -484,7 +482,7 @@
       const map = { cities: els.cities, labels: els.labels, countries: els.clabel }[sel.col];
       if (map && map[sel.id]) map[sel.id].classList.add("is-sel");
     }
-    selPath.setAttribute("d", sel && sel.col === "countries" ? paths.get(sel.id) || "" : "");
+    // выбранная страна не обводится: карточка государства и так показывает, что выбрано
     provSelPath.setAttribute("d", selProv ? provPaths.get(selProv) || "" : "");
     try { if (globe) globeDirty(); } catch (e) { /* */ }
     if (sel && sel.col === "cities") { if (popCity !== sel.id || popAt) showCityPop(sel.id); }
