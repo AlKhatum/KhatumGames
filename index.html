@@ -8,8 +8,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@200;300;400;600&family=Oswald:wght@400;500&family=Exo+2:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20261115f">
-<link rel="stylesheet" href="css/mech.css?v=20261115a">
+<link rel="stylesheet" href="css/style.css?v=20261115h">
+<link rel="stylesheet" href="css/mech.css?v=20261115e">
 </head>
 <body>
 
@@ -22,19 +22,22 @@
 <div id="bg-shade"></div>
 
 <header class="topbar">
-  <a class="brand" href="#map">
+  <a class="brand" href="#home" title="Главная">
     <span class="brand-mark">◆</span>
-    <span class="brand-name">KHATUM<b>GAMES</b></span>
+    <span class="brand-name"><span data-edit-text="ui.brand1" data-label="Логотип: первое слово">KHATUM</span><b data-edit-text="ui.brand2" data-label="Логотип: второе слово">GAMES</b></span>
   </a>
   <nav class="tabs" id="tabs">
-    <button data-tab="home">Главная</button>
-    <button data-tab="map" class="active">Карта</button>
-    <button data-tab="lore">Лор</button>
-    <button data-tab="mech">Механики</button>
-    <button data-tab="news">Новости</button>
-    <button data-tab="gallery">Галерея</button>
-    <button data-tab="about">О нас</button>
+    <button data-tab="home" class="active"><span data-edit-text="ui.tab.home" data-label="Вкладка «Главная»">Главная</span></button>
+    <button data-tab="map"><span data-edit-text="ui.tab.map" data-label="Вкладка «Карта»">Карта</span></button>
+    <button data-tab="wiki"><span data-edit-text="ui.tab.wiki" data-label="Вкладка «Вики»">Вики</span></button>
+    <button data-tab="gallery"><span data-edit-text="ui.tab.gallery" data-label="Вкладка «Галерея»">Галерея</span></button>
+    <button data-tab="about"><span data-edit-text="ui.tab.about" data-label="Вкладка «О нас»">О нас</span></button>
   </nav>
+  <div class="site-gm gm-only" id="siteGm">
+    <button id="siteEditBtn" title="Правка текстов, картинок и разделов прямо на страницах">✎<span class="lbl"> Правка</span></button>
+    <span class="gm-dirty hidden" id="siteDirty" title="Есть неопубликованные правки сайта">●</span>
+    <button id="sitePublishBtn" class="accent" title="Опубликовать тексты, картинки, разделы и музыку сайта">⇪<span class="lbl"> Сайт</span></button>
+  </div>
   <div class="sound-box">
     <button class="sound-btn" id="soundBtn" title="Звук фонового видео">
       <span class="ico">🔇</span><span class="lbl">Звук</span>
@@ -45,7 +48,7 @@
 
 <main>
   <!-- ================= КАРТА ================= -->
-  <section class="page active" id="page-map">
+  <section class="page" id="page-map">
     <div class="map-shell">
       <div class="map-frame" id="mapFrame">
         <div class="viewport" id="viewport">
@@ -168,11 +171,31 @@
         </div>
         <div class="map-loading" id="mapLoading">Загрузка карты…</div>
 
-        <!-- Вид: плоская карта / глобус -->
+        <!-- Вид: Солнечная система → объект → привычная карта / проекция шара -->
         <div class="view-switch" id="viewSwitch">
-          <button data-view="flat" class="active">Карта</button>
-          <button data-view="globe">Глобус</button>
-          <button data-view="moon">Луна</button>
+          <button data-view="solar" title="Солнечная система">☉<span class="lbl"> Система</span></button>
+          <span class="vs-body" id="vsBody">Земля</span>
+          <button data-proj="flat" class="active" title="Привычная карта">▭<span class="lbl"> Карта</span></button>
+          <button data-proj="globe" title="Проекция шара">◍<span class="lbl"> Шар</span></button>
+        </div>
+
+        <!-- Солнечная система: выбор объекта -->
+        <div class="solar hidden" id="solar">
+          <div class="solar-head">
+            <h2 data-edit-text="map.solar.title" data-label="Солнечная система: заголовок">Солнечная система</h2>
+            <div class="rich solar-note" data-edit="map.solar.note" data-label="Солнечная система: подпись"><p>Выберите объект. Пока доступны Земля и Луна.</p></div>
+          </div>
+          <svg class="solar-svg" id="solarSvg" viewBox="0 0 1000 560" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Солнечная система"></svg>
+          <div class="solar-pick panel hidden" id="solarPick">
+            <button class="sp-close" id="solarPickClose" title="Закрыть">✕</button>
+            <h3 id="solarPickName"></h3>
+            <div class="rich" id="solarPickEarth" data-edit="map.solar.earth" data-label="Солнечная система: о Земле"><p>Затопленная Земля 2200 года: государства, провинции, города, дороги и орбитальные станции.</p></div>
+            <div class="rich hidden" id="solarPickMoon" data-edit="map.solar.moon" data-label="Солнечная система: о Луне"><p>Лунные территории, базы, дороги и спутники Луны.</p></div>
+            <div class="sp-btns">
+              <button data-proj="flat">▭ Привычная карта</button>
+              <button data-proj="globe">◍ Проекция шара</button>
+            </div>
+          </div>
         </div>
 
         <!-- Измерения (для всех) -->
@@ -182,7 +205,7 @@
           <button id="measureClear" title="Убрать все измерения">✕<span>Очистить</span></button>
           <div class="m-out hidden" id="measureOut"></div>
         </div>
-        <h1 class="map-title">Карта мира после Великого Потопа</h1>
+        <h1 class="map-title" data-edit-text="map.title" data-label="Карта: заголовок над картой">Карта мира после Великого Потопа</h1>
 
         <!-- Вход ГМа / панель ГМа -->
         <div class="gm-bar" id="gmBar">
@@ -310,72 +333,87 @@
     </div>
   </section>
 
-  <!-- ================= ГЛАВНАЯ (вики) ================= -->
-  <section class="page" id="page-home">
+  <!-- ================= ГЛАВНАЯ: вход и Режим ГМа ================= -->
+  <section class="page active" id="page-home">
     <div class="page-scroll">
-      <div class="stub panel">
-        <h1>KHATUM GAMES</h1>
-        <p class="lead">Вики мира после Великого Потопа.</p>
-        <p>Здесь собрано всё, что нужно игрокам: живая карта мира с государствами, провинциями, городами и спутниками, Луна, лор и новости кампании. Сайт пока работает как справочник — заглядывайте, когда нужно освежить в памяти, кто с кем граничит и что творится на орбите.</p>
-        <div class="stub-btns">
-          <button data-goto="map">Открыть карту</button>
-          <button data-goto="lore">Лор</button>
-          <button data-goto="about">О нас</button>
+      <div class="stub panel home">
+        <h1 data-edit-text="home.title" data-label="Главная: заголовок">KHATUM GAMES</h1>
+        <div class="rich" data-edit="home.lead" data-label="Главная: вступление">
+          <p class="lead">Вики мира после Великого Потопа.</p>
+          <p>Живая карта мира с государствами, провинциями, городами и спутниками, Луна, лор, механики и события кампании. Игрок входит здесь за свою страну, ГМ — в Режим ГМа.</p>
         </div>
+        <div class="home-auth" id="homeAuth"><p class="mech-note">Загрузка…</p></div>
       </div>
-    </div>
-  </section>
-
-  <!-- ================= ЛОР ================= -->
-  <section class="page" id="page-lore">
-    <div class="page-scroll">
-      <div class="stub panel wide">
-        <h1>Лор</h1>
-        <p>Мир двадцать третьего века после Великого Потопа. Разделы заполняются по ходу кампании.</p>
-        <div class="lore-grid" id="loreGrid">
-          <button class="lore-card" data-lore="ideologies"><b>Идеологии 23-го века</b><span>Во что верят и за что воюют</span></button>
-          <button class="lore-card" data-lore="corporations"><b>Корпорации</b><span>Кто владеет водой, орбитой и всем остальным</span></button>
-          <button class="lore-card" data-lore="chronology"><b>Хронология</b><span>От Великого Потопа до наших дней</span></button>
-          <button class="lore-card" data-lore="states"><b>Государства</b><span>Страны, союзы и территории на карте</span></button>
-        </div>
-        <article class="lore-article hidden" id="loreArticle">
-          <button class="lore-back" id="loreBack">← Все разделы</button>
-          <h2 id="loreTitle"></h2>
-          <p class="lore-stub">Раздел в разработке. Скоро здесь появятся статьи — а пока лор живёт в головах игроков и ГМа.</p>
-        </article>
-      </div>
-    </div>
-  </section>
-
-  <!-- ================= МЕХАНИКИ ================= -->
-  <section class="page" id="page-mech">
-    <div class="page-scroll">
-      <div class="mech panel">
+      <!-- Режим ГМа: оформление сайта (виден только ГМу); калькулятор — Вики → Механики → «Калькулятор» -->
+      <div class="mech panel gm-mode gm-only" id="gmMode">
         <div class="mech-head">
-          <h1>Механики</h1>
+          <h1 data-edit-text="home.gm.title" data-label="Режим ГМа: заголовок">Режим ГМа</h1>
+          <nav class="mech-nav" id="gmModeNav">
+            <button data-gmm="site" class="active">Оформление сайта</button>
+            <button data-gmm="calc" title="Вики → Механики → «Калькулятор»">Калькулятор →</button>
+          </nav>
+        </div>
+        <div class="mech-pane" id="siteDesign"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= ВИКИ: события, лор, механики ================= -->
+  <section class="page" id="page-wiki">
+    <div class="page-scroll">
+      <div class="mech panel wiki">
+        <div class="mech-head">
+          <h1 data-edit-text="wiki.title" data-label="Вики: заголовок">Вики</h1>
+          <nav class="mech-nav wiki-nav" id="wikiNav">
+            <button data-wiki="events"><span data-edit-text="wiki.nav.events" data-label="Вики: кнопка «События»">События</span></button>
+            <button data-wiki="lore"><span data-edit-text="wiki.nav.lore" data-label="Вики: кнопка «Лор»">Лор</span></button>
+            <button data-wiki="mech"><span data-edit-text="wiki.nav.mech" data-label="Вики: кнопка «Механики»">Механики</span></button>
+          </nav>
+        </div>
+
+        <!-- События -->
+        <div class="wiki-pane" id="wikiEvents">
+          <div class="rich" data-edit="wiki.events.intro" data-label="События: вступление"><p>Хроника кампании: итоги ходов, войны, договоры, катастрофы и новости мира.</p></div>
+          <div class="edit-only wiki-tools"><button class="small-btn" id="evAdd">+ Событие</button></div>
+          <div class="events" id="eventsList"></div>
+        </div>
+
+        <!-- Лор -->
+        <div class="wiki-pane hidden" id="wikiLore">
+          <div class="lore-home" id="loreHome">
+            <div class="rich" data-edit="wiki.lore.intro" data-label="Лор: вступление"><p>Мир двадцать третьего века после Великого Потопа. Разделы заполняются по ходу кампании.</p></div>
+            <div class="lore-grid" id="loreGrid"></div>
+            <div class="edit-only wiki-tools"><button class="small-btn" id="loreAdd">+ Раздел</button></div>
+          </div>
+          <article class="lore-article hidden" id="loreArticle"></article>
+        </div>
+
+        <!-- Механики -->
+        <div class="wiki-pane hidden" id="wikiMech">
+        <div class="mech-head sub">
           <nav class="mech-nav" id="mechNav">
             <button data-mech="article" class="active">Статья</button>
             <button data-mech="ref">Справочник</button>
             <button data-mech="rating">Рейтинг</button>
             <button data-mech="my">Моя страна</button>
-            <button data-mech="gm">Калькулятор ГМа</button>
+            <button data-mech="calc" class="gm-only">Калькулятор</button>
           </nav>
         </div>
 
         <!-- Статья: что на что влияет -->
-        <article class="mech-pane mech-article" id="mechArticle">
+        <article class="mech-pane mech-article rich" id="mechArticle" data-edit="mech.article" data-label="Механики: статья">
           <p class="lead">Как устроена государственная машина в мире после Великого Потопа: откуда берутся ВВП и военная мощь, почему большая армия обескровливает заводы и зачем стране спутники.</p>
 
           <nav class="mech-toc">
             <a href="#m-how">Как это работает</a><a href="#m-chains">Главные связи</a><a href="#m-state">Государство</a><a href="#m-econ">Экономика</a>
-            <a href="#m-army">Армия</a><a href="#m-sats">Спутники</a><a href="#m-turn">Ход и прогноз</a><a href="#m-inm">Рейтинг</a><a href="#m-mods">Особые эффекты</a>
+            <a href="#m-army">Армия</a><a href="#m-sats">Спутники</a><a href="#m-turn">Ход и прогноз</a><a href="#m-inm">Рейтинг</a><a href="#m-corp">Корпорации</a><a href="#m-mods">Особые эффекты</a>
           </nav>
 
           <h2 id="m-how">Как это работает</h2>
           <p>Великая ошибка — климатический кризис, энергетический коллапс и ядерные удары — закончилась Великим Потопом: океан поднялся на 50 метров. К 2200 году люди живут в укреплённых мегаполисах-ковчегах, а за их стенами лежат пустоши. Каждое государство описывает набор чисел: население, заводы, энергостанции, дивизии, корабли, спутники. Из них сайт по формулам ниже считает всё остальное.</p>
           <ul>
-            <li><b>ГМ</b> ведёт расчёты в калькуляторе. Игрок пишет ГМу решения хода (налоги, статьи бюджета, постройку, запуски спутников), ГМ вносит их, показатели пересчитываются сами.</li>
-            <li><b>Игрок</b> входит в свою страну на вкладке «Моя страна» по паролю, который выдаёт ГМ. Там видно всё положение дел. Режим «Что если» позволяет прикинуть последствия решения до письма ГМу. Сохранить такие правки нельзя.</li>
+            <li><b>ГМ</b> входит на Главной и ведёт расчёты во вкладке «Калькулятор» здесь, в Механиках (видна только ГМу). Игрок пишет ГМу решения хода (налоги, статьи бюджета, постройку, запуски спутников), ГМ вносит их, показатели пересчитываются сами.</li>
+            <li><b>Игрок</b> входит за свою страну на Главной по паролю, который выдаёт ГМ, и видит всё положение дел в Вики → Механики → «Моя страна». Режим «Что если» позволяет прикинуть последствия решения до письма ГМу. Сохранить такие правки нельзя.</li>
             <li>Данные стран <b>зашифрованы</b>: чужую экономику и армию не прочитать даже в файлах сайта. Всем открыт только рейтинг.</li>
             <li><b>1 ход = 1 год.</b> В конце хода ГМ переносит прогноз в текущие значения: технологии, стабильность, население.</li>
           </ul>
@@ -390,6 +428,7 @@
             <div class="chain"><span>Угроза пустошей</span><i>→</i><span>Нужны гарнизоны</span><i>→</i><span>Безопасность</span><i>→</i><span>Экономика пустошей и стабильность</span></div>
             <div class="chain"><span>Маршруты + навигационные спутники</span><i>→</i><span>Доступ к рынкам</span><i>→</i><span>Экспорт</span><i>→</i><span class="hot">Доля мирового рынка</span></div>
             <div class="chain"><span>Технологии</span><i>→</i><span>Множитель 0,68…1,40</span><i>→</i><span>Заводы, услуги, все рода войск, удары с орбиты</span></div>
+            <div class="chain"><span>Корпорации</span><i>→</i><span>Инвестиции, энергия, еда, ОВП</span><span class="neg">− налоги, коррупция</span><i>→</i><span class="hot">Суверенитет</span></div>
           </div>
 
           <h2 id="m-state">Государство</h2>
@@ -463,7 +502,7 @@
             <li><b>Противоспутниковые</b> сбивают чужие спутники, но засоряют орбиту.</li>
           </ul>
           <div class="formula">Бонус = предел × (1 − e<sup>−N × шаг / предел</sup>) <small>— первые спутники дают больше всего, дальше отдача убывает</small></div>
-          <p>Группировку оплачивает космический бюджет. Если денег не хватает, в конце хода часть спутников сходит с орбиты. Над всеми висит общий <b>индекс Кесслера</b>: мусор со времён Великой ошибки плюс плотность всех группировок мира. При индексе 1 начинается каскадное разрушение орбиты.</p>
+          <p>Группировку оплачивает космический бюджет. Если денег не хватает, в конце хода часть спутников сходит с орбиты. Над всеми висит общий <b>индекс Кесслера</b>: мусор со времён Великой ошибки плюс плотность всех группировок мира. Облака этого мусора видны на глобусе. Чем выше индекс, тем больше спутников гибнет от обломков каждый ход (спутники × индекс × 0,1) и тем дороже запуски (+100% × индекс). При индексе 1 начинается каскадное разрушение орбиты.</p>
 
           <h2 id="m-turn">Ход и прогноз</h2>
           <div class="formula">Δ технологии = наука / (25 × текущий уровень) × (1 + бонус научных спутников)</div>
@@ -474,6 +513,27 @@
           <h2 id="m-inm">Индекс национальной мощи и рейтинг</h2>
           <p>ИНМ (0–100) сравнивает страну с мировым лидером по каждому показателю: ВВП (30%), военная мощь (30%), население (10%), технологии (10%), стабильность (10%), спутники (10%). Место в рейтинге и уровень экономики видны всем на вкладке «Рейтинг», остальные цифры — только самой стране и ГМу.</p>
 
+          <h2 id="m-corp">Корпорации</h2>
+          <p>Militech, Arasaka, Biotechnica, Night Corp и ещё два десятка корпораций не принадлежат ни одному государству и не управляются игроками. Их ведёт ГМ. Страна договаривается с корпорацией, пускает её на свою территорию, воюет с ней или изгоняет, а ГМ переводит итог в два числа: <b>присутствие</b> (0–10, насколько глубоко корпорация вросла в экономику) и <b>отношения</b> (от −100 до +100). Ещё есть <b>анклавы</b> — экстерриториальные башни и кварталы, где закон страны не действует. Список корпораций с описаниями — в разделе «Лор → Корпорации».</p>
+          <p>Крупнейшая группа — <b>ARC</b> (American Reclamation Corporation): сверхкорпорация, которая отвоёвывает сушу у моря. В неё входят оружейный гигант Militech, строительная ARC Reclamation и разведка «Директорат ARC». Влияние дочерних корпораций складывается с материнской.</p>
+          <div class="formula">Вес = присутствие × масштаб корпорации <small>(0,3 — региональная, 1 — транснациональная, до 2 — сверхкорпорация)</small></div>
+          <div class="formula">Отдача = 50% + 50% × отношения / 100 <small>(при +100 — 100%, при −100 — ноль)</small></div>
+          <h3>Что корпорации дают</h3>
+          <p>Каждая отрасль даёт свои бонусы за единицу веса: оружейники — очки военного производства и мощь армии, энергетики — выработку энергии, биотех — продовольствие, водники — пресную воду, ЧВК — безопасность мегаполисов, кибернетика и связь — технологии и сектор услуг, медиа — стабильность, космические — пусковые мощности, банки — ВВП. Бонусы умножаются на отдачу. Числа для каждой отрасли — в «Справочнике», таблица «Отрасли корпораций».</p>
+          <h3>Чем страна платит</h3>
+          <div class="formula">Доля ВВП под контролем корпораций = Σ вес × 3% + анклавы × 2% <small>(не выше 80%)</small> · Потери бюджета = доходы × доля × 0,4</div>
+          <div class="formula">Влияние = Σ вес × 3 × коэффициент отрасли + анклавы × 5 · Суверенитет = 100 − влияние</div>
+          <ul>
+            <li><b>Лоббизм:</b> каждый пункт влияния добавляет 0,15 к коррупции, а она съедает бюджет.</li>
+            <li><b>Потеря суверенитета:</b> при влиянии выше 30 стабильность падает на 0,1 за каждый лишний пункт за ход.</li>
+            <li><b>Государство в государстве:</b> корпорация (или её группа) с влиянием 30 и выше в стране сама пишет себе законы. Это видно в карточке страны и в предупреждениях.</li>
+            <li><b>Саботаж:</b> при плохих отношениях корпорация не помогает, а вредит: до −1% ВВП и −0,4 стабильности за единицу веса при отношениях −100.</li>
+            <li><b>Анклавы:</b> дружественный анклав охраняет себя и засчитывается в гарнизоны (0,5 дивизии), враждебный сам становится угрозой (+1 дивизия к потребности в гарнизонах).</li>
+          </ul>
+          <h3>Союзы и договоры</h3>
+          <p>Корпорация может заключить договор не со страной, а с союзом: политическим, экономическим, военным или с фракцией. Тогда её присутствие и отношения действуют во всех странах-членах. Если ГМ задал корпорации значение для самой страны, оно важнее договора: так страна может выйти из корпоративной сделки союза.</p>
+          <p>Выручка корпорации — её доля ВВП во всех странах. Рейтинг корпораций виден всем во вкладке «Рейтинг».</p>
+
           <h2 id="m-mods">Особые эффекты</h2>
           <p>Не всё укладывается в формулы. Для событий ГМ добавляет стране особый эффект: процент или прибавку к любому ключевому показателю. Например, «+10% к ВВП — снятие морской блокады» или «−25% к мощи ВМФ — сезон штормов». Игрок видит действующие эффекты в своей стране.</p>
         </article>
@@ -481,22 +541,22 @@
         <div class="mech-pane hidden" id="mechRef"></div>
         <div class="mech-pane hidden" id="mechRating"></div>
         <div class="mech-pane hidden" id="mechMy"></div>
-        <div class="mech-pane hidden" id="mechGM"></div>
+        <!-- Калькулятор ГМа: страны, корпорации, правила (виден только ГМу) -->
+        <div class="mech-pane hidden gm-only" id="mechGM"></div>
+        </div>
       </div>
     </div>
   </section>
 
-  <!-- ================= НОВОСТИ, ГАЛЕРЕЯ ================= -->
-  <section class="page" id="page-news">
-    <div class="page-scroll">
-      <div class="stub panel"><h1>Новости</h1><p>Пока новостей нет.</p>
-        <div class="stub-btns"><button class="soon">Девлог</button><button class="soon">Обновления</button></div></div>
-    </div>
-  </section>
+  <!-- ================= ГАЛЕРЕЯ ================= -->
   <section class="page" id="page-gallery">
     <div class="page-scroll">
-      <div class="stub panel"><h1>Галерея</h1><p>Арты и скриншоты появятся здесь.</p>
-        <div class="stub-btns"><button class="soon">Арты</button><button class="soon">Скриншоты</button><button class="soon">Видео</button></div></div>
+      <div class="stub panel wide gallery">
+        <h1 data-edit-text="gallery.title" data-label="Галерея: заголовок">Галерея</h1>
+        <div class="rich" data-edit="gallery.intro" data-label="Галерея: вступление"><p>Арты, скриншоты и карты мира после Великого Потопа.</p></div>
+        <div class="edit-only wiki-tools"><button class="small-btn" id="galAdd">+ Картинки</button></div>
+        <div class="gal-grid" id="galGrid"></div>
+      </div>
     </div>
   </section>
 
@@ -504,7 +564,8 @@
   <section class="page" id="page-about">
     <div class="page-scroll">
       <div class="stub panel wide about">
-        <h1>О нас</h1>
+        <h1 data-edit-text="about.title" data-label="О нас: заголовок">О нас</h1>
+        <div class="rich" data-edit="about.body" data-label="О нас: текст">
         <p class="lead">Сайт и игра принадлежат команде <b>KhatumGames</b> и её владельцу — <b>Александру Кулыгину</b>.</p>
         <p>Этот сайт навайбкоден. Его собирали не по строгому техническому заданию, а на энтузиазме, вдохновении и долгих разговорах с нейросетью — по принципу «а давай ещё вот это добавим». Он создан для развлечения игроков, которые согласились играть в эту шизофрению и, судя по всему, ни о чём не жалеют.</p>
 
@@ -517,7 +578,7 @@
           <li><b>Карта мира</b> — государства, провинции, города, дороги, линейка и циркуль для расчёта расстояний.</li>
           <li><b>Глобус</b> — та же Земля шаром, с орбитальными станциями и спутниками.</li>
           <li><b>Луна</b> — реальные моря, кратеры и места посадок, а также территории, базы и дороги мира игры.</li>
-          <li><b>Лор</b> — идеологии, корпорации, хронология и государства (разделы наполняются).</li>
+          <li><b>Вики</b> — события кампании, лор (идеологии, корпорации, хронология, государства) и механики игры.</li>
         </ul>
 
         <h2>Честное предупреждение</h2>
@@ -531,6 +592,7 @@
 
         <h2>Источники</h2>
         <p class="small-text">Административные границы — Natural Earth (общественное достояние). Поверхность Луны — NASA, Lunar Reconnaissance Orbiter, CGI Moon Kit (общественное достояние). Названия на Луне — номенклатура Международного астрономического союза. Шрифты — Google Fonts. Фоновая музыка — YouTube.</p>
+        </div>
       </div>
     </div>
   </section>
@@ -555,18 +617,19 @@
   </div>
 </div>
 
-<script src="js/app.js?v=20261115a"></script>
+<script src="js/app.js?v=20261115c"></script>
 <script src="js/geo.js?v=20261115a"></script>
 <script src="js/territory.js?v=20261115a"></script>
-<script src="js/sats.js?v=20261115c"></script>
-<script src="js/globe.js?v=20261115c"></script>
+<script src="js/sats.js?v=20261115e"></script>
+<script src="js/globe.js?v=20261115i"></script>
 <script src="js/github.js?v=20261115a"></script>
 <script src="js/wrap.js?v=20261115a"></script>
-<script src="js/map.js?v=20261115g"></script>
+<script src="js/map.js?v=20261115l"></script>
 <script src="js/moon-names.js?v=20261115a"></script>
-<script src="js/moon.js?v=20261115a"></script>
-<script src="js/mech-model.js?v=20261115a"></script>
+<script src="js/moon.js?v=20261115b"></script>
+<script src="js/mech-model.js?v=20261115h"></script>
 <script src="js/mech-crypto.js?v=20261115a"></script>
-<script src="js/mech.js?v=20261115a"></script>
+<script src="js/mech.js?v=20261115j"></script>
+<script src="js/site.js?v=20261115c"></script>
 </body>
 </html>

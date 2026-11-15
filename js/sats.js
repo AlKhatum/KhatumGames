@@ -6,7 +6,7 @@
   "use strict";
   const D = Math.PI / 180;
   const EPOCH = Date.UTC(2026, 0, 1);
-  const SHAPES = { station: "Станция (корпус и панели)", dot: "Точка", diamond: "Ромб", triangle: "Треугольник", square: "Квадрат" };
+  const SHAPES = { station: "Станция (корпус и панели)", dot: "Точка", diamond: "Ромб", triangle: "Треугольник", square: "Квадрат", star: "Звезда", cross: "Крест" };
 
   function gmst(ms) {
     const jd = ms / 86400000 + 2440587.5;
@@ -102,11 +102,12 @@
       });
       return { t, count: k, el, who, origins };
     }
-    // положения обломков на момент ms: out — Float32Array(count·3) широта, долгота, rho; вернёт число обломков
-    function debrisAt(cloud, ms, out) {
+    // положения обломков на момент ms: out — Float32Array(count·3) широта, долгота, rho; вернёт число обломков.
+    // step > 1 — считать только каждый step-й обломок (остальные ячейки out не трогаются)
+    function debrisAt(cloud, ms, out, step) {
       const dt = (ms - cloud.t) / 1000; if (dt < 0) return 0;
-      const th = cfg.rot(ms), K = 12, el = cloud.el;
-      for (let i = 0; i < cloud.count; i++) {
+      const th = cfg.rot(ms), K = 12, el = cloud.el, st = Math.max(1, step | 0);
+      for (let i = 0; i < cloud.count; i += st) {
         const o = i * K, a = el[o + 6], e = el[o + 7], M = el[o + 9] + el[o + 8] * dt;
         let E = M + e * Math.sin(M);
         for (let it = 0; it < 6; it++) E -= (E - e * Math.sin(E) - M) / (1 - e * Math.cos(E));

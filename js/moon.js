@@ -172,6 +172,8 @@
       case "square": return `<rect x="-5" y="-5" width="10" height="10" fill="${color}"/>`;
       case "diamond": return `<path d="M0-7 5.5 0 0 7-5.5 0Z" fill="${color}"/>`;
       case "triangle": return `<path d="M0-6.5 6 5H-6Z" fill="${color}"/>`;
+      case "star": return `<path d="M0-7 1.9-2.4 6.7-2.2 2.9 0.8 4.1 5.7 0 3 -4.1 5.7 -2.9 0.8 -6.7-2.2 -1.9-2.4Z" fill="${color}"/>`;
+      case "cross": return `<rect x="-6" y="-1.6" width="12" height="3.2" fill="${color}"/><rect x="-1.6" y="-6" width="3.2" height="12" fill="${color}"/>`;
       case "station": return `<rect x="-3" y="-2" width="6" height="4" fill="${color}"/><rect x="-10" y="-1" width="6" height="2" fill="${color}"/><rect x="4" y="-1" width="6" height="2" fill="${color}"/>`;
       default: return `<circle r="5" fill="${color}"/>`;
     }
@@ -657,7 +659,7 @@
   });
 
   window.addEventListener("keydown", e => {
-    if (!active || (e.target.matches && e.target.matches("input, textarea, select")) || !$("modal").classList.contains("hidden") || !$("formModal").classList.contains("hidden")) return;
+    if (!active || (e.target.matches && (e.target.matches("input, textarea, select") || e.target.isContentEditable)) || !$("modal").classList.contains("hidden") || !$("formModal").classList.contains("hidden")) return;
     const k = e.key.toLowerCase();
     if (tool === "road" && roadDraft) {
       if (e.key === "Enter") { finishRoad(true); return; }

@@ -20,10 +20,10 @@
 <div id="out"></div>
 <script src="../js/geo.js?v=20261115a"></script>
 <script src="../js/territory.js?v=20261115a"></script>
-<script src="../js/sats.js?v=20261115c"></script>
+<script src="../js/sats.js?v=20261115e"></script>
 <script src="../js/moon-names.js?v=20261115a"></script>
 <script src="../js/wrap.js?v=20261115a"></script>
-<script src="../js/mech-model.js?v=20261115a"></script>
+<script src="../js/mech-model.js?v=20261115h"></script>
 <script src="../js/mech-crypto.js?v=20261115a"></script>
 <script>
 (async function () {
@@ -232,6 +232,15 @@
     const bad = Object.values(map.satellites).filter(s => !map.satTypes[s.type] || S.validate(s));
     assert(!bad.length, "ошибки: " + bad.map(s => s.name).join(", ")); return Object.keys(map.satellites).length + " спутников";
   });
+  await test("Спутники: типы как в калькуляторе и Excel, владельцы — страны карты", () => {
+    const calc = new Set(window.KGMechModel.defaultRules().tables.sat.map(t => t.id).concat("station"));
+    const badT = Object.keys(map.satTypes).filter(id => !calc.has(id));
+    assert(!badT.length, "типы не из калькулятора: " + badT.join(", "));
+    const badO = Object.values(map.satellites).filter(s => s.owner && !map.countries[s.owner]);
+    assert(!badO.length, "нет страны-владельца: " + badO.map(s => s.name).join(", "));
+    const own = {}; Object.values(map.satellites).forEach(s => { if (s.owner) own[s.owner] = (own[s.owner] || 0) + 1; });
+    return Object.entries(own).map(([id, n]) => map.countries[id].name.split("\n").join(" ") + " " + n).join(", ") || "без владельцев";
+  });
   await test("Луна: отметки и дороги ссылаются на существующие типы", () => {
     const m = Object.values(moon.marks).filter(x => !moon.markTypes[x.type]), r = Object.values(moon.roads).filter(x => !moon.roadTypes[x.type]);
     assert(!m.length && !r.length, "битые ссылки");
@@ -281,11 +290,32 @@
   await test("Столкновения (если заданы ГМом): спутники существуют, параметры в пределах", () => {
     const list = Object.values(map.debris || {});
     for (const d of list) {
-      assert(map.satellites[d.a], d.name + ": нет спутника " + d.a);
-      assert(!d.b || (map.satellites[d.b] && d.b !== d.a), d.name + ": второй спутник");
+      if (Array.isArray(d.src)) { // мусор Великой ошибки: орбиты разрушенных аппаратов в самом событии
+        assert(d.src.length >= 1 && d.src.length <= 2 && d.src.every(s => !S.validate(Object.assign({ name: "x" }, s))), d.name + ": орбиты src");
+      } else {
+        assert(map.satellites[d.a], d.name + ": нет спутника " + d.a);
+        assert(!d.b || (map.satellites[d.b] && d.b !== d.a), d.name + ": второй спутник");
+      }
       assert(!isNaN(Date.parse(d.t)) && d.n >= 50 && d.n <= 3000 && d.dv >= 10 && d.dv <= 1000, d.name + ": параметры");
     }
     return list.length ? list.length + " столкновений" : "нет";
+  });
+  await test("Мусор Великой ошибки: облака занимают 30–40% рабочего объёма низкой орбиты", () => {
+    const leg = Object.values(map.debris || {}).filter(d => Array.isArray(d.src));
+    if (!leg.length) return "облаков нет";
+    const cells = new Set(), now = Date.UTC(2026, 10, 1);
+    for (const d of leg) {
+      const c = S.breakup(d, d.src), out = new Float32Array(c.count * 3), n = S.debrisAt(c, now, out);
+      for (let i = 0; i < n; i++) {
+        const alt = (out[i * 3 + 2] - 1) * S.RE;
+        if (alt >= 400 && alt <= 2000) cells.add(Math.floor((alt - 400) / 50) + "|" + Math.floor((out[i * 3] + 90) / 10) + "|" + Math.floor((out[i * 3 + 1] + 180) / 10));
+      }
+    }
+    let tot = 0, fill = 0;
+    for (let a = 0; a < 32; a++) for (let la = 0; la < 18; la++) for (let lo = 0; lo < 36; lo++) { const w = Math.cos((la * 10 - 85) * Math.PI / 180); tot += w; if (cells.has(a + "|" + la + "|" + lo)) fill += w; }
+    const p = 100 * fill / tot;
+    assert(p >= 30 && p <= 40, "заполнено " + p.toFixed(1) + "%");
+    return leg.length + " облаков, " + p.toFixed(1) + "%";
   });
   await test("Карточки государств: поля ГМа — строки разумной длины", () => {
     const keys = ["capital", "gov", "head", "lang", "currency", "pop", "desc"];
@@ -307,17 +337,16 @@
 
   group("Механики");
   const MM = window.KGMechModel, CR = window.KGCrypto;
-  // эталон — пересчёт таблицы «Механики_Мир2200.xlsx» в Excel (5 государств-образцов)
+  // эталон — пересчёт таблицы «Механики_Мир2200.xlsx» в Excel (5 государств-образцов с идеологиями листа «Идеологии»)
   const XL = {
-    gdp: [950.2198, 589.7354, 520.1329, 379.5462, 487.0322], pm_eff: [320.7537, 261.2809, 141.4621, 120.1224, 137.6666],
-    export: [112.6583, 209.9643, 114.3922, 31.7849, 71.5913], import: [0, 62.3002, 0, 0, 2.08], world_share: [0.2085, 0.3885, 0.2117, 0.0588, 0.1325],
-    gdp_svc: [269.6557, 113.8763, 137.3987, 120.0047, 161.5834], budget: [250.858, 193.1973, 105.587, 96.7843, 85.2306],
-    d_tech: [0.1458, 0.1461, 0.0424, 0.0459, 0.0369], d_stab: [-0.45, 3.3714, -2.7667, 8.1, -0.3374], d_gdp: [0.0506, 0.05, 0.0415, 0.0463, 0.0438],
-    active: [671.36, 285.96, 542.64, 378.93, 519.9], security: [0.8667, 0.9714, 1.1022, 1.2, 1.1636], labor: [25.6486, 9.914, 15.5278, 13.2336, 17.9921],
-    ground_power: [483.8543, 213.5296, 278.1702, 224.8714, 164.0584], air_power: [385.3938, 201.9091, 155.0902, 169.9698, 90.5088],
-    navy_power: [166.9216, 823.2059, 162.6277, 35.0482, 153.2428], ad_power: [259.1363, 139.8179, 90.2762, 132.5497, 51.7931],
-    strat_power: [381.6, 32, 0, 154.2436, 0], readiness: [1, 1, 1, 0.9797, 0.7552], total_power: [2065.5006, 1988.6047, 870.6626, 801.4551, 586.9005],
-    hdi: [0.7288, 0.8943, 0.6599, 0.7124, 0.5936], inm: [92.9552, 76.7021, 50.5776, 46.7959, 46.9283], rank: [1, 2, 3, 5, 4], kessler: [0.7425, 0.7425, 0.7425, 0.7425, 0.7425]
+    gdp: [974.4998, 548.0672, 508.6936, 379.5462, 494.1913], pm_eff: [336.7913, 235.1528, 141.4621, 120.1224, 137.6666], export: [116.4903, 195.7307, 102.953, 31.7849, 78.7505],
+    import: [0, 62.3002, 0, 0, 2.08], world_share: [0.2216, 0.3723, 0.1958, 0.0605, 0.1498], gdp_svc: [269.6557, 113.8763, 137.3987, 120.0047, 161.5834], budget: [257.2679, 179.5468, 103.2648, 96.7843, 86.4835],
+    d_tech: [0.1794, 0.1357, 0.0373, 0.039, 0.0374], d_stab: [-1.45, 3.3714, -0.7667, 9.1, -0.3374], d_gdp: [0.0506, 0.05, 0.0415, 0.0463, 0.0438], active: [671.36, 285.96, 542.64, 378.93, 519.9],
+    security: [0.8667, 0.9714, 1.1022, 1.2, 1.1636], labor: [25.6486, 9.914, 15.5278, 13.3711, 17.9921], ground_power: [459.6615, 213.5296, 292.0787, 247.3586, 158.1464],
+    air_power: [366.1241, 201.9091, 162.8447, 186.9668, 87.2473], navy_power: [158.5755, 823.2059, 170.7591, 38.553, 147.7206], ad_power: [259.1363, 139.8179, 90.2762, 132.5497, 52.5544],
+    strat_power: [381.6, 32, 0, 154.2436, 0], readiness: [1, 1, 1, 0.9797, 0.7663], total_power: [1990.518, 1988.6047, 908.4682, 856.8181, 569.1068], hdi: [0.7318, 0.879, 0.6576, 0.7149, 0.5947],
+    inm: [92.9552, 76.0434, 50.8624, 47.7702, 46.8185], rank: [1, 2, 3, 4, 5], kessler: [0.7725, 0.7725, 0.7725, 0.7725, 0.7725], debris_loss: [4.326, 4.4805, 1.9313, 2.3175, 2.163],
+    launch_cost: [0.7725, 0.7725, 0.7725, 0.7725, 0.7725]
   };
   const rulesM = MM.defaultRules();
   const samples = {}; MM.SAMPLES.forEach((s, i) => (samples["s" + i] = s.make()));
@@ -337,11 +366,65 @@
       for (const k of ["inm", "rank", "world_share", "world_mil_share", "kessler"]) near(r[k], all.results[id][k], 1e-9, id + " " + k);
     }
   });
+  await test("Идеологии: 7 штук, у образцов распознаны", () => {
+    assert(rulesM.tables.ideo.length === 7, "идеологий " + rulesM.tables.ideo.length);
+    const names = [0, 1, 2, 3, 4].map(i => all.results["s" + i].ideology).join("|");
+    assert(names === "Верховенство|Гармония|Чистота|Духовность|Равновесие", names);
+  });
+  await test("Идеология: модификаторы как в Excel (Верховенство +20% к технологиям, −1 стабильности)", () => {
+    const ra = MM.compute(rulesM, MM.SAMPLES[0].make());
+    const step = f => ra.applied.find(x => x.id === "ideo:supremacy:" + f) || assert(false, "нет шага " + f);
+    const t = step("e_tech"), s = step("e_stab"), m = step("e_morale"), p = step("e_pm");
+    near(t.after, t.before * 1.2, 1e-9, "технологии"); near(s.after, s.before - 1, 1e-9, "стабильность");
+    near(m.after, m.before * 0.95, 1e-9, "боевой дух"); near(p.after, p.before * 1.05, 1e-9, "ПМ");
+    assert(ra.applied.filter(x => String(x.id).startsWith("ideo:")).length === 4, "шагов идеологии не 4");
+    const b = MM.SAMPLES[0].make(); b.in.ideology = "";
+    const rb = MM.compute(rulesM, b); assert(rb.ideology === "" && !rb.applied.length, "без идеологии нет эффектов");
+  });
+  await test("Идеология: регистр не важен, чужой текст — без эффектов", () => {
+    const a = MM.SAMPLES[2].make(); a.in.ideology = "  чистота ";
+    assert(MM.compute(rulesM, a).ideology === "Чистота", "не распознана");
+    const b = MM.SAMPLES[2].make(); b.in.ideology = "Национальное возрождение";
+    const rb = MM.compute(rulesM, b); assert(rb.ideology === "" && !rb.applied.some(x => String(x.id).startsWith("ideo:")), "эффекты у чужой идеологии");
+  });
+  await test("Импорт стран: чужой файл отклоняется", () => {
+    let err = ""; try { MM.parseImport({ countries: {} }); } catch (e) { err = e.message; }
+    assert(err, "файл без format принят");
+    const p = MM.parseImport({ format: "khatum-countries", v: 1, blocs: [{ id: "b1", name: "Союз" }, { name: "без id" }], countries: { "18": {} } });
+    assert(p.blocs.length === 1 && p.countries["18"], "разбор");
+  });
+  await test("Импорт стран: поля в пределах, лишнее отброшено, страна считается", () => {
+    const rec = { in: { capital: "Париж", ideology: "Чистота", stability: 140, habitable: 2, pop_meg: 100, pop_waste: 50, tech: 7, mob_law: 2, tax: 0.3, hacker: 1, territory: "abc" },
+      cnt: { industry: { heavy: 100, vpk: 40, nope: 5 }, div: { motor: 10, tank: -3 }, energy: { fusion: 120 }, food: { hydro: 60 } }, notes: "Справка" };
+    const c = MM.importCountry(rulesM, rec);
+    assert(c.in.stability === 100 && c.in.habitable === 1, "пределы: " + c.in.stability + ", " + c.in.habitable);
+    assert(!("hacker" in c.in) && c.in.territory === 0, "лишние поля");
+    assert(c.cnt.industry.heavy === 100 && !("nope" in c.cnt.industry) && !("tank" in c.cnt.div), "юниты");
+    assert(c.dossier === "Справка" && c.notes === "", "справка не в заметках игрока");
+    const r = MM.compute(rulesM, c);
+    assert(r.ideology === "Чистота" && isFinite(r.gdp) && r.gdp > 0 && isFinite(r.total_power), "расчёт");
+  });
+  await test("Импорт стран: особые эффекты (дань) переносятся, неизвестные отбрасываются", () => {
+    const base = { in: { pop_meg: 10, pop_waste: 2, tech: 6, stability: 60, tax: 0.3, b_def: 0.2 }, cnt: { industry: { heavy: 50 } } };
+    const rec = Object.assign({}, base, { mods: [{ id: "tribute", name: "Дань", target: "gdp", mode: "add", value: 100 }, { id: "x", target: "nope", mode: "add", value: 1 }, { id: "y", target: "gdp", mode: "mul", value: 2 }] });
+    const c = MM.importCountry(rulesM, rec), c0 = MM.importCountry(rulesM, base);
+    assert(c.mods.length === 1 && c.mods[0].id === "imp_tribute", "эффектов " + c.mods.length);
+    near(MM.compute(rulesM, c).gdp, MM.compute(rulesM, c0).gdp + 100, 1e-6, "ВВП с данью");
+  });
+  await test("Мусор Великой ошибки: старые правила (0,25) обновляются до 0,28, своё значение ГМа сохраняется", () => {
+    const d = MM.defaultRules();
+    const oldK = Object.assign({}, d.K); delete oldK.kessler_loss; delete oldK.kessler_launch; oldK.debris_base = 0.25;
+    near(MM.normalizeRules({ K: oldK }).K.debris_base, 0.28, 1e-12, "старые правила");
+    near(MM.normalizeRules({ K: Object.assign({}, oldK, { debris_base: 0.4 }) }).K.debris_base, 0.4, 1e-12, "своё значение ГМа");
+    near(MM.normalizeRules({ K: Object.assign({}, d.K, { debris_base: 0.25 }) }).K.debris_base, 0.25, 1e-12, "новые правила с 0,25");
+    const r = MM.compute(d, MM.SAMPLES[0].make()); MM.applyWorld(d, MM.SAMPLES[0].make(), r, { satSum: 0 });
+    near(r.debris_loss, r.sat_total * r.kessler * 0.1, 1e-9, "потери от мусора"); near(r.launch_cost, r.kessler, 1e-9, "удорожание запусков");
+  });
   await test("Особый эффект: +10% к ВВП и −50 к мощи ВМФ", () => {
     const c = MM.SAMPLES[0].make();
     c.mods = [{ id: "a", name: "тест", target: "gdp", mode: "pct", value: 10 }, { id: "b", name: "шторм", target: "navy_power", mode: "add", value: -50 }];
     const r0 = MM.compute(rulesM, MM.SAMPLES[0].make()), r1 = MM.compute(rulesM, c);
-    near(r1.gdp, r0.gdp * 1.1, 1e-6, "ВВП"); near(r1.navy_power, r0.navy_power - 50, 1e-6, "ВМФ"); assert(r1.applied.length === 2, "применено " + r1.applied.length);
+    near(r1.gdp, r0.gdp * 1.1, 1e-6, "ВВП"); near(r1.navy_power, r0.navy_power - 50, 1e-6, "ВМФ"); const own = r1.applied.filter(x => !String(x.id).startsWith("ideo:")); assert(own.length === 2, "применено " + own.length);
   });
   await test("Новый тип юнита из правил учитывается в мощи", () => {
     const rl = MM.defaultRules(); rl.tables.ship.push({ id: "x", name: "Плавучая крепость", pers: 2, power: 100, upkeep: 1, ton: 50, air: 0, wh: 0, kind: "combat", cost: 200 });
@@ -365,6 +448,114 @@
     assert(wrong, "неверный пароль подошёл");
     assert(!JSON.stringify(box).includes("Екатеринбург"), "открытый текст в шифровке");
   });
+  group("Структура сайта");
+  const pageDoc = new DOMParser().parseFromString(await fetch("../index.html?t=" + Date.now()).then(r => r.text()), "text/html");
+  await test("Верхняя панель: Главная, Карта, Вики, Галерея, О нас; логотип ведёт на Главную", () => {
+    const tabs = [...pageDoc.querySelectorAll("#tabs button")].map(b => b.dataset.tab).join(",");
+    assert(tabs === "home,map,wiki,gallery,about", tabs);
+    assert(pageDoc.querySelector(".brand").getAttribute("href") === "#home", "логотип");
+    for (const t of ["home", "map", "wiki", "gallery", "about"]) assert(pageDoc.getElementById("page-" + t), "нет страницы " + t);
+    for (const t of ["lore", "mech", "news"]) assert(!pageDoc.getElementById("page-" + t), "лишняя вкладка " + t);
+  });
+  await test("Вики: События · Лор · Механики; калькулятор ГМа — вкладка Механик, на Главной оформление сайта", () => {
+    assert([...pageDoc.querySelectorAll("#wikiNav button")].map(b => b.dataset.wiki).join(",") === "events,lore,mech", "разделы Вики");
+    assert(pageDoc.querySelector("#page-home #homeAuth") && pageDoc.querySelector("#gmMode #siteDesign"), "Главная");
+    assert(!pageDoc.querySelector("#page-home #mechGM"), "калькулятор остался на Главной");
+    const calcBtn = pageDoc.querySelector('#mechNav [data-mech="calc"]'), calc = pageDoc.querySelector("#wikiMech #mechGM");
+    assert(calcBtn && calcBtn.classList.contains("gm-only"), "вкладка «Калькулятор» в Механиках только для ГМа");
+    assert(calc && calc.classList.contains("gm-only") && calc.classList.contains("hidden"), "панель калькулятора в Механиках скрыта по умолчанию");
+    assert(pageDoc.querySelectorAll("#mechGM").length === 1, "калькулятор в одном месте");
+    assert(!pageDoc.querySelector("#page-home [data-goto]"), "на Главной лишние переходы");
+  });
+  await test("Карта: Солнечная система → Земля / Луна → привычная карта / проекция шара", () => {
+    assert(pageDoc.getElementById("solar") && pageDoc.getElementById("solarSvg"), "нет Солнечной системы");
+    assert([...pageDoc.querySelectorAll("#solarPick [data-proj]")].map(b => b.dataset.proj).join(",") === "flat,globe", "выбор проекции");
+    assert(pageDoc.querySelector('#viewSwitch [data-view="solar"]'), "кнопка возврата к системе");
+  });
+  await test("Ключи правки сайта уникальны", () => {
+    const keys = [...pageDoc.querySelectorAll("[data-edit],[data-edit-text]")].map(e => e.getAttribute("data-edit") || e.getAttribute("data-edit-text"));
+    const dup = keys.filter((k, i) => keys.indexOf(k) !== i);
+    assert(!dup.length, "повторы: " + dup.join(", "));
+    return keys.length + " редактируемых блоков";
+  });
+  await test("data/site.json: нет файла или корректная структура", async () => {
+    const r = await fetch("../data/site.json?t=" + Date.now());
+    if (r.status === 404) return "файла нет — сайт с текстами по умолчанию";
+    const s = await r.json();
+    assert(s.v === 1 && typeof s.texts === "object" && Array.isArray(s.lore) && Array.isArray(s.events) && Array.isArray(s.gallery), "структура");
+    assert(!JSON.stringify(s).includes("data:image"), "встроенные картинки не вынесены в файлы");
+    const badImg = s.events.filter(ev => ev.imgs != null && (!Array.isArray(ev.imgs) || ev.imgs.some(im => !im || !im.id || typeof im.img !== "string" || !im.img)));
+    assert(!badImg.length, "картинки событий: " + badImg.map(ev => ev.title || ev.id).join(", "));
+  });
+
+  group("Корпорации");
+  const corpOf = (r, id) => r.corp_rows.find(x => x.id === id);
+  await test("Справочник корпораций: ARC и Militech в его составе, отрасли существуют", () => {
+    const T = rulesM.tables, sec = new Set(T.csector.map(s => s.id)), ids = new Set(T.corp.map(x => x.id));
+    const mt = T.corp.find(x => x.id === "militech");
+    assert(mt && mt.parent === "arc" && ids.has("arc"), "Militech не в ARC");
+    const bad = T.corp.filter(x => !sec.has(x.sector) || (x.parent && !ids.has(x.parent)) || !(+x.scale > 0));
+    assert(!bad.length, "ошибки: " + bad.map(x => x.name).join(", "));
+    return T.corp.length + " корпораций, " + T.csector.length + " отраслей";
+  });
+  await test("Без присутствия корпорации ничего не меняют (даже при заданных отношениях)", () => {
+    const c = MM.SAMPLES[2].make(); c.corp = { arasaka: { rel: -100 }, militech: { rel: 100 } };
+    const a = MM.compute(rulesM, MM.SAMPLES[2].make()), b = MM.compute(rulesM, c);
+    for (const k of ["gdp", "budget", "d_stab", "total_power", "security", "ovp"]) near(b[k], a[k], 1e-9, k);
+    assert(b.sovereignty === 100 && b.corp_status === "Суверенное государство", b.corp_status);
+  });
+  await test("Militech при отношениях +100: ОВП растёт на 3% за единицу веса, бюджет теряет на налогах", () => {
+    const c = MM.SAMPLES[0].make(); c.corp = { militech: { pres: 6, rel: 100 } };
+    const a = MM.compute(rulesM, MM.SAMPLES[0].make()), b = MM.compute(rulesM, c), W = 6 * 1.6;
+    near(b.ovp / a.ovp, 1 + 3 * W / 100, 1e-9, "ОВП");
+    near(b.corp_share, W * 0.03, 1e-9, "доля ВВП");
+    near(b.corp_infl, W * 3 * 1, 1e-9, "влияние");
+    assert(b.corp_tax_loss > 0 && b.budget < b.gdp * 0.32, "нет потерь бюджета");
+    near(corpOf(b, "militech").rev, b.gdp * W * 0.03, 1e-6, "выручка");
+    near(b.corruption_eff, 35 + W * 3 * 0.15, 1e-9, "коррупция");
+  });
+  await test("Враждебная корпорация: нет бонусов, саботаж стабильности и ВВП", () => {
+    const c = MM.SAMPLES[0].make(); c.corp = { militech: { pres: 6, rel: -100 } };
+    const a = MM.compute(rulesM, MM.SAMPLES[0].make()), b = MM.compute(rulesM, c), W = 6 * 1.6;
+    near(b.ovp, a.ovp, 1e-9, "ОВП");
+    near(b.d_stab, a.d_stab - W * 0.4, 1e-9, "стабильность");
+    assert(b.gdp < a.gdp, "ВВП не упал");
+  });
+  await test("Государство в государстве: влияние группы ARC складывается, суверенитет падает", () => {
+    const c = MM.SAMPLES[1].make(); c.corp = { militech: { pres: 4, rel: 20 }, arc_rec: { pres: 4, rel: 20 } };
+    const b = MM.compute(rulesM, c), m = corpOf(b, "militech");
+    assert(m.infl < 30 && m.groupInfl >= 30 && m.sis, "группа " + m.groupInfl);
+    assert(b.corp_sis_n === 1, "засчитано " + b.corp_sis_n);
+    near(b.sovereignty, 100 - b.corp_infl, 1e-9, "суверенитет");
+    near(b.corp_sov_pen, Math.max(0, b.corp_infl - 30) * 0.1, 1e-9, "штраф");
+  });
+  await test("Анклавы: дружественный охраняет себя, враждебный — угроза", () => {
+    const f = MM.SAMPLES[0].make(); f.corp = { arasaka: { pres: 2, rel: 30, enc: 2 } };
+    const h = MM.SAMPLES[0].make(); h.corp = { arasaka: { pres: 2, rel: -30, enc: 2 } };
+    const a = MM.compute(rulesM, MM.SAMPLES[0].make()), rf = MM.compute(rulesM, f), rh = MM.compute(rulesM, h);
+    near(rf.garr_have - a.garr_have, 1, 1e-9, "охрана"); near(rh.garr_need - a.garr_need, 2, 1e-9, "угроза");
+    assert(rf.security > a.security && rh.security < a.security, "безопасность");
+  });
+  await test("Договор с союзом действует на членов, значение страны важнее", () => {
+    const rl = MM.defaultRules();
+    rl.tables.bloc.push({ id: "b1", name: "Тихоокеанская лига", kind: "pol", desc: "" });
+    rl.tables.cdeal.push({ corp: "orbital", bloc: "b1", pres: 4, rel: 50, note: "" });
+    const out = MM.SAMPLES[1].make(), mem = MM.SAMPLES[1].make(); mem.blocs = ["b1"];
+    const ro = MM.compute(rl, out), rm = MM.compute(rl, mem), o = corpOf(rm, "orbital");
+    assert(o.pres === 4 && o.rel === 50 && o.via === "Тихоокеанская лига", JSON.stringify(o));
+    near(rm.launch_cap / ro.launch_cap, 1 + 6 * 4 * 1.2 * 0.75 / 100, 1e-9, "пуски");
+    mem.corp = { orbital: { pres: 0 } };
+    assert(corpOf(MM.compute(rl, mem), "orbital").pres === 0, "страна не вышла из договора");
+  });
+  await test("Сводка корпораций по миру: выручка, группа, рейтинг", () => {
+    const a = MM.SAMPLES[0].make(), b = MM.SAMPLES[1].make();
+    a.corp = { militech: { pres: 5, rel: 40 } }; b.corp = { militech: { pres: 3, rel: -20 }, arc_int: { pres: 2, rel: 0 } };
+    const all2 = MM.computeAll(rulesM, { a, b }), cw = MM.corpWorld(rulesM, all2.results);
+    near(cw.militech.rev, corpOf(all2.results.a, "militech").rev + corpOf(all2.results.b, "militech").rev, 1e-9, "выручка");
+    assert(cw.militech.n === 2 && cw.militech.hostile.length === 1 && cw.militech.rank === 1, "Militech");
+    near(cw.arc.grp, cw.arc.rev + cw.militech.rev + cw.arc_int.rev + cw.arc_rec.rev, 1e-9, "группа ARC");
+  });
+
   await test("data/mech.json: структура и шифровки", async () => {
     const mj = await json("../data/mech.json");
     assert(mj.v === 1 && mj.turn >= 1 && typeof mj.countries === "object", "структура");

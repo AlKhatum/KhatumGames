@@ -1333,7 +1333,7 @@
   window.addEventListener("keydown", e => {
     if (!$("page-map").classList.contains("active")) return;
     if (document.body.classList.contains("moon-mode")) return; // на Луне свои клавиши
-    if (e.target.matches && e.target.matches("input, textarea, select")) return;
+    if (e.target.matches && (e.target.matches("input, textarea, select") || e.target.isContentEditable)) return;
     if (!$("modal").classList.contains("hidden")) return;
     if (e.key === "Escape" && popCity) closeCityPop();
     else if (e.key === "Escape" && !stateCard.classList.contains("hidden") && sel) { stateCardClosed = sel.id; stateCard.classList.add("hidden"); if (!gm) return; }
@@ -1446,7 +1446,10 @@
     const types = state.satTypes || {};
     satUi.items = Object.values(state.satellites || {}).sort((a, b) => a.name.localeCompare(b.name, "ru")).map(raw => {
       const t = types[raw.type] || { name: "Без типа", color: "#ffffff", shape: "dot" };
-      return { raw, s: { id: raw.id, name: raw.name, note: raw.note || "", color: t.color, shape: t.shape, typeName: t.name }, on: !satUi.hidden[raw.id], pos: null, ring: null, screen: null };
+      // значок — по типу (типы как в калькуляторе и Excel), цвет — страны-владельца; без владельца — международный, цвет типа
+      const own = raw.owner && state.countries[raw.owner];
+      const ownerName = own ? window.KG.lines.oneLine(own.name) : "";
+      return { raw, s: { id: raw.id, name: raw.name, note: raw.note || "", color: own ? own.color : t.color, shape: t.shape, typeName: t.name, ownerName }, on: !satUi.hidden[raw.id], pos: null, ring: null, screen: null };
     });
     if (satUi.sel && !(state.satellites || {})[satUi.sel]) satUi.sel = null;
     // спутник, попавший в столкновение, после его момента исчезает (вместо него — облако обломков)
@@ -1462,7 +1465,9 @@
   const debrisList = () => Object.values(state.debris || {}).sort((x, y) => Date.parse(x.t) - Date.parse(y.t));
   const debrisCache = new Map();
   function debrisCloud(ev) {
-    const pa = (state.satellites || {})[ev.a], pb = ev.b ? (state.satellites || {})[ev.b] : null;
+    // мусор Великой ошибки: родителей нет среди спутников, их орбиты лежат в самом событии (src)
+    const src = Array.isArray(ev.src) && ev.src.length ? ev.src : null;
+    const pa = src ? src[0] : (state.satellites || {})[ev.a], pb = src ? src[1] || null : ev.b ? (state.satellites || {})[ev.b] : null;
     if (!pa) return null;
     const key = JSON.stringify([ev.t, ev.n, ev.dv, ev.seed, pa, pb]);
     let c = debrisCache.get(ev.id);
@@ -1477,13 +1482,23 @@
   function updateDebris() {
     satUi.debris = [];
     if (!satUi.showDebris) return;
-    for (const ev of debrisList()) {
+    const realNow = performance.now(), list = debrisList();
+    // мусор Великой ошибки — десятки тысяч точек: считаем и рисуем каждую step-ю (≈10 тыс. на компьютере, 5 тыс. на телефоне;
+    // если кадр всё равно тяжёлый, глобус увеличивает satUi.debrisStride)
+    let legacyN = 0;
+    for (const ev of list) if (ev.src) { const c = debrisCloud(ev); if (c) legacyN += c.cloud.count; }
+    const legacyStep = Math.max(Math.ceil(legacyN / (innerWidth < 700 ? 5000 : 10000)) || 1, satUi.debrisStride || 1);
+    for (const ev of list) {
       const c = debrisCloud(ev); if (!c) continue;
-      const n = Sat.debrisAt(c.cloud, satUi.time, c.pts);
-      if (!n) continue;
+      // старое облако (мусор Великой ошибки, давние удары) пересчитываем не чаще 12 раз в секунду
       const age = (satUi.time - c.cloud.t) / 1000;
+      const old = ev.src || age > 3600, step = ev.src ? legacyStep : 1;
+      const jumped = c.simT == null || Math.abs(satUi.time - c.simT) > Math.max(5000, satUi.speed * 1000);
+      if (!old || jumped || c.step !== step || realNow - (c.realT || 0) > 80) { c.n = Sat.debrisAt(c.cloud, satUi.time, c.pts, step); c.simT = satUi.time; c.realT = realNow; c.step = step; }
+      const n = c.n;
+      if (!n) continue;
       const flash = age < FLASH ? c.cloud.origins.map(o => Object.assign(Sat.toBody(o, Sat.gmst(satUi.time)), { age, life: FLASH })) : [];
-      satUi.debris.push({ id: ev.id, pts: c.pts, xy: c.xy, count: n, color: ev.color || "#ffd27a", flash });
+      satUi.debris.push({ id: ev.id, pts: c.pts, xy: c.xy, count: n, step: c.step, color: ev.color || "#ffd27a", flash, legacy: !!ev.src });
     }
   }
   function globeShow() {
@@ -1583,7 +1598,6 @@
     frame.classList.toggle("globe-mode", mode === "globe");
     $("globeWrap").classList.toggle("hidden", mode !== "globe");
     $("satPanel").classList.toggle("hidden", mode !== "globe");
-    document.querySelectorAll("#viewSwitch button").forEach(b => b.classList.toggle("active", b.dataset.view === mode));
     if (mode === "globe") {
       const c = Geo.toLL((viewport.clientWidth / 2 - tx) / s, (viewport.clientHeight / 2 - ty) / s);
       globe.lat = Math.max(-60, Math.min(70, c[0])) * Math.PI / 180; globe.lon = c[1] * Math.PI / 180;
@@ -1595,18 +1609,101 @@
     }
     setTool(mode === "globe" ? "pan" : tool);
   }
-  function markViewButtons(v) { document.querySelectorAll("#viewSwitch button").forEach(b => b.classList.toggle("active", b.dataset.view === v)); }
+  // ---------- Солнечная система → объект (Земля, Луна) → привычная карта / проекция шара ----------
+  // Адрес: #map (система), #map/earth/flat, #map/earth/globe, #map/moon/flat, #map/moon/globe
+  const BODIES = { earth: "Земля", moon: "Луна" };
+  let body = null, proj = "flat";
+  function markViewButtons() {
+    document.querySelectorAll("#viewSwitch [data-proj]").forEach(b => b.classList.toggle("active", b.dataset.proj === proj));
+    $("vsBody").textContent = BODIES[body] || "";
+  }
   async function openMoon(globeView) {
     await setView3("flat");
-    markViewButtons("moon");
-    if (globeView) window.KGMoon.open3d(); else window.KGMoon.open();
+    const M = window.KGMoon;
+    await M.open();
+    const sb = document.querySelector('#moonSubSwitch [data-msub="' + (globeView ? "globe" : "flat") + '"]');
+    if (sb && !sb.classList.contains("active")) sb.click();
   }
-  document.querySelectorAll("#viewSwitch button").forEach(b => b.addEventListener("click", async () => {
-    if (b.dataset.view === "moon") { openMoon(false); return; }
+  function showSolar(on) {
+    $("solar").classList.toggle("hidden", !on);
+    document.body.classList.toggle("solar-mode", on);
+    if (on) { $("solarPick").classList.add("hidden"); drawSolar(); }
+  }
+  async function showBody(b, p) {
+    if (!BODIES[b]) {
+      body = null;
+      if (window.KGMoon && window.KGMoon.active) window.KGMoon.close();
+      showSolar(true);
+      return;
+    }
+    p = p === "globe" ? "globe" : "flat";
+    showSolar(false);
+    body = b; proj = p; markViewButtons();
+    if (b === "moon") { await openMoon(p === "globe"); return; }
     if (window.KGMoon && window.KGMoon.active) window.KGMoon.close();
-    await setView3(b.dataset.view);
-    markViewButtons(b.dataset.view);
-  }));
+    await setView3(p);
+    if (p === "flat") requestAnimationFrame(fit);
+  }
+  document.querySelectorAll("#viewSwitch [data-proj]").forEach(b => b.addEventListener("click", () => window.KG.go("map/" + (body || "earth") + "/" + b.dataset.proj, true)));
+  document.querySelector('#viewSwitch [data-view="solar"]').addEventListener("click", () => window.KG.go("map"));
+  // схема Солнечной системы (SVG): Земля и Луна доступны, остальные планеты — «недоступно»
+  const PLANETS = [
+    ["mercury", "Меркурий", 70, 5, "#b9b2a6", 200], ["venus", "Венера", 112, 9, "#e8c98a", 320], ["earth", "Земля", 160, 11, "#3fa2ff", 25],
+    ["mars", "Марс", 210, 7, "#e0603a", 140], ["jupiter", "Юпитер", 290, 24, "#d9a877", 220], ["saturn", "Сатурн", 365, 20, "#e6cf8f", 300],
+    ["uranus", "Уран", 430, 13, "#8fe3ea", 95], ["neptune", "Нептун", 490, 13, "#4f7dff", 175]];
+  let solarDrawn = false;
+  function drawSolar() {
+    if (solarDrawn) return;
+    solarDrawn = true;
+    const svg = $("solarSvg"), NS = "http://www.w3.org/2000/svg", cx = 500, cy = 300, k = 0.36; // эллипсы: наклон плоскости
+    const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const a in attrs) e.setAttribute(a, attrs[a]); (parent || svg).appendChild(e); return e; };
+    const defs = el("defs", {});
+    const g = el("radialGradient", { id: "sunG" }, defs);
+    el("stop", { offset: "0%", "stop-color": "#fff7c2" }, g); el("stop", { offset: "45%", "stop-color": "#ffc23d" }, g); el("stop", { offset: "100%", "stop-color": "rgba(255,120,30,0)" }, g);
+    for (const [, , r] of PLANETS) el("ellipse", { cx, cy, rx: r, ry: r * k, class: "orbit" });
+    el("circle", { cx, cy, r: 46, fill: "url(#sunG)", class: "sun" });
+    el("text", { x: cx, y: cy + 60, class: "s-name sun-name" }).textContent = "Солнце";
+    for (const [id, name, r, size, color, ang] of PLANETS) {
+      const a = ang * Math.PI / 180, x = cx + r * Math.cos(a), y = cy + r * k * Math.sin(a);
+      const ok = !!BODIES[id];
+      const grp = el("g", { class: "planet" + (ok ? " ok" : " off"), "data-body": id, tabindex: ok ? "0" : "-1" });
+      el("title", {}, grp).textContent = ok ? name + " — открыть" : name + " — недоступно";
+      if (id === "saturn") el("ellipse", { cx: x, cy: y, rx: size * 1.9, ry: size * 0.55, class: "ring" }, grp);
+      el("circle", { cx: x, cy: y, r: size + 10, class: "halo" }, grp);
+      el("circle", { cx: x, cy: y, r: size, fill: color, class: "ball" }, grp);
+      el("text", { x, y: y + size + 18, class: "s-name" }, grp).textContent = name;
+      if (!ok) el("text", { x, y: y + size + 31, class: "s-off" }, grp).textContent = "недоступно";
+      if (id === "earth") {
+        // Луна рядом с Землёй
+        const mg = el("g", { class: "planet ok moon-b", "data-body": "moon", tabindex: "0" });
+        el("title", {}, mg).textContent = "Луна — открыть";
+        el("circle", { cx: x + 30, cy: y - 16, r: 12, class: "halo" }, mg);
+        el("circle", { cx: x + 30, cy: y - 16, r: 4.5, fill: "#cfd3dc", class: "ball" }, mg);
+        el("text", { x: x + 30, y: y - 27, class: "s-name" }, mg).textContent = "Луна";
+      }
+    }
+    const pick = id => {
+      if (!BODIES[id]) return;
+      $("solarPickName").textContent = BODIES[id];
+      $("solarPickEarth").classList.toggle("hidden", id !== "earth");
+      $("solarPickMoon").classList.toggle("hidden", id !== "moon");
+      $("solarPick").dataset.body = id;
+      $("solarPick").classList.remove("hidden");
+    };
+    svg.addEventListener("click", e => { const p = e.target.closest(".planet.ok"); if (p) pick(p.dataset.body); });
+    svg.addEventListener("keydown", e => { const p = e.target.closest(".planet.ok"); if (p && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); pick(p.dataset.body); } });
+  }
+  $("solarPickClose").addEventListener("click", () => $("solarPick").classList.add("hidden"));
+  document.querySelectorAll("#solarPick [data-proj]").forEach(b => b.addEventListener("click", () => window.KG.go("map/" + $("solarPick").dataset.body + "/" + b.dataset.proj)));
+  // маршрут карты: ждём загрузки данных, затем показываем нужный объект
+  let mapReadyResolve, stateReadyResolve; const mapReady = new Promise(r => (mapReadyResolve = r)), stateReady = new Promise(r => (stateReadyResolve = r));
+  window.addEventListener("routechange", async e => {
+    if (e.detail.tab !== "map") return;
+    const [, b, p] = e.detail.parts;
+    if (!BODIES[b]) { showBody(null); return; }
+    await mapReady;
+    showBody(b, p);
+  });
 
   // панель спутников
   function buildSatList() {
@@ -1614,7 +1711,7 @@
     for (const it of satUi.items) {
       const r = document.createElement("div"); r.className = "sat-row"; r.dataset.id = it.s.id;
       r.innerHTML = `<input type="checkbox" ${it.on ? "checked" : ""} title="Показывать"><span class="sat-dot" style="background:${it.s.color};box-shadow:0 0 6px ${it.s.color}"></span>` +
-        `<span class="sat-name">${esc(it.s.name)}</span><span class="sat-type">${esc(it.s.typeName)}${isFinite(it.deadAt) ? ` <span title="Столкновение «${esc(it.deadBy)}», ${esc(fmtUtc(it.deadAt))}">💥</span>` : ""}</span>` +
+        `<span class="sat-name" title="${esc(it.s.ownerName || "Международный")}">${esc(it.s.name)}</span><span class="sat-type" title="${esc(it.s.typeName + " · " + (it.s.ownerName || "международный"))}">${esc(it.s.typeName)}${isFinite(it.deadAt) ? ` <span title="Столкновение «${esc(it.deadBy)}», ${esc(fmtUtc(it.deadAt))}">💥</span>` : ""}</span>` +
         (gm ? `<button class="c-go sat-edit" title="Изменить">✎</button><button class="c-del sat-del" title="Удалить">✕</button>` : "");
       r.querySelector("input").addEventListener("change", e => { it.on = e.target.checked; satUi.hidden[it.s.id] = !it.on; globeDirty(); });
       r.addEventListener("click", e => {
@@ -1720,9 +1817,11 @@
   }
   window.KGForm = (t, f, v, val) => openForm(t, f, Object.assign({}, v, { __opts: { validate: val } }));
   const typeOptions = () => Object.values(state.satTypes || {}).map(t => [t.id, t.name]);
+  const ownerOptions = () => [["", "— международный —"]].concat(Object.values(state.countries || {}).map(c => [c.id, window.KG.lines.oneLine(c.name)]).sort((a, b) => a[1].localeCompare(b[1], "ru")));
   const SAT_FIELDS = () => [
     { key: "name", label: "Название" },
     { key: "type", label: "Тип", type: "select", options: typeOptions() },
+    { key: "owner", label: "Страна-владелец", type: "select", options: ownerOptions(), hint: "Цвет спутника на глобусе — цвет страны. Число спутников по типам держите таким же, как в калькуляторе ГМа" },
     { key: "note", label: "Описание" },
     { key: "orbit", label: "Орбита", type: "select", options: Object.entries(Sat.ORBITS) },
     { key: "h", label: "Высота, км", type: "number", min: 160, show: v => v.orbit === "circ", hint: "МКС ≈ 420, навигация ≈ 20 000" },
@@ -1738,12 +1837,14 @@
     if (!gm) return;
     if (!Object.keys(state.satTypes || {}).length) { toast("Сначала создайте тип спутника"); return; }
     const before = id ? state.satellites[id] : null;
-    const base = before ? clone(before) : { name: "", type: Object.keys(state.satTypes)[0], note: "", orbit: "circ", h: 400, hp: 500, ha: 20000, argp: 270, i: 51.6, raan: 0, phase: 0, lon: 0 };
+    const base = before ? clone(before) : { name: "", type: Object.keys(state.satTypes)[0], owner: "", note: "", orbit: "circ", h: 400, hp: 500, ha: 20000, argp: 270, i: 51.6, raan: 0, phase: 0, lon: 0 };
+    if (base.owner == null) base.owner = "";
     base.__opts = { validate: Sat.validate };
     const v = await openForm(before ? "Спутник: " + before.name : "Новый спутник", SAT_FIELDS(), base);
     if (!v) return;
     const nid = before ? id : uid("sat");
     const rec = { id: nid, name: v.name, type: v.type, note: v.note, orbit: v.orbit };
+    if (v.owner && state.countries[v.owner]) rec.owner = v.owner;
     if (v.orbit === "geo") rec.lon = v.lon;
     else {
       Object.assign(rec, { i: v.i, raan: v.raan || 0, phase: v.phase || 0 });
@@ -1787,6 +1888,21 @@
   const toInputUtc = ms => new Date(ms).toISOString().slice(0, 16); // для поля «дата и время» в UTC
   async function editDebris(id) {
     if (!gm) return;
+    const old = id ? state.debris[id] : null;
+    if (old && Array.isArray(old.src)) {
+      // облако Великой ошибки: орбиты разрушенных аппаратов не меняем — только название, плотность, разлёт и цвет
+      const base = Object.assign(clone(old), { __opts: { validate: v => (!v.name ? "Укажите название" : !(v.n >= 50 && v.n <= 3000) ? "Обломков — от 50 до 3000" : !(v.dv >= 10 && v.dv <= 1000) ? "Разлёт — от 10 до 1000 м/с" : "") } });
+      const v = await openForm("Мусор Великой ошибки: " + old.name, [
+        { key: "name", label: "Название" },
+        { key: "n", label: "Обломков", type: "number", min: 50, max: 3000, step: 50, hint: "Облака мусора Великой ошибки задают индекс Кесслера на старте" },
+        { key: "dv", label: "Разлёт, м/с", type: "number", min: 10, max: 1000, step: 10 },
+        { key: "color", label: "Цвет обломков", type: "color" }
+      ], base);
+      if (!v) return;
+      commit("debris", id, old, Object.assign(clone(old), { name: v.name, n: Math.round(v.n), dv: Math.round(v.dv), color: v.color }));
+      refreshSats();
+      return;
+    }
     const sats = Object.values(state.satellites || {}).sort((a, b) => a.name.localeCompare(b.name, "ru"));
     if (!sats.length) { toast("Сначала добавьте спутник"); return; }
     const before = id ? state.debris[id] : null;
@@ -1855,7 +1971,7 @@
       return;
     }
     const p = it.pos, ns = p.lat >= 0 ? "с. ш." : "ю. ш.", ew = p.lon >= 0 ? "в. д." : "з. д.";
-    const html = `<b style="color:${it.s.color}">${esc(it.s.name)}</b> · ${esc(it.s.typeName)}${it.s.note ? " — " + esc(it.s.note) : ""}<br>` +
+    const html = `<b style="color:${it.s.color}">${esc(it.s.name)}</b> · ${esc(it.s.typeName)} · ${esc(it.s.ownerName || "международный")}${it.s.note ? " — " + esc(it.s.note) : ""}<br>` +
       `Высота ${Math.round(p.alt).toLocaleString("ru-RU")} км · скорость ${Sat.speed(it.raw, p.alt).toFixed(2).replace(".", ",")} км/с · виток ${Sat.fmtPeriod(Sat.period(it.raw))}<br>` +
       `Над точкой ${Math.abs(p.lat).toFixed(1)}° ${ns}, ${Math.abs(p.lon).toFixed(1)}° ${ew}`;
     if (box.dataset.h !== html) { box.innerHTML = html; box.dataset.h = html; }
@@ -1904,7 +2020,7 @@
       let city = null, cd = 10;
       for (const c of (globe.cities || [])) { if (!c.screen) continue; const dd = Math.hypot(c.screen[0] - mx, c.screen[1] - my); if (dd < Math.max(cd, c.screen[2])) { cd = dd; city = c; } }
       if (city) { const fr = frame.getBoundingClientRect(); sel = { col: "cities", id: city.id }; showCityPop(city.id, [rc.left - fr.left + city.screen[0], rc.top - fr.top + city.screen[1]]); return; }
-      if (satUi.moon && satUi.moon.screen && Math.hypot(satUi.moon.screen[0] - mx, satUi.moon.screen[1] - my) < Math.max(14, satUi.moon.screen[2])) { openMoon(true); return; }
+      if (satUi.moon && satUi.moon.screen && Math.hypot(satUi.moon.screen[0] - mx, satUi.moon.screen[1] - my) < Math.max(14, satUi.moon.screen[2])) { window.KG.go("map/moon/globe"); return; }
       const ll = globe.unproject(mx - rc.width / 2, my - rc.height / 2);
       if (!ll) { selProv = null; select(null); return; }
       const [x, y] = Geo.toXY(ll[0], ll[1]);
@@ -2043,6 +2159,7 @@
         fetch("data/map.json" + bust, { cache: "no-store" }).then(r => r.json())
       ]);
       config = cfg; state = st; loadedStamp = st.updated || "";
+      stateReadyResolve();
       for (const c of COLS) state[c] = state[c] || {};
       // растры привязаны к времени публикации: браузер берёт их из кэша, пока карту не обновят
       const ver = "?v=" + encodeURIComponent(loadedStamp || String(Date.now()));
@@ -2065,6 +2182,7 @@
       updUndo();
       $("mapLoading").classList.add("hidden");
       requestAnimationFrame(fit);
+      mapReadyResolve();
       // провинции — уже после показа карты
       const t1 = performance.now();
       await P.load("data/provinces.png" + ver, T.land);
@@ -2083,5 +2201,5 @@
   setTool("pan");
   requestAnimationFrame(fit);
   load();
-  window.KGMap = { get state() { return state; }, login, select, setTool, fit, T, setView3, measures, get globe() { return globe; }, get view() { return { s, tx, ty }; }, get gm() { return gm; }, get fonts() { return currentFonts(); }, get fontScale() { return fontScales(); }, get sat() { return satUi; } };
+  window.KGMap = { get state() { return state; }, ready: () => mapReady, stateReady: () => stateReady, login, logout, select, setTool, fit, T, setView3, measures, get globe() { return globe; }, get view() { return { s, tx, ty }; }, get gm() { return gm; }, get fonts() { return currentFonts(); }, get fontScale() { return fontScales(); }, get sat() { return satUi; } };
 })();

@@ -108,8 +108,27 @@
       ["rod_power", "«Стержни Бога»: мощь 1 удара", 40, "очки", "× множитель технологий"],
       ["rod_tension", "«Стержни Бога»: напряжение за 1 удар/ход", 10, "пунктов", ""],
       ["asat", "ПСО: перехватов за ход с 1 спутника", 1, "спутников", ""],
-      ["debris_base", "Орбитальный мусор со времён Великой ошибки", 0.25, "индекс", ""],
-      ["kessler_cap", "Порог синдрома Кесслера", 400, "спутников", ""]
+      ["debris_base", "Орбитальный мусор со времён Великой ошибки", 0.28, "индекс", "Облака обломков на глобусе"],
+      ["kessler_cap", "Порог синдрома Кесслера", 400, "спутников", ""],
+      ["kessler_loss", "Потери спутников от мусора при индексе 1", 0.1, "доля за ход", "Потери = спутники × индекс Кесслера × K"],
+      ["kessler_launch", "Удорожание запусков при индексе 1", 1, "доля", "Удорожание = индекс Кесслера × K"]
+    ]],
+    ["Корпорации", [
+      ["corp_ben", "Отдача корпорации при нейтральных отношениях", 0.5, "доля", "При отношениях +100 — полная отдача, при −100 — никакой"],
+      ["corp_share", "Доля ВВП под контролем корпорации за 1 ед. веса", 0.03, "доля", "Вес = присутствие (0–10) × масштаб корпорации"],
+      ["enclave_share", "Доля ВВП за 1 экстерриториальный анклав", 0.02, "доля", ""],
+      ["corp_share_cap", "Предел доли ВВП под контролем корпораций", 0.8, "доля", ""],
+      ["corp_tax", "Уход корпораций от налогов", 0.4, "доля", "Какая часть корпоративного ВВП не платит налоги"],
+      ["corp_infl", "Влияние за 1 ед. веса", 3, "пунктов", "× коэффициент влияния отрасли"],
+      ["enclave_infl", "Влияние за 1 анклав", 5, "пунктов", ""],
+      ["corp_corr", "Коррупция за 1 пункт влияния", 0.15, "пунктов", "Лоббизм и взятки"],
+      ["corp_infl_safe", "Терпимое влияние корпораций", 30, "пунктов", "Сверх него общество теряет стабильность"],
+      ["corp_sov_stab", "Штраф стабильности за пункт влияния сверх терпимого", 0.1, "пункта за ход", ""],
+      ["corp_sis", "Порог «государства в государстве»", 30, "пунктов", "Влияние одной корпорации или её группы в стране"],
+      ["corp_host_stab", "Саботаж: стабильность за 1 ед. веса при отношениях −100", 0.4, "пункта за ход", ""],
+      ["corp_host_gdp", "Саботаж: потеря ВВП за 1 ед. веса при отношениях −100", 1, "%", ""],
+      ["enclave_garr", "Охрана дружественного анклава", 0.5, "дивизий", "Засчитывается в гарнизоны"],
+      ["enclave_threat", "Угроза враждебного анклава", 1, "дивизий", "Добавляется к потребности в гарнизонах"]
     ]],
     ["Индекс национальной мощи (сумма весов = 1)", [
       ["w_gdp", "Вес ВВП", 0.3, "доля", ""],
@@ -166,8 +185,129 @@
     tier: { title: "Уровни экономики", fields: [["min", "Порог ВВП на душу, тыс. кр.", "num"], ["name", "Уровень", "text"], ["desc", "Описание", "text"]],
       rows: [["t0", 0, "Экономика выживания", "Натуральный обмен, пайки, чёрный рынок"], ["t1", 5, "Восстанавливающаяся", "Базовая промышленность, зависимость от импорта"],
         ["t2", 10, "Развивающаяся", "Устойчивое производство, первые экспортные отрасли"], ["t3", 18, "Индустриальная", "Мощная промышленность, собственный ВПК"],
-        ["t4", 28, "Развитая", "Сильный сектор услуг, космическая программа"], ["t5", 40, "Высокотехнологичная", "Лидер науки и орбитальной инфраструктуры"]] }
+        ["t4", 28, "Развитая", "Сильный сектор услуг, космическая программа"], ["t5", 40, "Высокотехнологичная", "Лидер науки и орбитальной инфраструктуры"]] },
+    // ----- корпорации -----
+    // отрасль: что даёт 1 ед. веса корпорации при полной отдаче (отношения +100)
+    csector: { title: "Отрасли корпораций", note: "Эффект за 1 ед. веса корпорации при отношениях +100. Вес = присутствие × масштаб.",
+      fields: [["name", "Отрасль", "text"], ["gdp", "ВВП, %", "num"], ["pm", "ПМ, %", "num"], ["en", "Энергия, %", "num"], ["food", "Еда, %", "num"], ["water", "Вода, %", "num"],
+        ["ovp", "ОВП, %", "num"], ["mil", "Воен. мощь, %", "num"], ["sec", "Безопасность, %", "num"], ["tech", "Технологии, + за ход", "num"], ["health", "Здоровье, +", "num"],
+        ["access", "Доступ к рынкам, +", "num"], ["launch", "Пуски, %", "num"], ["stab", "Стабильность, + за ход", "num"], ["infl", "Коэф. влияния", "num"]],
+      rows: [
+        ["conglo", "Многопрофильный конгломерат", 1.2, 0.8, 0, 0, 0, 1, 0.3, 1, 0.004, 0, 0.01, 0, 0, 1.3],
+        ["arms", "Оружие и ВПК", 0.6, 0.3, 0, 0, 0, 3, 0.8, 0, 0.002, 0, 0, 0, 0, 1],
+        ["pmc", "Безопасность и ЧВК", 0.2, 0, 0, 0, 0, 0, 0.5, 3, 0, 0, 0, 0, 0.1, 1],
+        ["intel", "Разведка и тайные операции", 0.1, 0, 0, 0, 0, 0, 0.6, 1.5, 0.002, 0, 0, 0, 0, 1.5],
+        ["energy", "Энергетика и топливо", 0.8, 0.3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1.1],
+        ["agro", "Биотех и продовольствие", 0.5, 0, 0, 3, 0, 0, 0, 0, 0.002, 0.004, 0, 0, 0, 0.8],
+        ["water", "Вода и береговая инженерия", 0.5, 0, 0, 0.5, 3, 0, 0, 0, 0, 0, 0, 0, 0.1, 1],
+        ["med", "Медицина", 0.3, 0, 0, 0, 0, 0, 0, 0, 0, 0.015, 0, 0, 0.1, 0.7],
+        ["cyber", "Кибернетика и электроника", 0.8, 1, 0, 0, 0, 0, 0.2, 0, 0.008, 0, 0, 0, 0, 0.9],
+        ["net", "Сеть и связь", 1, 0, 0, 0, 0, 0, 0, 0.5, 0.003, 0, 0.01, 0, 0, 1.3],
+        ["media", "Медиа", 0.3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.25, 1.6],
+        ["space", "Космос и орбита", 0.4, 0, 0, 0, 0, 0, 0, 0, 0.004, 0, 0, 6, 0, 0.8],
+        ["transport", "Транспорт и логистика", 0.7, 0.3, 0, 0, 0, 0, 0, 0, 0, 0, 0.02, 0, 0, 0.8],
+        ["finance", "Финансы и банки", 1.5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1.8]] },
+    corp: { title: "Корпорации", note: "Транснациональные корпорации ведёт ГМ, а не игроки. Масштаб: от 0,3 (региональная) до 2 (сверхкорпорация).",
+      fields: [["name", "Корпорация", "text"], ["sector", "Отрасль", "sel", R => R.tables.csector.map(s => [s.id, s.name])],
+        ["parent", "Входит в", "sel", R => [["", "—"]].concat(R.tables.corp.map(s => [s.id, s.name]))], ["hq", "Штаб-квартира", "text"],
+        ["scale", "Масштаб", "num"], ["cap", "Капитализация, млрд кр.", "num"], ["desc", "Описание", "text"]],
+      rows: [
+        ["arc", "ARC", "conglo", "", "Денвер, Скалистые горы", 2, 5200,
+          "American Reclamation Corporation, Американская корпорация восстановления. Выросла из чрезвычайного агентства, которое во время Великой ошибки строило дамбы и вывозило людей из тонущих прибрежных штатов. Когда федеральная власть распалась, агентство выкупило собственные контракты и стало частной сверхкорпорацией. ARC отвоёвывает сушу у моря, держит разведсеть, которой завидуют государства, а через Militech вооружает полмира. Девиз: «Вернём то, что забрал океан»."],
+        ["militech", "Militech", "arms", "arc", "Новый Вашингтон, Аппалачи", 1.6, 3100,
+          "Оружейный гигант и оборонное подразделение ARC. Старая штаб-квартира ушла под воду вместе с Вашингтоном, и Militech вошла в ARC в обмен на дамбы, земли и заказы. Стрелковое оружие, бронетехника, ударные БПЛА, боевые экранопланы и корабли для новых морей. Сдаёт в аренду собственные батальоны, поэтому её контракт порой стоит дороже союза с соседом."],
+        ["arc_rec", "ARC Reclamation", "water", "arc", "Денвер, Скалистые горы", 1.2, 1400,
+          "Строительное крыло ARC: дамбы, польдеры, опреснительные каскады, насыпные острова. Там, где она работает, у моря отбирают километры суши и строят новые кварталы-ковчеги. Цена: земля за дамбой остаётся собственностью ARC."],
+        ["arc_int", "Директорат ARC", "intel", "arc", "Денвер, Скалистые горы", 1, 600,
+          "Частная служба разведки и тайных операций ARC. Следит за конкурентами, вербует министров и при нужде меняет правительства. Официально занимается «аналитикой рисков»."],
+        ["arasaka", "Arasaka", "conglo", "", "Токио, за дамбой Канто", 1.9, 4800,
+          "Японская мегакорпорация: безопасность, банки, промышленность. Пережила Потоп за дамбой Канто и превратила свои башни в экстерриториальные анклавы в десятках мегаполисов. Арасака охраняет, кредитует и производит, а местный закон действует только до порога её башни."],
+        ["kangtao", "Kang Tao", "arms", "", "Чунцин", 1.3, 1900,
+          "Китайский производитель «умного» оружия, боевых дронов и бронированных конвертопланов. Главный соперник Militech на азиатских рынках, тесно связан с правительствами Восточной Азии."],
+        ["biotech", "Biotechnica", "agro", "", "Милан", 1.3, 2100,
+          "Генная инженерия, синтетический белок, сорта, устойчивые к соли и радиации. Кормит мегаполисы гидропоникой и выпускает биотопливо CHOOH2. Из-за её патентов на семена целые страны живут по лицензии."],
+        ["petrochem", "Petrochem", "energy", "", "Даллас", 1.3, 2300,
+          "Топливо, химия, синтетическое горючее. Держит заводы CHOOH2 и плавучие платформы на затопленных шельфах, а её охрана воюет за месторождения наравне с армиями."],
+        ["sovoil", "SovOil", "energy", "", "Москва", 1.2, 1700,
+          "Наследница старых нефтяных компаний Евразии: арктический шельф, газ, трубопроводы через пустоши. Продаёт энергию за лояльность и умеет перекрыть вентиль."],
+        ["zetatech", "Zetatech", "cyber", "", "Солт-Лейк-Сити", 1.1, 1500,
+          "Компьютеры, ИИ, системы управления и киберимпланты. Её вычислительные ядра стоят в штабах и министерствах, её «умные» системы управляют транспортом, водой и светом мегаполисов."],
+        ["kiroshi", "Kiroshi Opticals", "cyber", "", "Нагано", 0.9, 800,
+          "Оптика и сенсоры: кибернетические глаза, камеры наблюдения, прицелы. Любая камера в мегаполисе может оказаться камерой Kiroshi, и смотрит она не только на улицу."],
+        ["dynalar", "Dynalar", "cyber", "", "Мюнхен", 0.6, 300,
+          "Протезы и кибернетические конечности для солдат и рабочих пустошей. Небольшая, но технологически сильная компания."],
+        ["trauma", "Trauma Team International", "med", "", "Атланта", 1, 900,
+          "Частная скорая помощь: бронированные конвертопланы и вооружённые медики. Платиновых подписчиков вытаскивают даже из зоны боёв. Страны без своей медицины отдают ей целые больницы."],
+        ["netwatch", "NetWatch", "net", "", "Женева", 1.1, 1100,
+          "Международная служба безопасности сетей. После Великой ошибки старая сеть кишела вышедшими из-под контроля ИИ, и NetWatch отгородила их барьером. Ей доверяют кибероборону государств, поэтому она знает о них всё."],
+        ["ziggurat", "Ziggurat", "net", "", "Бангалор", 0.9, 700,
+          "Провайдер связи: магистральные кабели по дну новых морей, спутниковые каналы, городские сети."],
+        ["n54", "Network 54", "media", "", "Мехико", 1, 950,
+          "Крупнейшая медиасеть: новости, развлечения, реклама. Решает, что жители мегаполисов считают правдой, поэтому правительства ищут её благосклонности."],
+        ["wns", "World News Service", "media", "", "Мадрид", 0.8, 500,
+          "Международное агентство новостей, соперник N54. Называет себя независимым, а его репортёры часто первыми узнают о переворотах."],
+        ["orbital", "Orbital Air", "space", "", "Кито, экваториальный космодром", 1.2, 1600,
+          "Орбитальный транспорт: пуски с экваториальных космодромов, станции, челноки, грузы на Луну. Без её стартовых столов маленькой стране орбиты не видать."],
+        ["delamain", "Delamain", "transport", "", "Торонто", 0.6, 350,
+          "Автономный транспорт под управлением ИИ: такси, грузовики, беспилотные баржи затопленных кварталов."],
+        ["thorton", "Thorton", "transport", "", "Детройт", 0.7, 420,
+          "Тяжёлая техника, амфибии и суда на воздушной подушке для пустошей и прибрежных болот. Надёжно, дёшево, чинится молотком."],
+        ["tsunami", "Tsunami Arms", "arms", "", "Тэгу", 0.7, 380,
+          "Морское вооружение: торпеды, корабельная артиллерия, противокорабельные ракеты. В затопленном мире ходовой товар."],
+        ["budget", "Budget Arms", "arms", "", "Анкара", 0.4, 120,
+          "Дешёвое оружие для ополчений, пустошей и бедных армий. Ненадёжно, зато много. Региональная компания с огромной сетью торговцев."],
+        ["lazarus", "Lazarus Group", "pmc", "", "Претория", 0.8, 450,
+          "Частная военная компания: наёмники, охрана конвоев, спецоперации по контракту. Воюет за того, кто платит, и держит базы в странах, которым не хватает своей армии."],
+        ["continental", "Continental Brands", "agro", "", "Чикаго", 1, 1000,
+          "Продукты, пайки, товары повседневного спроса. Кормит пустоши консервами, а мегаполисы — дешёвым фастфудом."],
+        ["nightcorp", "Night Corp", "water", "", "Богота", 1.1, 1300,
+          "Вода и городская инженерия: купола, опреснители, водоводы мегаполисов. Night Corp строит города и остаётся их хозяйкой: кран с пресной водой — её главный довод на любых переговорах."],
+        ["maf", "Merrill, Asukaga & Finch", "finance", "", "Цюрих", 1.2, 2000,
+          "Финансовая группа: кредиты государствам, страхование, биржи. Должники MAF сохраняют флаг и гимн, но бюджет утверждают в её офисах."],
+        ["dangergal", "Danger Gal", "intel", "", "Лас-Вегас", 0.3, 60,
+          "Частное детективное агентство: расследования, промышленный шпионаж, поиск людей. К ней обращаются и корпорации, и спецслужбы."]] },
+    bloc: { title: "Союзы и блоки", note: "Политические, экономические, военные союзы и фракции. Членство страны отмечается в её карточке, вкладка «Корпорации».",
+      fields: [["name", "Союз", "text"], ["kind", "Вид", "sel", [["pol", "Политический союз"], ["econ", "Экономический союз"], ["mil", "Военный блок"], ["fac", "Фракция"]]], ["desc", "Описание", "text"]],
+      rows: [] },
+    cdeal: { title: "Договоры корпораций с союзами", note: "Договор даёт корпорации присутствие во всех странах союза. Значение, заданное самой стране, важнее договора.",
+      fields: [["corp", "Корпорация", "sel", R => R.tables.corp.map(s => [s.id, s.name])], ["bloc", "Союз", "sel", R => (R.tables.bloc.length ? R.tables.bloc.map(s => [s.id, s.name]) : [["", "— сначала создайте союз —"]])],
+        ["pres", "Присутствие, 0–10", "num"], ["rel", "Отношения, −100…100", "num"], ["note", "Условия", "text"]],
+      rows: [] }
   };
+  // идеологии: столбцы-модификаторы [поле, показатель, режим, подпись]. Значение — % к показателю, у стабильности — пункты за ход.
+  // Те же модификаторы и те же числа — на листе «Идеологии» в «Механики_Мир2200.xlsx».
+  const IDEO_FX = [
+    ["e_stab", "d_stab", "add", "Стабильность, пунктов/ход"], ["e_tech", "d_tech", "pct", "Прирост технологий, %"], ["e_morale", "morale", "pct", "Боевой дух, %"],
+    ["e_access", "access", "pct", "Доступ к рынкам, %"], ["e_health", "health", "pct", "Здоровье нации, %"], ["e_food", "food_prod", "pct", "Продовольствие, %"],
+    ["e_pm", "pm_eff", "pct", "Промышленная мощь, %"], ["e_pop", "d_pop", "pct", "Прирост населения, %"], ["e_mop", "mop_avail", "pct", "Доступный МОП, %"],
+    ["e_energy", "en_supply", "pct", "Выработка энергии, %"], ["e_budget", "budget", "pct", "Доходы бюджета, %"]
+  ];
+  TABLES.ideo = {
+    title: "Идеологии", note: "Модификаторы государственной идеологии: % к показателю, стабильность — пункты за ход. 0 — нет эффекта. Идеология страны выбирается в её карточке («Государственная идеология»).",
+    fields: [["name", "Идеология", "text"]].concat(IDEO_FX.map(([f, , , label]) => [f, label, "num"])),
+    // порядок чисел — как в IDEO_FX
+    rows: [["purity", "Чистота", 2, -10, 5, -10, 0, 0, 0, 0, 0, 0, 0], ["divinity", "Духовность", 1, -15, 10, 0, 5, 0, 0, 0, 0, 0, 0],
+      ["harmony", "Гармония", 0, 0, 0, 0, 5, 10, -10, 10, 0, 0, 0], ["voracity", "Алчность", -2, 15, 0, 0, 5, 0, 0, 0, 10, 0, 0],
+      ["supremacy", "Верховенство", -1, 20, -5, 0, 0, 0, 5, 0, 0, 0, 0], ["mastery", "Покорение", 0, 0, 0, 0, 0, 10, 0, 0, 0, 10, -5],
+      ["balance", "Равновесие", 0, 0, -5, 10, 0, 0, 0, 0, 0, 0, 0]]
+  };
+  // идеология страны: по названию (без учёта регистра) или по id
+  function ideologyOf(rules, value) {
+    const s = String(value == null ? "" : value).trim().toLowerCase();
+    if (!s) return null;
+    return ((rules && rules.tables && rules.tables.ideo) || []).find(x => String(x.name || "").trim().toLowerCase() === s || x.id === value) || null;
+  }
+  function ideoMods(row) {
+    if (!row) return [];
+    return IDEO_FX.filter(([f]) => +row[f]).map(([f, target, mode]) => ({ id: "ideo:" + row.id + ":" + f, name: "Идеология: " + row.name, target, mode, value: +row[f] }));
+  }
+  // классы корпораций по масштабу
+  const CORP_CLASS = [[1.5, "Мегакорпорация"], [0.9, "Транснациональная корпорация"], [0, "Региональная корпорация"]];
+  const corpClass = scale => (CORP_CLASS.find(([m]) => +scale >= m) || CORP_CLASS[2])[1];
+  // каналы влияния отрасли: [поле отрасли, показатель, режим]
+  const CORP_CH = [["gdp", "gdp", "pct"], ["pm", "pm_eff", "pct"], ["en", "en_supply", "pct"], ["food", "food_prod", "pct"], ["water", "water_sup", "pct"],
+    ["ovp", "ovp", "pct"], ["mil", "total_power", "pct"], ["sec", "security", "pct"], ["tech", "d_tech", "add"], ["health", "health", "add"],
+    ["access", "access", "add"], ["launch", "launch_cap", "pct"], ["stab", "d_stab", "add"]];
   // таблицы, у которых у страны есть количество (counts)
   const COUNT_TABLES = ["energy", "industry", "food", "div", "ac", "ship", "sat"];
 
@@ -185,6 +325,8 @@
     const d = defaultRules();
     if (!r) return d;
     const K = Object.assign({}, d.K, r.K || {});
+    // правила, сохранённые до облаков мусора Великой ошибки: старое значение по умолчанию 0,25 → новое (своё значение ГМа не трогаем)
+    if (r.K && !("kessler_loss" in r.K) && r.K.debris_base === 0.25) K.debris_base = d.K.debris_base;
     const tables = {};
     for (const t in d.tables) tables[t] = Array.isArray(r.tables && r.tables[t]) ? r.tables[t] : d.tables[t];
     return { K, tables };
@@ -307,7 +449,20 @@
     asat_cap: ["ПСО → перехватов вражеских спутников", "шт./ход", "int"],
     world_sats: ["Спутников на орбите (весь мир)", "шт.", "int"], kessler: ["Индекс риска синдрома Кесслера", "индекс", "d2", "load"],
     kessler_status: ["Состояние орбиты", "", "txt"],
-    inm: ["Индекс национальной мощи (ИНМ)", "0–100", "d1", "res"], rank: ["Место в мировом рейтинге", "место", "int", "res"]
+    debris_loss: ["Ожидаемые потери спутников от мусора", "шт./ход", "d1", "", "Спутники × индекс Кесслера × K"],
+    launch_cost: ["Удорожание запусков из-за мусора", "%", "pct", "", "Индекс Кесслера × K"],
+    inm: ["Индекс национальной мощи (ИНМ)", "0–100", "d1", "res"], rank: ["Место в мировом рейтинге", "место", "int", "res"],
+    water_sup: ["Пресная вода с учётом эффектов", "млн м³/сут", "d1"],
+    corp_infl: ["Влияние корпораций", "0–100", "d1", "", "Σ вес × 3 × коэф. отрасли + анклавы × 5"],
+    sovereignty: ["Суверенитет", "0–100", "d1", "res", "100 − влияние корпораций"], corp_status: ["Положение государства", "", "txt", "res"],
+    corp_share: ["Доля ВВП под контролем корпораций", "%", "pct", "", "Σ вес × 3% + анклавы × 2%"],
+    corp_rev: ["Выручка корпораций в стране", "млрд кр.", "d1"],
+    corp_tax_loss: ["Потери бюджета: уход корпораций от налогов", "млрд кр.", "d1", "", "Доходы × доля корпораций × 0,4"],
+    corruption_eff: ["Коррупция с учётом лоббизма", "0–100", "d1", "", "Коррупция + влияние корпораций × 0,15"],
+    corp_garr: ["Охрана корпоративных анклавов (зачёт в гарнизоны)", "дивизий", "d1"],
+    corp_threat: ["Угроза враждебных анклавов", "дивизий", "d1"],
+    corp_sov_pen: ["Недовольство потерей суверенитета", "пунктов за ход", "d1", "", "(влияние − 30) × 0,1"],
+    corp_sis_n: ["Корпорации — «государство в государстве»", "шт.", "int"]
   };
 
   // ---------- модификаторы (особые эффекты ГМа) ----------
@@ -317,13 +472,96 @@
     ["mop_avail", "Доступный МОП"], ["morale", "Боевой дух"], ["readiness", "Боеготовность"],
     ["ground_power", "Мощь СВ"], ["air_power", "Мощь ВВС"], ["navy_power", "Мощь ВМФ"], ["ad_power", "Мощь ПВО/ПРО"],
     ["strat_power", "Стратегический потенциал"], ["total_power", "Совокупная военная мощь"], ["ovp", "Очки военного производства"],
-    ["d_stab", "Изменение стабильности за ход"], ["d_gdp", "Рост ВВП за ход"], ["d_tech", "Прирост технологий за ход"], ["d_pop", "Прирост населения за ход"]
+    ["d_stab", "Изменение стабильности за ход"], ["d_gdp", "Рост ВВП за ход"], ["d_tech", "Прирост технологий за ход"], ["d_pop", "Прирост населения за ход"],
+    ["health", "Здоровье нации"], ["water_sup", "Пресная вода"], ["access", "Доступ к рынкам"], ["launch_cap", "Пусковые мощности"]
   ];
 
   // ---------- расчёт ----------
   const num = v => { const n = +v; return isFinite(n) ? n : 0; };
   const dv = (a, b, d) => (b ? a / b : (d === undefined ? 0 : d));
   const min = Math.min, max = Math.max;
+
+  // ---------- корпорации в стране ----------
+  // c.corp = { idКорпорации: { pres: 0–10, rel: −100…100, enc: анклавы } } — задаёт ГМ; пустое поле = «не задано» (берётся договор союза)
+  // c.blocs = [id союзов], в которых состоит страна
+  const isSet = v => v !== undefined && v !== null && v !== "";
+  function corpPresence(rules, c) {
+    const K = rules.K, T = rules.tables;
+    const own = (c && c.corp) || {};
+    const blocs = (c && Array.isArray(c.blocs) ? c.blocs : []).map(String);
+    const blocName = {}; (T.bloc || []).forEach(b => (blocName[b.id] = b.name));
+    const deals = (T.cdeal || []).filter(d => blocs.includes(String(d.bloc)));
+    const secById = {}; (T.csector || []).forEach(s => (secById[s.id] = s));
+    const corpIds = new Set((T.corp || []).map(x => x.id));
+    const rows = [], mods = [];
+    let infl = 0, shareRaw = 0, encFriendly = 0, encHostile = 0;
+    for (const corp of T.corp || []) {
+      const o = own[corp.id] || {};
+      const deal = deals.filter(d => d.corp === corp.id).sort((a, b) => num(b.pres) - num(a.pres))[0];
+      const pres = max(0, min(10, isSet(o.pres) ? num(o.pres) : deal ? num(deal.pres) : 0));
+      const rel = max(-100, min(100, isSet(o.rel) ? num(o.rel) : deal ? num(deal.rel) : 0));
+      const enc = max(0, Math.round(num(o.enc)));
+      const sec = secById[corp.sector] || {};
+      const W = pres * max(0, num(corp.scale));
+      const B = max(0, K.corp_ben + (1 - K.corp_ben) * rel / 100);   // отдача
+      const H = max(0, -rel / 100);                                   // враждебность
+      const ci = W * K.corp_infl * (isSet(sec.infl) ? num(sec.infl) : 1) + enc * K.enclave_infl;
+      const share = W * K.corp_share + enc * K.enclave_share;
+      const group = corp.parent && corpIds.has(corp.parent) && corp.parent !== corp.id ? corp.parent : corp.id;
+      rows.push({ id: corp.id, name: corp.name, sector: corp.sector, group, pres, rel, enc, W, B, H, infl: ci, share, rev: 0,
+        via: !isSet(o.pres) && deal ? (blocName[deal.bloc] || "союз") : "" });
+      infl += ci; shareRaw += share;
+      if (rel >= 0) encFriendly += enc; else encHostile += enc;
+      if (W > 0) {
+        for (const [f, target, mode] of CORP_CH) {
+          const v = num(sec[f]) * W * B;
+          if (v) mods.push({ id: "corp:" + corp.id + ":" + f, corp: corp.id, name: corp.name, target, mode, value: v });
+        }
+        if (H > 0) {
+          mods.push({ id: "corp:" + corp.id + ":sab_stab", corp: corp.id, name: corp.name + " (саботаж)", target: "d_stab", mode: "add", value: -W * H * K.corp_host_stab });
+          mods.push({ id: "corp:" + corp.id + ":sab_gdp", corp: corp.id, name: corp.name + " (саботаж)", target: "gdp", mode: "pct", value: -W * H * K.corp_host_gdp });
+        }
+      }
+    }
+    // доля ВВП не выше предела: урезаем пропорционально
+    const share = min(K.corp_share_cap, shareRaw), k = shareRaw > 0 ? share / shareRaw : 0;
+    rows.forEach(x => (x.share *= k));
+    // «государство в государстве» — по группе (материнская корпорация + дочерние)
+    const gInfl = {};
+    rows.forEach(x => (gInfl[x.group] = (gInfl[x.group] || 0) + x.infl));
+    rows.forEach(x => {
+      x.groupInfl = gInfl[x.group];
+      x.sis = x.groupInfl >= K.corp_sis && x.infl > 0;
+      x.status = !(x.W > 0 || x.enc > 0) ? (x.rel ? "нет присутствия" : "—")
+        : (x.sis ? "Государство в государстве" : x.groupInfl >= K.corp_sis / 2 ? "Сильное лобби" : "Присутствие") + (x.rel <= -30 ? " · враждебна" : x.rel >= 50 ? " · союзник" : "");
+    });
+    // у группы «государство в государстве» засчитывается один раз — по материнской или первой найденной
+    const counted = new Set();
+    rows.forEach(x => { x.lead = x.sis && !counted.has(x.group); if (x.lead) counted.add(x.group); });
+    return { rows, mods, infl: min(100, infl), share, encFriendly, encHostile };
+  }
+  // сводка по корпорациям всего мира (для ГМа и публичного рейтинга): { id: { n, W, rev, grp, rel, sis[], hostile[], countries[] } }
+  function corpWorld(rules, results) {
+    rules = normalizeRules(rules);
+    const out = {};
+    for (const corp of rules.tables.corp) out[corp.id] = { n: 0, W: 0, rev: 0, grp: 0, rel: 0, relSum: 0, enc: 0, sis: [], hostile: [], countries: [] };
+    for (const id in results) for (const x of results[id].corp_rows || []) {
+      const o = out[x.id]; if (!o) continue;
+      o.rev += x.rev || 0;
+      if (x.W > 0 || x.enc > 0) {
+        o.n++; o.W += x.W; o.relSum += x.rel; o.enc += x.enc; o.countries.push(id);
+        if (x.sis) o.sis.push(id);
+        if (x.rel < 0) o.hostile.push(id);
+      }
+    }
+    for (const corp of rules.tables.corp) {
+      const o = out[corp.id]; o.rel = o.n ? o.relSum / o.n : 0; o.grp += o.rev;
+      if (corp.parent && out[corp.parent] && corp.parent !== corp.id) out[corp.parent].grp += o.rev;
+    }
+    const order = Object.keys(out).sort((a, b) => out[b].rev - out[a].rev);
+    order.forEach((id, i) => (out[id].rank = i + 1));
+    return out;
+  }
 
   function compute(rules, country) {
     rules = normalizeRules(rules);
@@ -333,7 +571,7 @@
     const cnt = c.cnt || {};
     const n = (t, id) => num(cnt[t] && cnt[t][id]);
     const sum = (t, f, pred) => T[t].reduce((s, row) => (!pred || pred(row) ? s + n(t, row.id) * (f ? num(row[f]) : 1) : s), 0);
-    const mods = Array.isArray(c.mods) ? c.mods : [];
+    let mods = Array.isArray(c.mods) ? c.mods : [];
     const applied = [];
     const mod = (key, v) => {
       for (const m of mods) {
@@ -358,6 +596,23 @@
     const laws = T.law.length ? T.law : [{ name: "—", share: 0, stab: 0 }];
     const law = laws[min(laws.length, max(1, Math.round(I.mob_law || 1))) - 1];
     r.mob_law_name = law.name;
+
+    // корпорации: присутствие и отношения задаёт ГМ, из них получаются эффекты (как особые эффекты ГМа) и потеря суверенитета
+    const corps = corpPresence(rules, c);
+    r.corp_rows = corps.rows; r.corp_mods = corps.mods;
+    r.corp_infl = corps.infl; r.sovereignty = 100 - corps.infl; r.corp_share = corps.share;
+    r.corp_sis_n = corps.rows.filter(x => x.sis && x.lead).length;
+    r.corp_status = corps.infl >= 60 ? "Корпоратократия" : corps.infl >= K.corp_infl_safe ? "Корпоративный протекторат" : corps.infl >= 10 ? "Корпоративное лобби" : "Суверенное государство";
+    r.corruption_eff = min(100, I.corruption + corps.infl * K.corp_corr);
+    r.corp_garr = corps.encFriendly * K.enclave_garr;
+    r.corp_threat = corps.encHostile * K.enclave_threat;
+    r.corp_sov_pen = max(0, corps.infl - K.corp_infl_safe) * K.corp_sov_stab;
+    mods = mods.concat(corps.mods);
+    // идеология: её модификаторы работают так же, как особые эффекты ГМа
+    const ideo = ideologyOf(rules, (c.in || {}).ideology);
+    r.ideology = ideo ? ideo.name : "";
+    mods = mods.concat(ideoMods(ideo));
+    r.health = mod("health", r.health);
 
     // личный состав и юниты
     r.div_total = sum("div");
@@ -394,7 +649,7 @@
     r.rod_power = r.rod_strikes * K.rod_power * r.tech_mult;
     r.rod_tension = r.rod_strikes * K.rod_tension;
     r.asat_cap = satN("asat") * K.asat;
-    r.launch_cap = I.pads * K.launch_pad * r.tech_mult;
+    r.launch_cap = mod("launch_cap", I.pads * K.launch_pad * r.tech_mult);
 
     // энергетика и промышленность
     r.en_supply = mod("en_supply", sum("energy"));
@@ -420,18 +675,20 @@
     r.food_need = r.pop_total * K.food_pc;
     r.food_coef = r.food_need > 0 ? r.food_prod / r.food_need : 1;
     r.water_need = r.pop_total * K.water_pc;
-    r.water_coef = r.water_need > 0 ? I.water / r.water_need : 1;
+    r.water_sup = mod("water_sup", I.water);
+    r.water_coef = r.water_need > 0 ? r.water_sup / r.water_need : 1;
 
     // торговля
-    r.access = (K.access_base + I.routes * K.access_route) * (1 + r.b_nav_trade);
+    r.access = mod("access", (K.access_base + I.routes * K.access_route) * (1 + r.b_nav_trade));
     r.export = mod("export", (r.pm_eff * I.exp_share * K.price_pm + max(0, r.food_prod - r.food_need) * K.price_food +
       max(0, r.raw_bal) * K.price_raw + max(0, r.en_balance) * K.price_energy) * r.access);
     r.import = mod("import", (max(0, r.food_need - r.food_prod) * K.price_food + max(0, -r.raw_bal) * K.price_raw +
-      max(0, r.water_need - I.water) * K.price_water) * K.import_markup);
+      max(0, r.water_need - r.water_sup) * K.price_water) * K.import_markup);
     r.trade_bal = r.export - r.import;
 
     // гарнизоны и безопасность
-    r.garr_need = I.megapolis * (K.garr_base + I.waste_threat * K.garr_threat);
+    r.garr_need = I.megapolis * (K.garr_base + I.waste_threat * K.garr_threat) + r.corp_threat;
+    r.garr_have += r.corp_garr;
     r.security = mod("security", r.garr_need > 0 ? min(1.2, r.garr_have / r.garr_need) : 1.2);
 
     // ВВП
@@ -447,7 +704,12 @@
     r.hdi = (I.education + min(1, dv(r.gdp_pc, K.hdi_ref)) + min(1, r.health) + I.stability / 100) / 4;
 
     // бюджет
-    r.budget = mod("budget", r.gdp * I.tax * (1 - I.corruption / 100 * K.corr_loss));
+    const taxable = r.gdp * I.tax * (1 - r.corruption_eff / 100 * K.corr_loss);
+    r.corp_tax_loss = taxable * r.corp_share * K.corp_tax;
+    r.budget = mod("budget", taxable - r.corp_tax_loss);
+    // выручка корпораций: их доля ВВП страны
+    r.corp_rev = 0;
+    for (const x of r.corp_rows) { x.rev = r.gdp * x.share; r.corp_rev += x.rev; }
     r.b_other = 1 - (I.b_def + I.b_space + I.b_sci + I.b_soc + I.b_infra);
     r.def_budget = r.budget * I.b_def; r.space_budget = r.budget * I.b_space; r.sci_budget = r.budget * I.b_sci;
     r.soc_budget = r.budget * I.b_soc; r.infra_budget = r.budget * I.b_infra;
@@ -495,7 +757,7 @@
     // прогноз на следующий ход
     r.d_tech = mod("d_tech", dv(r.sci_budget, K.tech_cost * I.tech) * (1 + r.b_sci));
     r.d_stab = mod("d_stab", (I.b_soc - K.soc_norm) * K.soc_eff + min(0, r.food_coef - 1) * K.food_stab + min(0, r.water_coef - 1) * K.food_stab +
-      min(0, r.en_coef - 1) * K.en_stab + (min(1.2, r.security) - 1) * K.sec_stab + (I.support - 50) * K.support_stab - num(law.stab));
+      min(0, r.en_coef - 1) * K.en_stab + (min(1.2, r.security) - 1) * K.sec_stab + (I.support - 50) * K.support_stab - num(law.stab) - r.corp_sov_pen);
     r.d_pop = mod("d_pop", K.pop_growth * min(1.2, r.food_coef) * min(1, r.water_coef) - I.radiation * K.rad_mort);
     r.d_gdp = mod("d_gdp", K.growth_base + I.b_infra * K.infra_growth + (I.stability - 50) * K.stab_growth + r.b_nav_trade * K.nav_growth -
       max(0, r.mop_load - K.mop_safe) * K.mop_pen);
@@ -526,6 +788,9 @@
     r.world_sats = r.sat_total + w.satSum;
     r.kessler = K.debris_base + dv(r.world_sats, K.kessler_cap);
     r.kessler_status = r.kessler >= 1 ? "КАТАСТРОФА" : r.kessler >= 0.75 ? "Критическое" : r.kessler >= 0.5 ? "Повышенный риск" : "Умеренное";
+    // мусор бьёт по группировке и дорожает вывод на орбиту
+    r.debris_loss = r.sat_total * r.kessler * K.kessler_loss;
+    r.launch_cost = r.kessler * K.kessler_launch;
     const rel = (v, m) => dv(v, max(v, m));
     r.inm = 100 * (K.w_gdp * rel(r.gdp, w.gdpMax) + K.w_mil * rel(r.total_power, w.milMax) + K.w_pop * rel(r.pop_total, w.popMax) +
       K.w_tech * num(I.tech) / 10 + K.w_stab * num(I.stability) / 100 + K.w_space * rel(r.sat_total, w.satMax));
@@ -552,7 +817,7 @@
   const SV = {
     capital: ["Новый Екатеринбург", "Нордхавн", "Ла-Пас-Цитадель", "Катманду-Верхний", "Найроби-Арколог"],
     gov: ["Технократическая республика", "Морская олигархия", "Военная хунта", "Теократическая монархия", "Корпоративное государство"],
-    ideology: ["Индустриальный реваншизм", "Неоганзейский меркантилизм", "Национальное возрождение", "Хранители Вершин", "Корпоративный прагматизм"],
+    ideology: ["Верховенство", "Гармония", "Чистота", "Духовность", "Равновесие"],
     position: ["Берег Обского моря", "Островное, архипелаг", "Горы, берег Тихого океана", "Высокогорье, без моря", "Нагорье, берег Индийского океана"],
     megapolis: [6, 4, 5, 3, 4], territory: [850, 220, 640, 480, 390], habitable: [0.35, 0.4, 0.25, 0.2, 0.45], flooded: [0.08, 0.62, 0.15, 0.05, 0.22],
     radiation: [4, 2, 3, 2, 5], waste_threat: [6, 3, 5, 4, 7], climate: [6, 7, 5, 6, 4], pop_meg: [38, 14, 22, 18, 26], pop_waste: [12, 3, 9, 7, 14],
@@ -580,16 +845,47 @@
     return c;
   }
   const SAMPLES = SAMPLE_BASE.map(([profile, name], i) => ({ profile, name, make: () => sample(i) }));
+  // ---------- импорт стран из файла (D:\WorkWPG\Страны_2200.json и подобные) ----------
+  // формат: { format: "khatum-countries", v: 1, blocs: [{id, name, kind, desc}], countries: { idСтраныКарты: { name, tier, blocs: [id], in, cnt, notes } } }
+  function parseImport(data) {
+    if (!data || data.format !== "khatum-countries" || !data.countries || typeof data.countries !== "object") throw new Error("это не файл стран KhatumGames");
+    return { blocs: Array.isArray(data.blocs) ? data.blocs.filter(b => b && b.id && b.name) : [], countries: data.countries };
+  }
+  // запись файла → данные страны калькулятора: только известные поля, числа в допустимых пределах, юниты — только существующих типов
+  function importCountry(rules, rec) {
+    const c = emptyCountry(), src = (rec && rec.in) || {}, T = normalizeRules(rules).tables;
+    for (const k in INPUTS) {
+      if (!(k in src)) continue;
+      const [, , f, mn, mx] = INPUTS[k];
+      if (f === "txt") { c.in[k] = String(src[k] == null ? "" : src[k]).slice(0, 300); continue; }
+      let v = +src[k];
+      if (!isFinite(v)) continue;
+      if (mn != null) v = Math.max(mn, v);
+      if (mx != null) v = Math.min(mx, v);
+      c.in[k] = v;
+    }
+    for (const t of COUNT_TABLES) {
+      const ids = new Set(T[t].map(x => x.id)), s = ((rec && rec.cnt) || {})[t] || {};
+      for (const id in s) { const v = +s[id]; if (ids.has(id) && isFinite(v) && v > 0) c.cnt[t][id] = v; }
+    }
+    // особые эффекты (дань, охрана и т. п.): только известные показатели и режимы
+    const targets = new Set(MOD_TARGETS.map(t => t[0]));
+    c.mods = (Array.isArray(rec && rec.mods) ? rec.mods : []).filter(m => m && targets.has(m.target) && (m.mode === "add" || m.mode === "pct") && isFinite(+m.value))
+      .map((m, i) => ({ id: "imp_" + String(m.id || i).replace(/[^\w-]/g, "").slice(0, 40), name: String(m.name || "Эффект").slice(0, 120), target: m.target, mode: m.mode, value: +m.value, note: String(m.note || "").slice(0, 500) }));
+    c.dossier = String((rec && rec.notes) || "").slice(0, 8000);
+    return c;
+  }
   function emptyCountry() {
     const c = { in: {}, cnt: {}, mods: [], notes: "" };
     for (const k in INPUTS) c.in[k] = INPUTS[k][2] === "txt" ? "" : 0;
     Object.assign(c.in, { mob_law: 1, tech: 1, stability: 50, support: 50, working_share: 0.55, mob_share: 0.18, tax: 0.25 });
     COUNT_TABLES.forEach(t => (c.cnt[t] = {}));
+    c.corp = {}; c.blocs = [];
     return c;
   }
 
   window.KGMechModel = {
-    K_GROUPS, K_META, TABLES, COUNT_TABLES, INPUTS, OUT, MOD_TARGETS, SAMPLES,
-    defaultRules, normalizeRules, compute, worldCtx, applyWorld, computeAll, emptyCountry
+    K_GROUPS, K_META, TABLES, COUNT_TABLES, INPUTS, OUT, MOD_TARGETS, SAMPLES, CORP_CH, IDEO_FX, ideologyOf, ideoMods,
+    defaultRules, normalizeRules, compute, worldCtx, applyWorld, computeAll, emptyCountry, corpPresence, corpWorld, corpClass, parseImport, importCountry
   };
 })();

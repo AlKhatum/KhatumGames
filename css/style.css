@@ -41,7 +41,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .topbar {
   position: relative; z-index: 10;
   display: flex; align-items: center; gap: 18px;
-  height: 58px; padding: 0 16px;
+  height: var(--topbar-h); padding: 0 16px;
   background: linear-gradient(180deg, rgba(5, 9, 26, 0.95), rgba(5, 9, 26, 0.7));
   border-bottom: 1px solid var(--line-dim);
   box-shadow: 0 0 18px rgba(24, 217, 245, 0.15);
@@ -66,7 +66,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .sound-btn.on { background: rgba(24, 217, 245, .12); border-color: var(--line); box-shadow: 0 0 10px rgba(24, 217, 245, .3); }
 
-main { position: relative; z-index: 5; height: calc(100% - 58px); }
+:root { --topbar-h: 58px; }
+main { position: relative; z-index: 5; height: calc(100% - var(--topbar-h)); }
 .page { display: none; height: 100%; }
 .page.active { display: block; }
 
@@ -732,3 +733,169 @@ body.moon-mode #stateCard, body.moon-mode #sizeBar { display: none; }
 .sc-flag.can-edit { cursor: pointer; }
 .sc-flag.can-edit:hover { box-shadow: 0 0 10px rgba(24, 217, 245, .4); }
 .sc-rows { align-items: center; }
+
+/* =====================================================================
+   НАВИГАЦИЯ 2.0: Главная (вход), Вики, Солнечная система, правка сайта ГМом
+   ===================================================================== */
+/* вход ГМа — только на Главной */
+#gmLoginBtn { display: none !important; }
+/* фон: картинка вместо видео, отдельный плеер музыки */
+#bg-video.bg-image { background: center / cover no-repeat; }
+#yt.off { opacity: 0; }
+.music-frame { position: fixed; width: 1px; height: 1px; left: -10px; top: -10px; opacity: 0; pointer-events: none; border: 0; }
+
+/* верхняя панель: кнопки ГМа для сайта */
+.tabs button span { pointer-events: none; }
+.site-gm { display: flex; align-items: center; gap: 6px; flex: none; }
+.site-gm button { display: flex; align-items: center; gap: 4px; height: 34px; padding: 0 10px; background: rgba(4, 18, 40, .85); border: 1px solid var(--line-dim); border-radius: 3px; color: var(--text); font-size: 13px; white-space: nowrap; }
+.site-gm button:hover { border-color: var(--line); }
+.site-gm button.active { border-color: var(--pink); background: rgba(255, 63, 208, .18); box-shadow: 0 0 10px rgba(255, 63, 208, .35); }
+.site-gm button.accent { border-color: var(--pink); background: rgba(255, 63, 208, .12); }
+.site-gm button:disabled { opacity: .5; cursor: wait; }
+.sound-box, .brand { flex: none; }
+@media (max-width: 1180px) { .site-gm .lbl { display: none; } }
+@media (max-width: 600px) {
+  .topbar { gap: 8px; padding: 0 8px; }
+  .tabs button { padding: 7px 8px; font-size: 12px; letter-spacing: .5px; }
+  .site-gm button { padding: 0 7px; }
+}
+
+/* Главная: вход и Режим ГМа */
+.stub.home { max-width: 900px; }
+.home .rich { color: var(--muted); }
+.home .rich .lead { font-size: 17px; color: var(--text); }
+.home-auth { margin-top: 22px; text-align: left; }
+.auth-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+.auth-card { border: 1px solid var(--line-dim); border-radius: 4px; padding: 14px 16px; background: rgba(24, 217, 245, .04); display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.auth-card h2 { margin: 0 0 2px; font-family: var(--font-wide); font-weight: 300; font-size: 13px; letter-spacing: .18em; text-transform: uppercase; color: var(--pink-soft); }
+.auth-card .f-row { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 8px; align-items: center; font-size: 13px; color: var(--muted); }
+.auth-card select, .auth-card input { width: 100%; min-width: 0; background: rgba(0, 0, 0, .35); border: 1px solid var(--line-dim); border-radius: 3px; color: var(--text); font: inherit; font-size: 14px; padding: 6px 8px; }
+.auth-card select option { background: #071630; }
+.auth-card input:focus, .auth-card select:focus { outline: none; border-color: var(--line); box-shadow: 0 0 6px rgba(24, 217, 245, .35); }
+.auth-card .mech-note { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.45; }
+.auth-who { display: flex; align-items: center; gap: 12px; }
+.auth-who b { display: block; font-size: 16px; color: var(--text); overflow-wrap: anywhere; }
+.auth-btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.auth-btns button, .auth-card button { background: rgba(24, 217, 245, .08); border: 1px solid var(--line); border-radius: 3px; padding: 8px 16px; color: var(--text); }
+.auth-btns button.accent, .auth-card button.accent { border-color: var(--pink); background: rgba(255, 63, 208, .12); box-shadow: 0 0 8px rgba(255, 63, 208, .3); }
+.auth-btns button:hover { background: rgba(24, 217, 245, .18); }
+.auth-btns button:disabled { opacity: .5; cursor: not-allowed; }
+.auth-card .form-error:empty { display: none; }
+.gm-mode { margin-top: 18px !important; margin-bottom: 24px; }
+
+/* Вики */
+.wiki .mech-head.sub { margin: 0 0 14px; padding-bottom: 10px; border-bottom: 1px solid var(--line-dim); }
+.wiki-nav button span { pointer-events: none; }
+.wiki-tools { margin: 10px 0; display: flex; gap: 8px; }
+.wiki .rich { max-width: 900px; color: #c7d7ec; line-height: 1.6; font-size: 15px; }
+.events { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; max-width: 900px; }
+.event { border: 1px solid var(--line-dim); border-radius: 4px; padding: 12px 16px; background: rgba(24, 217, 245, .04); }
+.ev-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; }
+.ev-head h3 { margin: 0 !important; flex: 1; min-width: 180px; font-size: 14px !important; letter-spacing: .06em !important; text-transform: none !important; color: var(--line); overflow-wrap: anywhere; }
+.ev-date { font-size: 12px; color: var(--pink-soft); white-space: nowrap; }
+.ev-text { margin-top: 6px; }
+.lore-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-top: 16px; }
+.lore-cell { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.lore-cell .lore-card { flex: 1; width: 100%; }
+.lore-card b, .lore-card span { overflow-wrap: anywhere; }
+.lore-sub { margin: -4px 0 10px; color: var(--muted); }
+.lore-article h2[data-edit-text] { font-family: var(--font-wide); font-weight: 300; font-size: 18px; letter-spacing: .12em; text-transform: uppercase; color: var(--pink-soft); overflow-wrap: anywhere; }
+.card-tools { display: flex; flex-wrap: wrap; gap: 4px; }
+.rich img { max-width: 100%; height: auto; border-radius: 3px; }
+.rich a { color: var(--line); }
+.rich:empty::before { content: attr(data-placeholder); color: var(--muted); font-style: italic; }
+
+/* Галерея */
+.gal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-top: 16px; }
+.gal-item { margin: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.gal-item img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border: 1px solid var(--line-dim); border-radius: 4px; cursor: zoom-in; display: block; }
+.gal-item figcaption { font-size: 13px; color: #c7d7ec; overflow-wrap: anywhere; min-height: 1.2em; }
+.lightbox { cursor: zoom-out; }
+.lightbox figure { margin: 0; max-width: 94vw; max-height: 90vh; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.lightbox img { max-width: 94vw; max-height: 84vh; object-fit: contain; border-radius: 4px; }
+.lightbox figcaption { color: var(--text); }
+
+/* правка сайта ГМом */
+body:not(.site-edit) .edit-only { display: none !important; }
+.site-edit .editable { outline: 1px dashed rgba(255, 63, 208, .55); outline-offset: 3px; cursor: text; min-height: 1em; }
+.site-edit .editable:hover { outline-color: var(--pink); }
+.site-edit .editable:focus { outline: 2px solid var(--pink); background: rgba(255, 63, 208, .05); }
+.site-edit [data-mech-list] { opacity: .7; }
+.rte-bar { position: fixed; z-index: 70; left: 50%; bottom: 16px; transform: translateX(-50%); display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; padding: 6px; max-width: calc(100vw - 24px); background: var(--panel-solid); border-color: var(--pink); }
+.rte-bar button { min-width: 34px; height: 32px; padding: 0 8px; background: rgba(24, 217, 245, .08); border: 1px solid var(--line-dim); border-radius: 3px; color: var(--text); font-size: 13px; }
+.rte-bar button:hover { border-color: var(--line); }
+.sd-row { display: grid; grid-template-columns: minmax(140px, 220px) minmax(0, 1fr); gap: 10px; align-items: center; padding: 4px 0; font-size: 13px; color: #c7d7ec; }
+.sd-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.sd-ctl input[type=text], .sd-ctl select { flex: 1; min-width: 0; background: rgba(0, 0, 0, .35); border: 1px solid var(--line-dim); border-radius: 3px; color: var(--text); font: inherit; font-size: 13px; padding: 5px 8px; }
+.sd-ctl select option { background: #071630; }
+.sd-media { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.sd-media img { width: 160px; height: 90px; object-fit: cover; border: 1px solid var(--line-dim); border-radius: 3px; }
+.sd-media audio { max-width: 100%; height: 32px; }
+.sd-labels { display: flex; flex-direction: column; }
+@media (max-width: 700px) { .sd-row { grid-template-columns: minmax(0, 1fr); gap: 4px; } }
+
+/* ---------- Солнечная система ---------- */
+.view-switch { align-items: center; }
+.view-switch .vs-body { padding: 0 10px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--pink-soft); border-left: 1px solid var(--line-dim); border-right: 1px solid var(--line-dim); height: var(--ctl-h); display: flex; align-items: center; white-space: nowrap; }
+.view-switch .vs-body:empty { display: none; }
+.moon-sub { display: none !important; }
+body.solar-mode .legend, body.solar-mode #viewSwitch { display: none !important; }
+.solar { position: absolute; inset: 0; z-index: 20; display: flex; flex-direction: column; background: radial-gradient(ellipse at center, #0a1530 0%, #030712 80%); overflow: hidden; }
+.solar-head { padding: 14px 18px 0; text-align: center; flex: none; }
+.solar-head h2 { margin: 0; font-family: var(--font-wide); font-weight: 300; font-size: clamp(13px, 1.6vw, 18px); letter-spacing: .25em; text-transform: uppercase; color: var(--pink-soft); text-shadow: 0 0 10px rgba(255, 63, 208, .6); }
+.solar-note { color: var(--muted); font-size: 13px; }
+.solar-note p { margin: 4px 0 0; }
+.solar-svg { flex: 1; min-height: 0; width: 100%; display: block; }
+.solar-svg .orbit { fill: none; stroke: rgba(24, 217, 245, .22); stroke-width: 1; }
+.solar-svg .sun { filter: drop-shadow(0 0 22px rgba(255, 190, 60, .8)); }
+.solar-svg .s-name { fill: #c7d7ec; font: 13px var(--font-ui); text-anchor: middle; letter-spacing: .04em; pointer-events: none; }
+.solar-svg .sun-name { fill: #ffd98a; }
+.solar-svg .s-off { fill: var(--muted); font: italic 10px var(--font-ui); text-anchor: middle; pointer-events: none; }
+.solar-svg .planet.off { opacity: .55; cursor: not-allowed; }
+.solar-svg .planet.ok { cursor: pointer; }
+.solar-svg .planet .halo { fill: transparent; stroke: transparent; stroke-width: 1.5; }
+.solar-svg .planet.ok .halo { stroke: rgba(24, 217, 245, .55); stroke-dasharray: 3 3; }
+.solar-svg .planet.ok:hover .halo, .solar-svg .planet.ok:focus .halo { stroke: var(--pink); stroke-dasharray: none; fill: rgba(255, 63, 208, .12); }
+.solar-svg .planet.ok .s-name { fill: var(--line); font-weight: 600; }
+.solar-svg .planet:focus { outline: none; }
+.solar-svg .ring { fill: none; stroke: #c9b37a; stroke-width: 3; opacity: .8; }
+.solar-pick { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); width: min(460px, calc(100% - 24px)); padding: 14px 16px; background: var(--panel-solid); border-color: var(--line); }
+.solar-pick h3 { margin: 0 24px 6px 0; font-family: var(--font-wide); font-weight: 400; font-size: 14px; letter-spacing: .14em; text-transform: uppercase; color: var(--line); }
+.solar-pick .rich { color: #c7d7ec; font-size: 13.5px; line-height: 1.5; }
+.solar-pick .rich p { margin: 0 0 6px; }
+.sp-btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.sp-btns button { flex: 1; min-width: 150px; background: rgba(24, 217, 245, .1); border: 1px solid var(--line); border-radius: 3px; padding: 9px 12px; color: var(--text); }
+.sp-btns button:hover { background: rgba(24, 217, 245, .22); box-shadow: 0 0 10px rgba(24, 217, 245, .4); }
+.sp-close { position: absolute; right: 8px; top: 8px; background: none; border: 0; color: var(--muted); padding: 2px 6px; }
+.sp-close:hover { color: var(--text); }
+.map-title { max-width: calc(100% - 900px); }
+@media (max-width: 1400px) { .map-title { display: none; } }
+@media (max-width: 900px) { .view-switch .lbl { display: none; } }
+
+/* телефон: верхняя панель в две строки — логотип, кнопки ГМа и звук сверху, вкладки снизу на всю ширину */
+@media (max-width: 700px) {
+  :root { --topbar-h: 92px; }
+  .topbar { flex-wrap: wrap; align-content: center; row-gap: 6px; column-gap: 8px; padding: 4px 8px; }
+  .brand { order: 1; }
+  .site-gm { order: 2; margin-left: auto; }
+  .sound-box { order: 3; }
+  body:not(.is-gm) .sound-box { margin-left: auto; }
+  .tabs { order: 4; flex: 1 0 100%; justify-content: space-between; gap: 2px; }
+  .tabs button { padding: 6px 6px; font-size: 11px; letter-spacing: .3px; }
+  .site-gm button, .sound-btn { height: 32px; }
+}
+/* телефон, глобус: панель орбит не наезжает на кнопки масштаба справа сверху */
+@media (max-width: 900px) { .map-frame > .sat-panel { max-height: min(42%, calc(100% - var(--row3) - 164px)); } }
+
+/* события: картинки под текстом */
+.ev-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; margin-top: 10px; }
+.ev-gallery.no-imgs { display: block; margin-top: 6px; }
+body:not(.site-edit) .ev-gallery.no-imgs { display: none; }
+.ev-img { margin: 0; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ev-img img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border: 1px solid var(--line-dim); border-radius: 4px; cursor: zoom-in; display: block; }
+.ev-img img:hover { border-color: var(--line); }
+.ev-img figcaption { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+body:not(.site-edit) .ev-img figcaption:empty { display: none; }
+.site-edit .ev-img figcaption:empty::before { content: attr(data-placeholder); font-style: italic; opacity: .7; }
+.site-edit .ev-img img { cursor: default; }
+.ev-add { align-self: center; }

@@ -333,13 +333,29 @@ void main(){
   // спутники и их орбиты (общая отрисовка для Земли и Луны): g — шар с project(lat, lon, rho), hidden(pr), zoom
   function drawSats(g, ctx, S, cx, cy) {
     // облака обломков: точки перед шаром яркие, за шаром не рисуются; в первые минуты — вспышка
+    // мусор Великой ошибки рисуем с тем же шагом, с каким его посчитали (d.step); если кадр тяжёлый — просим шаг крупнее
+    const t0 = performance.now();
+    let stride = 1;
     if (S && S.debris) for (const d of S.debris) {
       const sz = Math.max(2, Math.min(3.4, 1.7 + g.zoom * 0.45)), xy = d.xy || (d.xy = new Float32Array(d.count * 3));
+      const step = d.legacy ? Math.max(1, d.step || 1) : 1;
+      if (d.legacy) stride = Math.max(stride, step);
       let m = 0;
-      for (let i = 0; i < d.count; i++) {
+      for (let i = 0; i < d.count; i += step) {
         const pr = g.project(d.pts[i * 3], d.pts[i * 3 + 1], d.pts[i * 3 + 2]);
         if (g.hidden(pr)) continue;
         xy[m * 3] = cx + pr[0]; xy[m * 3 + 1] = cy + pr[1]; xy[m * 3 + 2] = pr[2] > 0 ? 1 : 0; m++;
+      }
+      if (d.legacy) {
+        // мусор Великой ошибки — полупрозрачная пыль без подложки (одна операция на точку)
+        // точки собираются в два контура (перед шаром и за ним) и закрашиваются за два вызова — иначе холст захлёбывается
+        const s2 = sz * 1.1, front = new Path2D(), back = new Path2D();
+        for (let i = 0; i < m; i++) (xy[i * 3 + 2] ? front : back).rect(xy[i * 3] - s2 / 2, xy[i * 3 + 1] - s2 / 2, s2, s2);
+        ctx.fillStyle = d.color;
+        ctx.globalAlpha = 0.3; ctx.fill(back);
+        ctx.globalAlpha = 0.95; ctx.fill(front);
+        ctx.globalAlpha = 1;
+        continue;
       }
       // тёмная подложка, чтобы точки читались и на светлых странах, затем сами точки
       ctx.fillStyle = "rgba(4, 6, 14, .7)";
@@ -355,6 +371,11 @@ void main(){
         ctx.fillStyle = "#fffbe8"; ctx.beginPath(); ctx.arc(cx + pr[0], cy + pr[1], 3 * (1 - k) + 1, 0, Math.PI * 2); ctx.fill();
         ctx.shadowBlur = 0; ctx.globalAlpha = 1;
       }
+    }
+    if (S && S.debris && S.debris.length) {
+      const ms = performance.now() - t0; // подстройка прореживания: держим обломки в ~10 мс кадра
+      if (ms > 14 && stride < 8) S.debrisStride = stride + 1;
+      else if (ms < 5 && stride > 1) S.debrisStride = stride - 1;
     }
     if (S && S.items.length) {
       ctx.lineCap = "round";
@@ -408,6 +429,14 @@ void main(){
             ctx.moveTo(x, y - 5 * k); ctx.lineTo(x + 4.5 * k, y + 3.5 * k); ctx.lineTo(x - 4.5 * k, y + 3.5 * k); ctx.closePath(); ctx.fill(); break;
           case "square":
             ctx.fillRect(x - 3.5 * k, y - 3.5 * k, 7 * k, 7 * k); break;
+          case "star": // пятиконечная звезда
+            for (let j = 0; j < 10; j++) {
+              const rr = (j % 2 ? 2.4 : 6) * k, an = -Math.PI / 2 + j * Math.PI / 5;
+              if (j) ctx.lineTo(x + rr * Math.cos(an), y + rr * Math.sin(an)); else ctx.moveTo(x + rr * Math.cos(an), y + rr * Math.sin(an));
+            }
+            ctx.closePath(); ctx.fill(); break;
+          case "cross":
+            ctx.fillRect(x - 5 * k, y - 1.4 * k, 10 * k, 2.8 * k); ctx.fillRect(x - 1.4 * k, y - 5 * k, 2.8 * k, 10 * k); break;
           default:
             ctx.arc(x, y, 3.4 * k, 0, Math.PI * 2); ctx.fill();
         }
