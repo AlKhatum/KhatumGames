@@ -17,7 +17,7 @@
   // road — цвет подсветки растровых линий; glow — цвет подсветки векторного слоя
   const LAYERS = [
     { id: "ocean", name: "Океан", kind: "div", cls: "ocean", vis: true },
-    { id: "landDark", name: "Суша вне стран", kind: "img", src: "assets/map/land.png", cls: "land-dark", vis: true },
+    { id: "landDark", name: "Суша вне стран", kind: "img", src: "assets/map/land.png", cls: "land-dark", vis: true, internal: true }, // подложка суши: всегда видна, в списке слоёв её нет
     { id: "countries", name: "Заливка стран", kind: "svg", vis: true },
     { id: "relief", name: "Рельеф", kind: "img", src: "assets/map/land.png", cls: "relief", vis: true },
     { id: "hydro", name: "Гидрография", kind: "img", src: "assets/map/hydro.png", cls: "hydro", vis: true },
@@ -36,7 +36,8 @@
     { id: "provLabels", name: "Названия провинций", kind: "svg", vis: true },
     { id: "cities", name: "Города", kind: "svg", vis: true },
     { id: "measure", kind: "svg", internal: true },
-    { id: "over", kind: "svg", internal: true }
+    { id: "over", kind: "svg", internal: true },
+    { id: "cursor", kind: "svg", internal: true, nowrap: true } // курсор кисти: не повторяется по краям
   ];
   const L = {};
   const flat = [];
@@ -49,7 +50,7 @@
     let el;
     if (l.kind === "img") {
       el = document.createElement("img"); el.alt = ""; el.draggable = false; el.decoding = "async";
-      el.dataset.src = l.src; if (ui.vis[l.id] != null ? ui.vis[l.id] : l.vis) el.src = l.src; // выключенные слои грузятся при включении
+      el.dataset.src = l.src; if (l.internal || (ui.vis[l.id] != null ? ui.vis[l.id] : l.vis)) el.src = l.src; // выключенные слои грузятся при включении
     } else if (l.kind === "div") {
       el = document.createElement("div");
     } else if (l.kind === "canvas") {
@@ -67,6 +68,18 @@
     L[l.id] = el;
   });
   const paintCtx = L.paint.getContext("2d", { willReadFrequently: true });
+  // Бесшовная карта: картинки повторяются по краям сразу (это дёшево), векторные слои —
+  // после загрузки, по одному в свободное время, чтобы не тормозить первую отрисовку.
+  const WR = window.KGWrap.create(world, W, H);
+  flat.forEach(l => { if (!l.nowrap && l.kind !== "svg") WR.add(L[l.id]); });
+  let wrapQueued = false;
+  function wrapVectorLayers() {
+    if (wrapQueued) return; wrapQueued = true;
+    const todo = flat.filter(l => l.kind === "svg" && !l.nowrap);
+    const idle = window.requestIdleCallback || (f => setTimeout(f, 30));
+    const next = () => { const l = todo.shift(); if (!l) return; WR.add(L[l.id]); idle(next, { timeout: 400 }); };
+    idle(next, { timeout: 400 });
+  }
 
   const isVisible = l => (ui.vis[l.id] != null ? ui.vis[l.id] : l.vis);
   function ensureSrc(img) { if (img && img.tagName === "IMG" && !img.getAttribute("src") && img.dataset.src) img.src = img.dataset.src; }
@@ -172,7 +185,7 @@
   const gCustom = svgEl("g", {}, L.labels);
   const provSelPath = svgEl("path", { class: "prov-sel-outline" }, L.over);
   const selPath = svgEl("path", { class: "sel-outline" }, L.over);
-  const cursorEl = svgEl("circle", { class: "brush-cursor", r: 10, cx: -100, cy: -100 }, L.over);
+  const cursorEl = svgEl("circle", { class: "brush-cursor", r: 10, cx: -100, cy: -100 }, L.cursor);
 
   // ---------- состояние ----------
   let config = null, state = null, loadedStamp = "";
@@ -209,8 +222,9 @@
     els.cfill[id].setAttribute("fill", c.color);
     if (!t) { t = svgEl("text", { class: "lbl-country", "data-col": "countries", "data-id": id, "data-part": "label" }, gCountryLabels); els.clabel[id] = t; }
     t.setAttribute("x", c.label[0]); t.setAttribute("y", c.label[1]);
-    t.setAttribute("font-size", c.size); t.setAttribute("letter-spacing", (c.size * 0.22).toFixed(1));
-    t.setAttribute("stroke-width", Math.max(0.8, c.size * 0.14).toFixed(1));
+    const fs = +(c.size * fk("country")).toFixed(2); // размер подписи × общий масштаб ГМа
+    t.setAttribute("font-size", fs); t.setAttribute("letter-spacing", (fs * 0.22).toFixed(1));
+    t.setAttribute("stroke-width", Math.max(0.8, fs * 0.14).toFixed(1));
     window.KG.lines.svg(t, c.name);
   }
   // ---------- города: типы по населению, столицы, всплывающая карточка ----------
@@ -287,7 +301,7 @@
     const fr = frame.getBoundingClientRect(), vr = viewport.getBoundingClientRect();
     let x, y;
     if (popAt) { x = popAt[0]; y = popAt[1]; }
-    else { x = vr.left - fr.left + tx + c.x * s; y = vr.top - fr.top + ty + c.y * s; }
+    else { x = vr.left - fr.left + screenX(c.x); y = vr.top - fr.top + ty + c.y * s; }
     const w = pop.offsetWidth || 280, h = pop.offsetHeight || 160, pad = 8;
     let left = x + 14, top = y - h / 2;
     if (left + w > fr.width - pad) left = x - w - 14;
@@ -359,8 +373,9 @@
     let t = els.labels[id];
     if (!e) { if (t) { t.remove(); delete els.labels[id]; } return; }
     if (!t) { t = svgEl("text", { class: "lbl-custom", "data-col": "labels", "data-id": id }, gCustom); els.labels[id] = t; }
-    t.setAttribute("x", e.x); t.setAttribute("y", e.y); t.setAttribute("font-size", e.size);
-    t.setAttribute("letter-spacing", (e.size * 0.15).toFixed(1));
+    const fs = +(e.size * fk("custom")).toFixed(2);
+    t.setAttribute("x", e.x); t.setAttribute("y", e.y); t.setAttribute("font-size", fs);
+    t.setAttribute("letter-spacing", (fs * 0.15).toFixed(1));
     window.KG.lines.svg(t, e.text);
   }
   function renderProvince(id) {
@@ -373,7 +388,7 @@
     }
     if (!t) { t = svgEl("text", { "data-col": "provinces", "data-id": id }, L.provLabels); provLbl[id] = t; }
     t.setAttribute("class", "lbl-prov " + (e.size >= 6 ? "b1" : e.size >= 3.6 ? "b2" : "b3"));
-    t.setAttribute("x", e.label[0]); t.setAttribute("y", e.label[1]); t.style.setProperty("--fs", e.size + "px");
+    t.setAttribute("x", e.label[0]); t.setAttribute("y", e.label[1]); t.style.setProperty("--fs", +(e.size * fk("province")).toFixed(2) + "px");
     window.KG.lines.svg(t, e.name);
   }
   const renderSatsAny = () => { try { refreshSats(); } catch (e) { /* глобус ещё не готов */ } };
@@ -382,28 +397,42 @@
 
   // ---------- вид ----------
   let s = 0.3, tx = 0, ty = 0, fitS = 0.3;
-  function setView(ns, ntx, nty) {
+  // holdWrap: пока ГМ рисует или тащит объект, вид не перескакивает между копиями карты
+  let holdWrap = false;
+  // карта повторяется по горизонтали, поэтому отдалять дальше половины ширины окна незачем
+  const minScale = () => Math.max(fitS * 0.7, viewport.clientWidth / (2 * W));
+  const afterView = [];
+  function setView(ns, ntx, nty, keep) {
     const vw = viewport.clientWidth, vh = viewport.clientHeight;
-    s = Math.min(8, Math.max(fitS * 0.7, ns));
+    s = Math.min(8, Math.max(minScale(), ns));
     const mw = W * s, mh = H * s;
-    tx = mw < vw ? (vw - mw) / 2 : Math.min(0, Math.max(vw - mw, ntx));
+    tx = keep || holdWrap ? ntx : WR.norm(ntx, mw, vw);
     ty = mh < vh ? (vh - mh) / 2 : Math.min(0, Math.max(vh - mh, nty));
     world.style.transform = `translate(${tx}px, ${ty}px) scale(${s})`;
+    WR.show(tx, mw, vw);
     // Всё, что ниже, меняем только при переходе порога: любая смена стиля на рамке заставляет
     // браузер пересчитать тысячи элементов карты, а это и есть «подлагивание» при масштабировании.
     const cityVis = s < 0.3 ? "hidden" : "", z = String(s >= 3.2 ? 3 : s >= 1.9 ? 2 : s >= 1.1 ? 1 : 0);
     const cz = String(s >= 1.8 ? 3 : s >= 1.1 ? 2 : s >= 0.6 ? 1 : 0);
     const ck = s > 1.8 ? (Math.round(1.8 / s * 20) / 20).toFixed(2) : "1"; // значки не раздуваются при приближении
     if (frame.dataset.cz !== cz) frame.dataset.cz = cz;
-    if (L.cities.style.getPropertyValue("--ck") !== ck) L.cities.style.setProperty("--ck", ck);
+    // переменные — на world, а не на слоях: правка слоя заставила бы пересобрать его копии по краям
+    if (world.style.getPropertyValue("--ck") !== ck) world.style.setProperty("--ck", ck);
     const lod = s < 0.5 ? "far" : "near"; // издалека границы провинций не читаются, а рисовать их дорого
     const pk = Math.min(1, 2.4 / s).toFixed(2); // названия провинций не раздуваются при приближении
     if (L.cities.style.visibility !== cityVis) L.cities.style.visibility = cityVis;
     if (frame.dataset.z !== z) frame.dataset.z = z;
     if (frame.dataset.lod !== lod) frame.dataset.lod = lod;
-    if (L.provLabels.style.getPropertyValue("--pk") !== pk) L.provLabels.style.setProperty("--pk", pk);
+    if (world.style.getPropertyValue("--pk") !== pk) world.style.setProperty("--pk", pk);
     if (typeof renderMeasure === "function") renderMeasure();
     if (typeof popCity !== "undefined" && popCity && !popAt) placeCityPop();
+    afterView.forEach(f => f());
+  }
+  // экранная x точки карты — на той копии, что ближе к центру окна
+  function screenX(x) {
+    const mw = W * s, vw = viewport.clientWidth;
+    const sx = tx + x * s;
+    return sx + mw * Math.round((vw / 2 - sx) / mw);
   }
   function fit() {
     const vw = viewport.clientWidth, vh = viewport.clientHeight;
@@ -412,7 +441,7 @@
     setView(fitS, (vw - W * fitS) / 2, (vh - H * fitS) / 2);
   }
   function zoomAt(f, cx, cy) {
-    const ns = Math.min(8, Math.max(fitS * 0.7, s * f)), k = ns / s;
+    const ns = Math.min(8, Math.max(minScale(), s * f)), k = ns / s;
     setView(ns, cx - (cx - tx) * k, cy - (cy - ty) * k);
   }
   function centerOn(x, y, minS) {
@@ -449,6 +478,8 @@
   function select(ent) {
     document.querySelectorAll(".is-sel").forEach(el => el.classList.remove("is-sel"));
     sel = ent && state[ent.col] && state[ent.col][ent.id] ? { col: ent.col, id: String(ent.id) } : null;
+    // кнопки размера шрифта — у выбранной страны или подписи (клик по карте добавит и провинцию)
+    if (typeof sizeTargets !== "undefined") sizeTargets = sel && (sel.col === "countries" || sel.col === "labels") ? [{ col: sel.col, id: sel.id }] : [];
     if (sel) {
       const map = { cities: els.cities, labels: els.labels, countries: els.clabel }[sel.col];
       if (map && map[sel.id]) map[sel.id].classList.add("is-sel");
@@ -487,7 +518,105 @@
       $("provMeta").textContent = [pr.type, gm && pr.real ? "в нашем мире: " + pr.real : ""].filter(Boolean).join(" · ");
     }
     $("flagBox").classList.toggle("can-edit", gm && !!c);
+    renderStateCard();
+    placeSizeBar();
   }
+
+  // ---------- карточка государства (пока заглушка) ----------
+  // Открывается по клику на страну, стоит у правого края карты — слева от легенды. Что можно
+  // посчитать по карте — столица, площадь, провинции, города — считается; остальное ждёт данных.
+  const stateCard = $("stateCard");
+  let stateCardClosed = null; // id страны, у которой карточку закрыли крестиком
+  function countryArea(id) {
+    // площадь по маске: пиксель Меркатора на широте φ — (длина экватора / W · cos φ)²
+    const b = T.bbox[+id]; if (!b || !T.ids) return 0;
+    const k = 40075.017 / W, R = W / (2 * Math.PI), Y0 = 2063.21;
+    let a = 0;
+    for (let y = b[1]; y < b[3]; y++) {
+      const row = y * T.W; let n = 0;
+      for (let x = b[0]; x < b[2]; x++) if (T.ids[row + x] === +id) n++;
+      if (n) { const c = 1 / Math.cosh((Y0 - y - 0.5) / R); a += n * k * k * c * c; }
+    }
+    return a;
+  }
+  const fmtArea = a => (a >= 1e6 ? (a / 1e6).toFixed(2).replace(/\.?0+$/, "").replace(".", ",") + " млн км²" : Math.round(a).toLocaleString("ru-RU") + " км²");
+  function renderStateCard() {
+    const c = sel && sel.col === "countries" ? state.countries[sel.id] : null;
+    if (!c || stateCardClosed === sel.id) { stateCard.classList.add("hidden"); return; }
+    const id = sel.id, inC = Object.values(state.cities).filter(ct => String(T.at(ct.x, ct.y)) === id);
+    const caps = inC.filter(ct => ct.capital).map(ct => window.KG.lines.oneLine(ct.name));
+    const big = inC.filter(ct => +ct.pop > 0).sort((a, b) => b.pop - a.pop)[0];
+    const pop = inC.reduce((acc, ct) => acc + (+ct.pop > 0 ? +ct.pop : 0), 0);
+    const provs = Object.values(state.provinces || {}).filter(p => p.label && String(T.at(p.label[0], p.label[1])) === id).length; // по положению на карте
+    const area = countryArea(id), src = flagSrc(c);
+    const row = (k, v) => `<dt>${k}</dt><dd>${esc(v)}</dd>`, tbd = k => `<dt>${k}</dt><dd class="sc-tbd">скоро</dd>`;
+    $("stateCardBody").innerHTML = `<div class="sc-head"><div class="sc-flag"${src ? ` style="background-image:url('${esc(src)}')"` : ""}>${src ? "" : "ФЛАГ"}</div>` +
+      `<div><div class="sc-kind"><span class="sc-swatch" style="background:${esc(c.color)}"></span>Государство</div>` +
+      `<div class="sc-name">${esc(window.KG.lines.oneLine(c.name))}</div></div></div>` +
+      `<dl class="sc-rows">` +
+      row("Столица", caps.length ? caps.join(", ") : "—") +
+      row("Площадь", area ? "≈ " + fmtArea(area) : "—") +
+      row("Провинций", provs ? String(provs) : "—") +
+      row("Городов на карте", inC.length ? String(inC.length) : "—") +
+      (big ? row("Крупнейший город", window.KG.lines.oneLine(big.name)) : "") +
+      (pop ? row("Население городов", "≈ " + fmtPop(pop)) : "") +
+      tbd("Форма правления") + tbd("Глава государства") + tbd("Язык и валюта") +
+      `</dl><div class="sc-note">Карточка-заглушка: история, правительство, армия и экономика появятся здесь позже. Площадь посчитана по карте, население — по городам с известной численностью.</div>`;
+    stateCard.classList.remove("hidden");
+  }
+  $("stateCardClose").onclick = () => { if (sel) stateCardClosed = sel.id; stateCard.classList.add("hidden"); };
+
+  // ---------- размер шрифта выбранной подписи — прямо на карте (ГМ) ----------
+  // Клик по стране, провинции или подписи показывает над её названием кнопки A− / A+.
+  // Каждое нажатие — обычная правка (Ctrl+Z отменяет). Клавиши: «-» и «+».
+  const sizeBar = $("sizeBar");
+  const SB = { countries: ["Страна", "country", 3, 120], provinces: ["Провинция", "province", 1, 40], labels: ["Подпись", "custom", 3, 120] };
+  let sizeTargets = [];
+  const sbEnt = t => state && state[t.col] && state[t.col][t.id];
+  function setSizeTargets(list) { sizeTargets = (list || []).filter(t => t && sbEnt(t)); placeSizeBar(); }
+  function placeSizeBar() {
+    const list = sizeTargets.filter(sbEnt);
+    if (!gm || tool !== "pan" || viewMode === "globe" || !list.length) { sizeBar.classList.add("hidden"); return; }
+    const key = list.map(t => t.col + t.id + ":" + sbEnt(t).size).join("|");
+    if (sizeBar.dataset.key !== key) {
+      sizeBar.dataset.key = key;
+      sizeBar.innerHTML = list.map((t, i) => `<div class="sb-row" data-i="${i}"><span>${SB[t.col][0]}</span>` +
+        `<button type="button" data-d="-1" title="Меньше (−)">A−</button><b title="Ввести размер">${+(+sbEnt(t).size).toFixed(1)}</b>` +
+        `<button type="button" data-d="1" title="Больше (+)">A+</button></div>`).join("");
+    }
+    sizeBar.classList.remove("hidden");
+    const t = list[0], e = sbEnt(t), a = t.col === "labels" ? [e.x, e.y] : e.label;
+    const fr = frame.getBoundingClientRect(), vr = viewport.getBoundingClientRect();
+    const pk = t.col === "provinces" ? Math.min(1, 2.4 / s) : 1;
+    const half = e.size * fk(SB[t.col][1]) * s * pk * 0.7;
+    const x = vr.left - fr.left + screenX(a[0]), y = vr.top - fr.top + ty + a[1] * s - half;
+    const w = sizeBar.offsetWidth || 160, h = sizeBar.offsetHeight || 34;
+    const left = Math.max(8, Math.min(fr.width - w - 8, x - w / 2)), top = Math.max(8, Math.min(fr.height - h - 8, y - h - 8));
+    sizeBar.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
+    sizeBar.classList.toggle("off", x < 0 || x > fr.width || y < -40 || y > fr.height + 40);
+  }
+  afterView.push(placeSizeBar);
+  function bumpSize(t, dir, exact) {
+    const e = sbEnt(t); if (!e || !gm) return;
+    const [, , mn, mx] = SB[t.col];
+    const v = exact != null ? exact : e.size * (dir > 0 ? 1.12 : 1 / 1.12);
+    const size = Math.round(Math.min(mx, Math.max(mn, v)) * 10) / 10;
+    if (size === e.size) return;
+    const after = clone(e); after.size = size;
+    commit(t.col, t.id, clone(e), after);
+    placeSizeBar();
+  }
+  sizeBar.addEventListener("pointerdown", e => e.stopPropagation());
+  sizeBar.addEventListener("click", async e => {
+    const r = e.target.closest(".sb-row"); if (!r) return;
+    const t = sizeTargets.filter(sbEnt)[+r.dataset.i]; if (!t) return;
+    if (e.target.dataset.d) { bumpSize(t, +e.target.dataset.d); return; }
+    if (e.target.tagName === "B") {
+      const v = await ask("Размер шрифта (" + SB[t.col][0].toLowerCase() + ", " + SB[t.col][2] + "–" + SB[t.col][3] + ")", String(sbEnt(t).size));
+      const n = parseFloat(String(v || "").replace(",", "."));
+      if (n > 0) bumpSize(t, 0, n);
+    }
+  });
   let nameBefore = null;
   nameInp.addEventListener("focus", () => { if (sel) nameBefore = clone(state.countries[sel.id]); });
   nameInp.addEventListener("input", () => { if (!sel || !gm) return; state.countries[sel.id].name = window.KG.lines.fromInput(nameInp.value); renderCountry(sel.id); $("countryTitle").textContent = window.KG.lines.oneLine(state.countries[sel.id].name); });
@@ -785,7 +914,7 @@
   // ---------- инструменты ГМа ----------
   let tool = "pan", brushCountry = null, pencilSize = 2;
   const HINTS = {
-    pan: "Перетаскивайте карту, колесо — масштаб. Клик по стране — легенда. Двойной клик — переименовать (по городу — карточка города). Города и подписи можно перетаскивать.",
+    pan: "Правая кнопка мыши — двигать карту, колесо — масштаб. Клик по стране — карточка государства. Двойной клик — переименовать (по городу — карточка города). Города и подписи тащите левой кнопкой; у выбранной подписи — кнопки размера шрифта.",
     brush: "Кисть: рисуйте территорию выбранной страны. [ и ] — размер, Alt+клик — взять страну с карты, правая кнопка — двигать карту.",
     pencil: "Карандаш: точная правка границы (1–4 px). Alt+клик — взять страну с карты, правая кнопка — двигать карту.",
     eraser: "Ластик: убирает территорию (суша становится ничьей).",
@@ -806,10 +935,11 @@
     tool = t;
     frame.querySelectorAll("[data-tool]").forEach(b => b.classList.toggle("active", b.dataset.tool === t));
     viewport.className = "viewport tool-" + t;
+    if (typeof placeSizeBar === "function") placeSizeBar();
     $("brushBar").classList.toggle("hidden", !gm || !PAINT.includes(t) || t === "picker");
     // панель инструментов опускается под панель кисти, если та переносится на несколько строк
     requestAnimationFrame(() => { const bb = $("brushBar"); frame.style.setProperty("--bbh", bb.classList.contains("hidden") ? "0px" : bb.offsetHeight + "px"); });
-    $("hint").textContent = viewMode === "globe" ? HINT_GLOBE : MEASURE.includes(t) ? HINTS[t] : gm ? HINTS[t] || "" : "Перетаскивайте карту, колесо — масштаб. Клик по стране — её флаг и название в легенде, по значку города — карточка города. Слои — во вкладке «Слои».";
+    $("hint").textContent = viewMode === "globe" ? HINT_GLOBE : MEASURE.includes(t) ? HINTS[t] : gm ? HINTS[t] || "" : "Правая кнопка мыши — двигать карту (карта бесшовная, листается по кругу), колесо — масштаб. Клик по стране — карточка государства, по значку города — карточка города.";
     const sz = $("bbSize");
     if (t === "pencil") { sz.max = 4; sz.value = pencilSize; } else { sz.max = 120; sz.value = brushSize; }
     $("bbSizeVal").textContent = sz.value;
@@ -1029,9 +1159,12 @@
       const pid = P.ids ? P.at(p[0], p[1]) : 0;
       const provOn = isVisible(flat.find(x => x.id === "provBorders"));
       selProv = provOn && pid && state.provinces[String(pid)] ? String(pid) : null;
-      if (ent && ent.col && ent.col !== "countries" && ent.col !== "provinces") { select(ent); return; }
-      const cid = T.at(p[0], p[1]);
+      if (ent && ent.col === "provinces" && state.provinces[ent.id]) selProv = String(ent.id);
+      stateCardClosed = null; // новый клик снова открывает карточку государства
+      if (ent && ent.col && ent.col !== "countries" && ent.col !== "provinces") { select(ent); setSizeTargets(ent.col === "labels" ? [ent] : []); return; }
+      const cid = ent && ent.col === "countries" ? ent.id : T.at(p[0], p[1]); // клик по названию — именно эта страна
       select(cid && state.countries[String(cid)] ? { col: "countries", id: String(cid) } : null);
+      setSizeTargets([sel && sel.col === "countries" ? { col: "countries", id: sel.id } : null, selProv ? { col: "provinces", id: selProv } : null]);
       return;
     }
     if (tool === "fill") { doFill(p); return; }
@@ -1077,19 +1210,28 @@
       if (stroke) endStroke();
       drag = null; return;
     }
-    const p = toMap(e), ent = entOf(e.target);
+    let p = toMap(e), ent = entOf(e.target);
+    // клик пришёлся на копию карты сбоку: сдвигаем вид на ширину карты (картинка не меняется),
+    // чтобы под указателем оказалась основная копия, и берём объект под ним заново
+    if (p[0] < 0 || p[0] >= W) {
+      setView(s, tx + Math.floor(p[0] / W) * W * s, ty, true);
+      p = toMap(e); ent = entOf(document.elementFromPoint(e.clientX, e.clientY));
+    }
+    // ЛКМ мышью карту не двигает: только правая/средняя кнопка, пробел + ЛКМ или палец на экране
     const panButton = e.button === 1 || e.button === 2 || spaceDown;
-    if (!panButton && tool === "compass") { compassStart(p); drag = { kind: "compass" }; return; }
+    const noPan = !panButton && e.pointerType === "mouse";
+    if (!panButton && tool === "compass") { compassStart(p); drag = { kind: "compass" }; holdWrap = true; return; }
     if (gm && !panButton && ["brush", "pencil", "eraser"].includes(tool)) {
       if (e.altKey) { pick(p); return; }
-      if (startStroke(p)) drag = { kind: "paint" };
+      if (startStroke(p)) { drag = { kind: "paint" }; holdWrap = true; }
       return;
     }
     if (gm && !panButton && tool === "pan" && ent && ent.col !== "countries" || gm && !panButton && tool === "pan" && ent && ent.part === "label") {
       drag = { kind: "move", ent, sx: e.clientX, sy: e.clientY, p0: p, before: clone(state[ent.col][ent.id]), moved: false };
+      holdWrap = true;
       return;
     }
-    drag = { kind: "pan", sx: e.clientX, sy: e.clientY, tx, ty, moved: false, ent, p, panOnly: panButton };
+    drag = { kind: "pan", sx: e.clientX, sy: e.clientY, tx, ty, moved: false, ent, p, panOnly: panButton, noPan };
   });
   viewport.addEventListener("pointermove", e => {
     if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -1107,8 +1249,8 @@
     if (drag.kind === "paint") { if (stroke) moveStroke(p); return; }
     if (drag.kind === "pan") {
       const dx = e.clientX - drag.sx, dy = e.clientY - drag.sy;
-      if (!drag.moved && Math.hypot(dx, dy) > 4) { drag.moved = true; viewport.classList.add("panning"); }
-      if (drag.moved) setView(s, drag.tx + dx, drag.ty + dy);
+      if (!drag.moved && Math.hypot(dx, dy) > 4) { drag.moved = true; if (!drag.noPan) viewport.classList.add("panning"); }
+      if (drag.moved && !drag.noPan) setView(s, drag.tx + dx, drag.ty + dy);
       return;
     }
     if (drag.kind === "move") {
@@ -1116,15 +1258,16 @@
       if (!drag.moved) return;
       const dx = p[0] - drag.p0[0], dy = p[1] - drag.p0[1], b = drag.before, en = state[drag.ent.col][drag.ent.id];
       const r1 = v => Math.round(v * 10) / 10;
-      if (drag.ent.col === "countries") en.label = [Math.round(b.label[0] + dx), Math.round(b.label[1] + dy)];
-      else { en.x = r1(b.x + dx); en.y = r1(b.y + dy); }
+      const wx = v => window.KGWrap.wrapX(v, W); // через край карты объект переходит на другую сторону
+      if (drag.ent.col === "countries") en.label = [Math.round(wx(b.label[0] + dx)), Math.round(b.label[1] + dy)];
+      else { en.x = r1(wx(b.x + dx)); en.y = r1(b.y + dy); }
       RENDER[drag.ent.col](drag.ent.id);
     }
   });
   function endPointer(e) {
     pointers.delete(e.pointerId);
     if (pinch) { if (pointers.size < 2) pinch = null; drag = null; return; }
-    const d = drag; drag = null; viewport.classList.remove("panning");
+    const d = drag; drag = null; holdWrap = false; viewport.classList.remove("panning");
     if (!d) return;
     if (d.kind === "paint") { if (stroke) endStroke(); return; }
     if (d.kind === "compass") { compassEnd(); return; }
@@ -1149,6 +1292,7 @@
     if (e.target.matches && e.target.matches("input, textarea, select")) return;
     if (!$("modal").classList.contains("hidden")) return;
     if (e.key === "Escape" && popCity) closeCityPop();
+    else if (e.key === "Escape" && !stateCard.classList.contains("hidden") && sel) { stateCardClosed = sel.id; stateCard.classList.add("hidden"); if (!gm) return; }
     if (e.code === "Space") { spaceDown = true; if (gm) e.preventDefault(); }
     if (MEASURE.includes(tool)) {
       if (e.key === "Enter") { finishRuler(); return; }
@@ -1165,6 +1309,9 @@
       sz.dispatchEvent(new Event("input")); return;
     }
     if (e.key === "Escape") { selProv = null; select(null); return; }
+    if ((e.key === "+" || e.key === "=" || e.key === "-" || e.key === "_") && sizeTargets.some(sbEnt) && tool === "pan") {
+      bumpSize(sizeTargets.filter(sbEnt)[0], e.key === "-" || e.key === "_" ? -1 : 1); return;
+    }
     if (e.key === "Delete" && sel) { if (sel.col === "countries") deleteCountry(sel.id); else commit(sel.col, sel.id, state[sel.col][sel.id], null); return; }
     const map = { v: "pan", м: "pan", b: "brush", и: "brush", p: "pencil", з: "pencil", e: "eraser", у: "eraser", g: "fill", п: "fill", i: "picker", ш: "picker", c: "city", с: "city", n: "label", т: "label", d: "erase", в: "erase" };
     if (map[k]) setTool(map[k]);
@@ -1262,6 +1409,7 @@
   function globeShow() {
     const sh = {};
     flat.forEach(l => { if (!l.internal) { sh[l.id] = isVisible(l); if (ui.hl[l.id]) sh["hl_" + l.id] = true; } });
+    sh.landDark = true; // подложка суши всегда видна
     return sh;
   }
   function globeDirty() {
@@ -1332,12 +1480,12 @@
       const c = state.countries[id];
       cx.fillStyle = c.color; pal[id] = cx.fillStyle;
       const ll = Geo.toLL(c.label[0], c.label[1]);
-      labels.push({ id, name: c.name, lat: ll[0], lon: ll[1], size: c.size });
+      labels.push({ id, name: c.name, lat: ll[0], lon: ll[1], size: c.size * fk("country") });
     }
     globe.setPalette(pal);
     globe.setLabels(labels);
     globe.setCities(Object.values(state.cities).map(c => { const ll = Geo.toLL(c.x, c.y), t = cityType(c); return { id: c.id, lat: ll[0], lon: ll[1], k: t.size / 7.2, z: t.z, ring: t.ring, cap: !!c.capital, hide: ui.vis["ct_" + t.id] === false }; }));
-    globe.setProvLabels(Object.values(state.provinces || {}).map(p => { const ll = Geo.toLL(p.label[0], p.label[1]); return { name: p.name, lat: ll[0], lon: ll[1], size: p.size }; }));
+    globe.setProvLabels(Object.values(state.provinces || {}).map(p => { const ll = Geo.toLL(p.label[0], p.label[1]); return { name: p.name, lat: ll[0], lon: ll[1], size: p.size * fk("province") }; }));
     globeDirty();
   }
   function globeZoom(f) { if (!globe) return; globe.zoom = f ? Math.min(8, Math.max(0.012, globe.zoom * f)) : 1; globeDirty(); }
@@ -1613,6 +1761,15 @@
     l.onerror = () => { l.href = "https://fonts.googleapis.com/css2?family=" + f.replace(/ /g, "+") + "&display=swap"; };
     document.head.append(l);
   }
+  // Размер шрифта: у каждой подписи свой (кнопки A−/A+ у выбранной подписи), плюс общий масштаб
+  // для каждого вида надписей (окно «Шрифты»). Масштаб хранится в settings.fonts как size_<вид> в процентах.
+  const SIZE_SLOTS = ["country", "province", "custom", "moon", "moonNames"];
+  function fk(slot) {
+    const v = state && state.settings && state.settings.fonts && +state.settings.fonts["size_" + slot];
+    return v > 0 ? Math.min(4, Math.max(0.25, v / 100)) : 1;
+  }
+  const fontScales = () => { const o = {}; SIZE_SLOTS.forEach(k => (o[k] = fk(k))); return o; };
+  let appliedScales = "";
   function currentFonts() {
     const f = {}; const saved = (state && state.settings && state.settings.fonts) || {};
     FONT_SLOTS.forEach(([k]) => (f[k] = saved[k] || "Unbounded"));
@@ -1621,6 +1778,17 @@
   function applyFonts() {
     const f = currentFonts(), root = document.documentElement;
     for (const k in f) { ensureFont(f[k]); root.style.setProperty("--f-" + k, `"${f[k]}", "Exo 2", sans-serif`); }
+    const sc = fontScales(), key = JSON.stringify(sc);
+    SIZE_SLOTS.forEach(k => root.style.setProperty("--fk-" + k, sc[k]));
+    if (key !== appliedScales) {
+      const first = !appliedScales; appliedScales = key;
+      if (!first || Object.values(sc).some(v => v !== 1)) {
+        Object.keys(state.countries).forEach(renderCountry); Object.keys(state.labels).forEach(renderLabel);
+        Object.keys(state.provinces || {}).forEach(renderProvince);
+        try { if (globe) syncGlobe(false); } catch (e) { /* */ }
+      }
+      window.dispatchEvent(new CustomEvent("kg-fonts", { detail: sc }));
+    }
     if (globe) { globe.fonts = f; globeDirty(); }
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (globe) globeDirty(); });
   }
@@ -1628,8 +1796,16 @@
     if (!gm) return;
     const before = (state.settings && state.settings.fonts) || null, cur = currentFonts();
     FONTS.forEach(ensureFont); // чтобы превью в списке было честным
-    const v = await openForm("Шрифты надписей на карте", FONT_SLOTS.map(([k, label]) => ({ key: k, label, type: "select", options: FONTS.map(x => [x, x]) })), Object.assign({}, cur, { __opts: {} }));
+    const fields = [];
+    FONT_SLOTS.forEach(([k, label]) => {
+      fields.push({ key: k, label, type: "select", options: FONTS.map(x => [x, x]) });
+      if (SIZE_SLOTS.includes(k)) fields.push({ key: "size_" + k, label: "↳ размер, % (100 — как задано у подписей)", type: "number", min: 25, max: 400, step: 5 });
+    });
+    const vals = Object.assign({}, cur, { __opts: { validate: v => SIZE_SLOTS.some(k => v["size_" + k] !== "" && !(v["size_" + k] >= 25 && v["size_" + k] <= 400)) ? "Размер — от 25 до 400 %" : "" } });
+    SIZE_SLOTS.forEach(k => (vals["size_" + k] = Math.round(fk(k) * 100)));
+    const v = await openForm("Шрифты надписей на карте", fields, vals);
     if (!v) return;
+    SIZE_SLOTS.forEach(k => { if (v["size_" + k] === "" || v["size_" + k] === 100) delete v["size_" + k]; });
     commit("settings", "fonts", before, Object.assign({ id: "fonts" }, v));
     toast("Шрифты обновлены (опубликуйте, чтобы их увидели все)");
   };
@@ -1722,6 +1898,7 @@
       const pp = hit ? cache.p : await computePaths(P, true, false);
       await applyProvPaths(pp.paths);
       provReady = true;
+      wrapVectorLayers(); // копии векторных слоёв по краям — когда всё построено
       console.info("провинции " + (hit ? "из кэша" : "построены") + " за", Math.round(performance.now() - t1), "мс");
       if (!hit && loadedStamp) DB.set("paths", { key, c: { paths: cp.paths, coast: cp.coast }, p: { paths: pp.paths } }).catch(() => {});
       if (gm) offerDraft();
@@ -1733,5 +1910,5 @@
   setTool("pan");
   requestAnimationFrame(fit);
   load();
-  window.KGMap = { get state() { return state; }, select, setTool, fit, T, setView3, measures, get globe() { return globe; }, get view() { return { s, tx, ty }; }, get gm() { return gm; }, get fonts() { return currentFonts(); } };
+  window.KGMap = { get state() { return state; }, select, setTool, fit, T, setView3, measures, get globe() { return globe; }, get view() { return { s, tx, ty }; }, get gm() { return gm; }, get fonts() { return currentFonts(); }, get fontScale() { return fontScales(); } };
 })();

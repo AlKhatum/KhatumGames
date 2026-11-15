@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@200;300;400;600&family=Oswald:wght@400;500&family=Exo+2:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20261113b">
+<link rel="stylesheet" href="css/style.css?v=20261115a">
 </head>
 <body>
 
@@ -224,6 +224,39 @@
 
         <div class="hint" id="hint"></div>
         <div class="city-pop hidden" id="cityPop" role="dialog" aria-label="Город"></div>
+        <!-- Карточка государства (пока заглушка) — у правого края карты, слева от легенды -->
+        <div class="state-card hidden" id="stateCard" role="dialog" aria-label="Государство">
+          <button class="sc-close" id="stateCardClose" title="Закрыть (Esc)">✕</button>
+          <div class="sc-body" id="stateCardBody"></div>
+          <div class="prov-block hidden" id="provBlock">
+            <div class="legend-label">Провинция</div>
+            <div class="prov-title" id="provTitle"></div>
+            <input type="text" id="provName" class="gm-only" placeholder="Название провинции">
+            <div class="legend-meta" id="provMeta"></div>
+          </div>
+          <!-- Инструменты ГМа: флаг, название, цвет (раньше были в легенде) -->
+          <div class="sc-gm gm-only">
+            <div class="legend-label">Инструменты ГМа</div>
+            <div class="sc-gm-row">
+              <label class="flag" id="flagBox" title="Флаг страны: нажмите, чтобы загрузить">
+                <img id="flagImg" alt="" hidden>
+                <span class="flag-ph" id="flagPh">ФЛАГ<br><small>загрузить</small></span>
+                <input type="file" id="flagInput" accept="image/*" hidden>
+              </label>
+              <div class="sc-gm-fields">
+                <div class="country-title sc-hidden" id="countryTitle">Выберите страну на карте</div>
+                <input type="text" id="countryName" placeholder="Название страны" disabled>
+                <div class="legend-row">
+                  <span>Цвет</span><input type="color" id="countryColor" disabled>
+                  <button id="flagClear" class="small-btn" disabled>Убрать флаг</button>
+                </div>
+                <div class="legend-meta" id="countryMeta"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- Размер выбранной подписи (только ГМ) -->
+        <div class="size-bar hidden" id="sizeBar" role="toolbar" aria-label="Размер шрифта подписи"></div>
         <div class="zoom panel">
           <button id="zoomIn" title="Приблизить">+</button>
           <button id="zoomOut" title="Отдалить">−</button>
@@ -234,29 +267,6 @@
       <!-- Легенда карты -->
       <aside class="legend panel" id="legend">
         <div class="legend-head"><span>Легенда карты</span></div>
-        <div class="legend-card">
-          <label class="flag" id="flagBox" title="Флаг страны">
-            <img id="flagImg" alt="" hidden>
-            <span class="flag-ph" id="flagPh">ФЛАГ<br><small>место под изображение</small></span>
-            <input type="file" id="flagInput" accept="image/*" hidden>
-          </label>
-          <div class="legend-info">
-            <div class="legend-label">Страна</div>
-            <div class="country-title" id="countryTitle">Выберите страну на карте</div>
-            <input type="text" id="countryName" class="gm-only" placeholder="Название страны" disabled>
-            <div class="legend-row gm-only">
-              <span>Цвет</span><input type="color" id="countryColor" disabled>
-              <button id="flagClear" class="small-btn" disabled>Убрать флаг</button>
-            </div>
-            <div class="legend-meta" id="countryMeta"></div>
-            <div class="prov-block hidden" id="provBlock">
-              <div class="legend-label">Провинция</div>
-              <div class="prov-title" id="provTitle"></div>
-              <input type="text" id="provName" class="gm-only" placeholder="Название провинции">
-              <div class="legend-meta" id="provMeta"></div>
-            </div>
-          </div>
-        </div>
         <div class="legend-tabs">
           <button data-ltab="countries" class="active">Страны</button>
           <button data-ltab="layers">Слои</button>
@@ -401,14 +411,15 @@
   </div>
 </div>
 
-<script src="js/app.js?v=20261113b"></script>
-<script src="js/geo.js?v=20261113b"></script>
-<script src="js/territory.js?v=20261113b"></script>
-<script src="js/sats.js?v=20261113b"></script>
-<script src="js/globe.js?v=20261113b"></script>
-<script src="js/github.js?v=20261113b"></script>
-<script src="js/map.js?v=20261113b"></script>
-<script src="js/moon-names.js?v=20261113b"></script>
-<script src="js/moon.js?v=20261113b"></script>
+<script src="js/app.js?v=20261115a"></script>
+<script src="js/geo.js?v=20261115a"></script>
+<script src="js/territory.js?v=20261115a"></script>
+<script src="js/sats.js?v=20261115a"></script>
+<script src="js/globe.js?v=20261115a"></script>
+<script src="js/github.js?v=20261115a"></script>
+<script src="js/wrap.js?v=20261115a"></script>
+<script src="js/map.js?v=20261115a"></script>
+<script src="js/moon-names.js?v=20261115a"></script>
+<script src="js/moon.js?v=20261115a"></script>
 </body>
 </html>

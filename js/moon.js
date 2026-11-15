@@ -16,7 +16,7 @@
 
   // координаты: x,y — пиксели карты 2048×1024; lat, lon — градусы
   const toXY = (lat, lon) => [(lon + 180) / 360 * MW, (90 - lat) / 180 * MH];
-  const toLL = (x, y) => [90 - y / MH * 180, x / MW * 360 - 180];
+  const toLL = (x, y) => [90 - y / MH * 180, ((x / MW * 360) % 360 + 360) % 360 - 180]; // долгота — по кругу
   function dist(a, b) {
     const p1 = a[0] * D, p2 = b[0] * D, dp = p2 - p1, dl = (b[1] - a[1]) * D;
     const h = Math.sin(dp / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2;
@@ -74,29 +74,37 @@
   const Lfeat = svg("mFeat"), Lnames = svg("mNames"), Lmarks = svg("mMarks"), Lmeas = svg("mMeasure"), Lover = svg("mOver");
   Lnames.innerHTML = `<defs><linearGradient id="mLblGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff4fd"/><stop offset=".5" stop-color="#ffc3ef"/><stop offset="1" stop-color="#ff74d4"/></linearGradient></defs>`;
   const selPath = document.createElementNS(NS, "path"); selPath.setAttribute("class", "sel-outline"); Lover.append(selPath);
-  const cursor = document.createElementNS(NS, "circle"); cursor.setAttribute("class", "brush-cursor"); cursor.setAttribute("r", 8); Lover.append(cursor);
   const draftPath = document.createElementNS(NS, "path"); draftPath.setAttribute("class", "m-draft"); Lover.append(draftPath);
   const vtxG = document.createElementNS(NS, "g"); Lover.append(vtxG);
+  // Бесшовная карта: копии слоёв слева и справа (курсор кисти и холст рисования не копируются)
+  const WR = window.KGWrap.create(world, MW, MH);
+  [tex, Lfill, Lborder, Lroads, Lfeat, Lnames, Lmarks, Lmeas, Lover].forEach(el => WR.add(el));
+  const Lcur = svg("mCursor");
+  const cursor = document.createElementNS(NS, "circle"); cursor.setAttribute("class", "brush-cursor"); cursor.setAttribute("r", 8); Lcur.append(cursor);
   const tPaths = new Map(), tEls = {};
 
   // ---------- вид ----------
-  let s = 0.5, tx = 0, ty = 0, fitS = 0.5;
-  function setView(ns, ntx, nty) {
+  let s = 0.5, tx = 0, ty = 0, fitS = 0.5, holdWrap = false;
+  const minScale = () => Math.max(fitS * 0.8, vp.clientWidth / (2 * MW));
+  function setView(ns, ntx, nty, keep) {
     const vw = vp.clientWidth, vh = vp.clientHeight;
-    s = Math.min(10, Math.max(fitS * 0.8, ns));
+    s = Math.min(10, Math.max(minScale(), ns));
     const mw = MW * s, mh = MH * s;
-    tx = mw < vw ? (vw - mw) / 2 : Math.min(0, Math.max(vw - mw, ntx));
+    tx = keep || holdWrap ? ntx : WR.norm(ntx, mw, vw); // карта повторяется по горизонтали
     ty = mh < vh ? (vh - mh) / 2 : Math.min(0, Math.max(vh - mh, nty));
     world.style.transform = `translate(${tx}px, ${ty}px) scale(${s})`;
+    WR.show(tx, mw, vw);
     wrap.style.setProperty("--ms", s);
     wrap.dataset.mz = s >= 2.4 ? 3 : s >= 1.2 ? 2 : s >= 0.6 ? 1 : 0;
     wrap.style.setProperty("--mk", Math.min(1, 1.8 / s).toFixed(3)); // подписи не раздуваются при приближении
     renderMarks(); renderMeasure(); renderVertices();
+    if (typeof placeMSize === "function") placeMSize();
   }
-  function fit() { const vw = vp.clientWidth, vh = vp.clientHeight; if (!vw) return; fitS = Math.min(vw / MW, vh / MH); setView(fitS, 0, 0); }
-  function zoomAt(f, cx, cy) { const ns = Math.min(10, Math.max(fitS * 0.8, s * f)), k = ns / s; setView(ns, cx - (cx - tx) * k, cy - (cy - ty) * k); }
+  function fit() { const vw = vp.clientWidth, vh = vp.clientHeight; if (!vw) return; fitS = Math.min(vw / MW, vh / MH); setView(fitS, (vw - MW * fitS) / 2, 0); }
+  function zoomAt(f, cx, cy) { const ns = Math.min(10, Math.max(minScale(), s * f)), k = ns / s; setView(ns, cx - (cx - tx) * k, cy - (cy - ty) * k); }
   const toMap = e => { const r = vp.getBoundingClientRect(); return [(e.clientX - r.left - tx) / s, (e.clientY - r.top - ty) / s]; };
-  vp.addEventListener("wheel", e => { e.preventDefault(); const r = vp.getBoundingClientRect(); zoomAt(Math.pow(1.0015, -e.deltaY), e.clientX - r.left, e.clientY - r.top); }, { passive: false });
+  let movT = 0; // во время масштабирования мир — один слой видеокарты (см. .moon-wrap.moving)
+  vp.addEventListener("wheel", e => { e.preventDefault(); wrap.classList.add("moving"); clearTimeout(movT); movT = setTimeout(() => wrap.classList.remove("moving"), 250); const r = vp.getBoundingClientRect(); zoomAt(Math.pow(1.0015, -e.deltaY), e.clientX - r.left, e.clientY - r.top); }, { passive: false });
 
   // ---------- рендер ----------
   function setTerrPath(id, d) {
@@ -116,8 +124,9 @@
     if (!e) setTerrPath(id, tPaths.get(id) || "");
     const el = tEls[id];
     el.f.setAttribute("fill", t.color);
-    el.t.setAttribute("x", t.label[0]); el.t.setAttribute("y", t.label[1]); el.t.setAttribute("font-size", t.size);
-    el.t.setAttribute("letter-spacing", (t.size * 0.2).toFixed(1)); el.t.setAttribute("stroke-width", Math.max(0.6, t.size * 0.14).toFixed(1));
+    const fs = +(t.size * fkOf("moon")).toFixed(2); // размер подписи × общий масштаб ГМа
+    el.t.setAttribute("x", t.label[0]); el.t.setAttribute("y", t.label[1]); el.t.setAttribute("font-size", fs);
+    el.t.setAttribute("letter-spacing", (fs * 0.2).toFixed(1)); el.t.setAttribute("stroke-width", Math.max(0.6, fs * 0.14).toFixed(1));
     L.svg(el.t, t.name);
   }
   function renderFeatures() {
@@ -191,6 +200,9 @@
     renderRoads(); renderMarks();
     if (sub === "globe") globeDirty();
   }
+  // общий масштаб надписей Луны (окно «Шрифты» на карте Земли)
+  const fkOf = slot => { const k = window.KGMap && window.KGMap.fontScale; return (k && k[slot]) || 1; };
+  window.addEventListener("kg-fonts", () => { if (!st) return; for (const id in st.territories) renderTerr(id); renderMarks(); globeDirty(); });
   function renderAll() {
     for (const id of Object.keys(tEls)) if (!st.territories[id]) renderTerr(id);
     for (const id in st.territories) renderTerr(id);
@@ -210,7 +222,42 @@
     for (let y = b[1]; y < b[3]; y++) { const c = Math.cos((90 - (y + 0.5) / MH * 180) * D); for (let x = b[0]; x < b[2]; x++) if (TM.ids[y * MW + x] === +id) a += c; }
     return a * px;
   }
+  // ---------- размер подписи территории прямо на карте (ГМ) ----------
+  const mSize = document.createElement("div"); mSize.className = "size-bar hidden"; mSize.setAttribute("role", "toolbar"); wrap.append(mSize);
+  function placeMSize() {
+    const t = sel && sel.col === "territories" && isGm() && tool === "pan" && sub === "flat" && st ? st.territories[sel.id] : null;
+    if (!t) { mSize.classList.add("hidden"); return; }
+    const key = sel.id + ":" + t.size;
+    if (mSize.dataset.key !== key) {
+      mSize.dataset.key = key;
+      mSize.innerHTML = `<div class="sb-row"><span>Территория</span><button type="button" data-d="-1" title="Меньше (−)">A−</button>` +
+        `<b title="Ввести размер">${+(+t.size).toFixed(1)}</b><button type="button" data-d="1" title="Больше (+)">A+</button></div>`;
+    }
+    mSize.classList.remove("hidden");
+    const wr = wrap.getBoundingClientRect(), vr = vp.getBoundingClientRect(), mw = MW * s;
+    let sx = tx + t.label[0] * s; sx += mw * Math.round((vp.clientWidth / 2 - sx) / mw); // ближайшая к центру копия
+    const x = vr.left - wr.left + sx, y = vr.top - wr.top + ty + t.label[1] * s - t.size * fkOf("moon") * s * 0.7;
+    const w = mSize.offsetWidth || 160, h = mSize.offsetHeight || 34;
+    const left = Math.max(8, Math.min(vr.right - wr.left - w - 8, x - w / 2)), top = Math.max(8, Math.min(vr.bottom - wr.top - h - 8, y - h - 8));
+    mSize.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
+    mSize.classList.toggle("off", x < vr.left - wr.left || x > vr.right - wr.left || y < -40 || y > vr.bottom - wr.top + 40);
+  }
+  function bumpMSize(dir, exact) {
+    const t = sel && sel.col === "territories" ? st.territories[sel.id] : null; if (!t || !isGm()) return;
+    const size = Math.round(Math.min(120, Math.max(3, exact != null ? exact : t.size * (dir > 0 ? 1.12 : 1 / 1.12))) * 10) / 10;
+    if (size === t.size) return;
+    const a = clone(t); a.size = size; commit("territories", sel.id, t, a);
+  }
+  mSize.addEventListener("pointerdown", e => e.stopPropagation());
+  mSize.addEventListener("click", async e => {
+    if (e.target.dataset.d) { bumpMSize(+e.target.dataset.d); return; }
+    if (e.target.tagName === "B" && sel) {
+      const v = await ask("Размер шрифта (территория, 3–120)", String(st.territories[sel.id].size));
+      const n = parseFloat(String(v || "").replace(",", ".")); if (n > 0) bumpMSize(0, n);
+    }
+  });
   function updateCard() {
+    placeMSize();
     const box = $("moonCard"); if (!box || !st) return;
     const gm = isGm();
     let h = '<div class="legend-label">Выберите объект на Луне</div>';
@@ -383,7 +430,7 @@
   // ---------- инструменты ----------
   const PAINT = ["brush", "pencil", "eraser", "fill", "picker"], ALL = ["pan", "ruler", "compass"];
   const HINTS = {
-    pan: "Тяните — двигать, колесо — масштаб. Клик — выбрать территорию, отметку или дорогу.",
+    pan: "Правая кнопка мыши — двигать (карта листается по кругу), колесо — масштаб. Клик — выбрать территорию, отметку или дорогу.",
     brush: "Кисть: рисуйте территорию. [ и ] — размер, Alt+клик — взять территорию, правая кнопка — двигать карту.",
     pencil: "Карандаш: точная правка границы.", eraser: "Ластик: убирает территорию.", fill: "Заливка связной области.", picker: "Пипетка: выберите территорию для кисти.",
     mark: "Кликните, чтобы поставить отметку выбранного типа.",
@@ -398,7 +445,7 @@
     if (sub === "globe") t = "pan";
     if (tool === "road" && t !== "road") finishRoad(false);
     if (tool === "ruler" && t !== "ruler") finishRuler();
-    tool = t;
+    tool = t; placeMSize();
     wrap.querySelectorAll("[data-mtool]").forEach(b => b.classList.toggle("active", b.dataset.mtool === t));
     vp.dataset.tool = ["brush", "pencil", "eraser"].includes(t) ? "brush" : t;
     $("mBrushBar").classList.toggle("hidden", !isGm() || !["brush", "pencil", "eraser", "fill", "mark", "road"].includes(t));
@@ -520,22 +567,29 @@
   vp.addEventListener("contextmenu", e => e.preventDefault());
   vp.addEventListener("pointerdown", e => {
     vp.setPointerCapture(e.pointerId);
-    const p = toMap(e), ent = entOf(e.target), panBtn = e.button === 1 || e.button === 2, gm = isGm();
-    const v = e.target.closest && e.target.closest(".vertex");
-    if (gm && v && sel && sel.col === "roads") { drag = { kind: "vtx", i: +v.dataset.vi, before: clone(st.roads[sel.id]) }; return; }
-    if (!panBtn && tool === "compass") { circ = { c: toLL(p[0], p[1]), r: 0 }; drag = { kind: "compass" }; return; }
+    let p = toMap(e), target = e.target;
+    // клик по копии сбоку: сдвигаем вид на ширину карты, чтобы под указателем была основная копия
+    if (p[0] < 0 || p[0] >= MW) {
+      setView(s, tx + Math.floor(p[0] / MW) * MW * s, ty, true);
+      p = toMap(e); target = document.elementFromPoint(e.clientX, e.clientY) || target;
+    }
+    // ЛКМ мышью карту не двигает: только правая/средняя кнопка или палец на экране
+    const ent = entOf(target), panBtn = e.button === 1 || e.button === 2, gm = isGm(), noPan = !panBtn && e.pointerType === "mouse";
+    const v = target.closest && target.closest(".vertex");
+    if (gm && v && sel && sel.col === "roads") { drag = { kind: "vtx", i: +v.dataset.vi, before: clone(st.roads[sel.id]) }; holdWrap = true; return; }
+    if (!panBtn && tool === "compass") { circ = { c: toLL(p[0], p[1]), r: 0 }; drag = { kind: "compass" }; holdWrap = true; return; }
     if (gm && !panBtn && ["brush", "pencil", "eraser"].includes(tool)) {
       if (e.altKey) { pick(p); return; }
       const val = paintValue(); if (val == null) return;
       const r = Math.max(0.5, (tool === "pencil" ? pencil : brush) / 2), ch = TM.beginStroke();
       stroke = { ch, v: val, r, opts: { land: false, keep: false }, hadBox: val && !!TM.bbox[val] };
       TM.stamp(p[0], p[1], r, val, stroke.opts, ch); preview(p[0] - r - 1, p[1] - r - 1, p[0] + r + 1, p[1] + r + 1);
-      last = p; drag = { kind: "paint" }; return;
+      last = p; drag = { kind: "paint" }; holdWrap = true; return;
     }
     if (gm && !panBtn && tool === "pan" && ent && (ent.col === "marks" || ent.part === "label")) {
-      drag = { kind: "move", ent, p0: p, sx: e.clientX, sy: e.clientY, before: clone(st[ent.col][ent.id]), moved: false }; return;
+      drag = { kind: "move", ent, p0: p, sx: e.clientX, sy: e.clientY, before: clone(st[ent.col][ent.id]), moved: false }; holdWrap = true; return;
     }
-    drag = { kind: "pan", sx: e.clientX, sy: e.clientY, tx, ty, moved: false, ent, p, panOnly: panBtn };
+    drag = { kind: "pan", sx: e.clientX, sy: e.clientY, tx, ty, moved: false, ent, p, panOnly: panBtn, noPan };
   });
   vp.addEventListener("pointermove", e => {
     const p = toMap(e);
@@ -554,7 +608,7 @@
     if (drag.kind === "pan") {
       const dx = e.clientX - drag.sx, dy = e.clientY - drag.sy;
       if (!drag.moved && Math.hypot(dx, dy) > 4) drag.moved = true;
-      if (drag.moved) setView(s, drag.tx + dx, drag.ty + dy);
+      if (drag.moved && !drag.noPan) setView(s, drag.tx + dx, drag.ty + dy);
       return;
     }
     if (drag.kind === "move") {
@@ -562,11 +616,11 @@
       if (!drag.moved) return;
       const en = st[drag.ent.col][drag.ent.id], b = drag.before;
       if (drag.ent.col === "marks") { const ll = toLL(p[0], p[1]); en.lat = +ll[0].toFixed(3); en.lon = +ll[1].toFixed(3); renderMarks(); }
-      else { en.label = [Math.round(b.label[0] + p[0] - drag.p0[0]), Math.round(b.label[1] + p[1] - drag.p0[1])]; renderTerr(drag.ent.id); }
+      else { en.label = [Math.round(window.KGWrap.wrapX(b.label[0] + p[0] - drag.p0[0], MW)), Math.round(b.label[1] + p[1] - drag.p0[1])]; renderTerr(drag.ent.id); }
     }
   });
   vp.addEventListener("pointerup", async e => {
-    const d = drag; drag = null; if (!d) return;
+    const d = drag; drag = null; holdWrap = false; if (!d) return;
     const p = toMap(e);
     if (d.kind === "paint") { const st2 = stroke; stroke = null; endPaint(st2.ch, st2.v, st2.hadBox); return; }
     if (d.kind === "compass") { if (circ && circ.r > 0.5) meas.circles.push(circ); circ = null; renderMeasure(); return; }
@@ -615,6 +669,7 @@
     if (!isGm()) return;
     if ((e.ctrlKey || e.metaKey) && (k === "z" || k === "я")) { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
     if ((e.ctrlKey || e.metaKey) && (k === "y" || k === "н")) { e.preventDefault(); redo(); return; }
+    if ((e.key === "+" || e.key === "=" || e.key === "-" || e.key === "_") && tool === "pan" && sel && sel.col === "territories") { bumpMSize(e.key === "-" || e.key === "_" ? -1 : 1); return; }
     if (k === "[" || k === "]" || k === "х" || k === "ъ") { const sz = $("mbSize"); sz.value = Math.max(+sz.min, Math.min(+sz.max, +sz.value + (k === "]" || k === "ъ" ? 2 : -2))); sz.dispatchEvent(new Event("input")); }
   });
 
@@ -721,16 +776,16 @@ void main(){
         const x = cx + q[0], y = cy + q[1], col = (CATS.find(k => k.id === cat) || {}).color || "#dde";
         if (cat === "site") {
           c.fillStyle = col; c.beginPath(); c.moveTo(x, y - 4); c.lineTo(x + 3.5, y + 2.5); c.lineTo(x - 3.5, y + 2.5); c.closePath(); c.fill();
-          if (this.zoom >= 1.6) { c.font = `300 10px ${fontOf("moonNames")}`; c.textAlign = "left"; c.strokeText(n, x + 6, y); c.fillText(n, x + 6, y); c.textAlign = "center"; }
+          if (this.zoom >= 1.6) { c.font = `300 ${(10 * fkOf("moonNames")).toFixed(0)}px ${fontOf("moonNames")}`; c.textAlign = "left"; c.strokeText(n, x + 6, y); c.fillText(n, x + 6, y); c.textAlign = "center"; }
           continue;
         }
         if (sz < minSz) continue;
-        c.font = `${cat === "crater" || cat === "relief" ? "italic " : ""}300 ${Math.min(14, 6 + sz * 0.6 + this.zoom).toFixed(0)}px ${fontOf("moonNames")}`;
+        c.font = `${cat === "crater" || cat === "relief" ? "italic " : ""}300 ${(Math.min(14, 6 + sz * 0.6 + this.zoom) * fkOf("moonNames")).toFixed(0)}px ${fontOf("moonNames")}`;
         c.fillStyle = col; c.globalAlpha = 0.85; c.strokeText(n, x, y); c.fillText(n, x, y); c.globalAlpha = 1;
       }
     }
     if (visOf("tnames")) {
-      const tsz = Math.min(16, 9 + this.zoom * 2);
+      const tsz = Math.min(16, 9 + this.zoom * 2) * fkOf("moon");
       c.font = `400 ${tsz.toFixed(0)}px ${fontOf("moon")}`; c.fillStyle = "#ffc3ef"; c.strokeStyle = "rgba(28,12,44,.9)"; c.lineWidth = 3;
       if (mui.hl.tnames) { c.shadowColor = "#ff3fd0"; c.shadowBlur = 8; }
       for (const t of Object.values(st.territories)) { const ll = toLL(t.label[0], t.label[1]); const q = this.project(ll[0], ll[1]); if (q[2] < 0.2) continue; L.canvas(c, t.name.toUpperCase(), cx + q[0], cy + q[1], tsz, true); }
@@ -743,8 +798,9 @@ void main(){
       const x = cx + q[0], y = cy + q[1], isSel = sel && sel.col === "marks" && sel.id === m.id;
       c.fillStyle = t.color; c.shadowColor = t.color; c.shadowBlur = isSel || mui.hl["mark:" + m.type] ? 12 : 4;
       c.beginPath(); c.arc(x, y, isSel ? 6 : 4.5, 0, Math.PI * 2); c.fill(); c.shadowBlur = 0;
-      c.font = `300 11px ${fontOf("moon")}`; c.strokeStyle = "rgba(5,5,15,.9)"; c.lineWidth = 3;
-      const nl = String(m.name).split("\n").length; L.canvas(c, m.name, x, y - 13 - (nl - 1) * 11 * 1.15 / 2, 11, true);
+      const mfs = 11 * fkOf("moon");
+      c.font = `300 ${mfs.toFixed(0)}px ${fontOf("moon")}`; c.strokeStyle = "rgba(5,5,15,.9)"; c.lineWidth = 3;
+      const nl = String(m.name).split("\n").length; L.canvas(c, m.name, x, y - 13 - (nl - 1) * mfs * 1.15 / 2, mfs, true);
       this.hits.push({ x, y, ent: { col: "marks", id: m.id } });
     }
     // спутники Луны
@@ -753,7 +809,7 @@ void main(){
   function globeDirty() { if (!globe || gRaf || sub !== "globe" || msat.loop) return; gRaf = requestAnimationFrame(() => { gRaf = 0; globe.render(); }); }
   function syncGlobe(ids) { if (!globe) return; if (ids) globe.setIds(TM.ids); globe.setPal(st); globeDirty(); }
   function setSub(m) {
-    sub = m;
+    sub = m; placeMSize();
     $("moonSubSwitch").querySelectorAll("button").forEach(b => b.classList.toggle("active", b.dataset.msub === m));
     vp.classList.toggle("hidden", m !== "flat");
     $("moonGlobeWrap").classList.toggle("hidden", m !== "globe");

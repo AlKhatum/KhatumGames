@@ -26,7 +26,7 @@ window.KGLayoutCheck = function () {
     const scope = inMoon ? moon : frame;
     const sel = inMoon
       ? ["#moonSubSwitch", "#moonToolbar", "#mBrushBar", ".moon-measure", "#moonWrap .zoom", "#moonHint", "#mSatPanel", ".view-switch:not(.moon-sub)", ".gm-bar"]
-      : [".view-switch:not(.moon-sub)", ".gm-bar", ".map-title", "#toolbar", "#brushBar", ".measure:not(.moon-measure)", "#mapFrame > .zoom", "#hint", "#satPanel"];
+      : [".view-switch:not(.moon-sub)", ".gm-bar", ".map-title", "#toolbar", "#brushBar", ".measure:not(.moon-measure)", "#mapFrame > .zoom", "#hint", "#satPanel", "#stateCard"];
     const els = sel.map(s => [s, document.querySelector(s)]).filter(([, e]) => vis(e));
     for (const [s, e] of els) if (!inside(R(e), fr, 1)) issues.push(s + " выходит за рамку карты");
     for (let i = 0; i < els.length; i++) for (let j = i + 1; j < els.length; j++) {

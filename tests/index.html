@@ -18,10 +18,11 @@
 <h1>Автотесты карты Khatum Games</h1>
 <div id="summary">Выполняется…</div>
 <div id="out"></div>
-<script src="../js/geo.js?v=20261113b"></script>
-<script src="../js/territory.js?v=20261113b"></script>
-<script src="../js/sats.js?v=20261113b"></script>
-<script src="../js/moon-names.js?v=20261113b"></script>
+<script src="../js/geo.js?v=20261115a"></script>
+<script src="../js/territory.js?v=20261115a"></script>
+<script src="../js/sats.js?v=20261115a"></script>
+<script src="../js/moon-names.js?v=20261115a"></script>
+<script src="../js/wrap.js?v=20261115a"></script>
 <script>
 (async function () {
   "use strict";
@@ -241,6 +242,21 @@
     const f = (map.settings && map.settings.fonts) || {};
     for (const k of ["country", "province", "city", "custom", "moon", "moonNames"]) if (f[k]) assert(typeof f[k] === "string" && /^[A-Za-z0-9 ]+$/.test(f[k]), "странный шрифт " + k);
     return Object.keys(f).length ? "заданы" : "по умолчанию";
+  });
+  await test("Шрифты: общий масштаб надписей (если задан ГМом) — от 25 до 400 %", () => {
+    const f = (map.settings && map.settings.fonts) || {}, ks = Object.keys(f).filter(k => k.startsWith("size_"));
+    for (const k of ks) assert(["size_country", "size_province", "size_custom", "size_moon", "size_moonNames"].includes(k) && f[k] >= 25 && f[k] <= 400, "странный размер " + k + " = " + f[k]);
+    return ks.length ? ks.map(k => k.slice(5) + " " + f[k] + "%").join(", ") : "по умолчанию";
+  });
+  await test("Бесшовная карта: вид держит центр над основной копией, координаты заворачиваются", () => {
+    const Wr = window.KGWrap, W = 4087;
+    for (const [tx, mw, vw] of [[0, 1000, 800], [-5000, 1000, 800], [3000, 900, 1600], [-123.4, 4087 * 0.3, 1200]]) {
+      const n = Wr.norm(tx, mw, vw), c = vw / 2 - n;
+      assert(c >= 0 && c < mw + 1e-6, "центр вне основной копии: " + c);
+      assert(Math.abs(((n - tx) / mw) - Math.round((n - tx) / mw)) < 1e-9, "сдвиг не кратен ширине карты");
+    }
+    assert(Wr.wrapX(-10, W) === W - 10 && Wr.wrapX(W + 5, W) === 5 && Wr.wrapX(100, W) === 100, "wrapX");
+    return "ок";
   });
   await test("Луна: названия корректны", () => {
     const cats = new Set(window.KGMoonNameCats.map(c => c.id)), names = window.KGMoonNames;
