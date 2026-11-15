@@ -144,6 +144,8 @@
     refreshEditable();
     if (!editing) { if (document.activeElement && document.activeElement.isContentEditable) document.activeElement.blur(); bar.classList.add("hidden"); }
     const t = $("sdEditToggle"); if (t) t.textContent = editing ? "Выключить правку страниц" : "Включить правку страниц";
+    // механики (справочник, корпорации) переходят в режим правки вместе со страницами
+    window.dispatchEvent(new CustomEvent("siteedit", { detail: editing }));
   }
   $("siteEditBtn").addEventListener("click", () => { setEditing(!editing); toast(editing ? "Правка страниц включена: щёлкните по любому тексту" : "Правка страниц выключена"); });
   function record(el) {

@@ -467,6 +467,28 @@
     assert(pageDoc.querySelectorAll("#mechGM").length === 1, "калькулятор в одном месте");
     assert(!pageDoc.querySelector("#page-home [data-goto]"), "на Главной лишние переходы");
   });
+  await test("Механики: подсказки строк стоят в своей строке, а не плавающей плашкой карты", async () => {
+    // .hint в style.css — плашка подсказки карты (position:absolute); в карточке страны подсказки слипались внизу и закрывали строки
+    const fr = document.createElement("iframe");
+    fr.style.cssText = "position:absolute;left:-9999px;top:0;width:1200px;height:600px;border:0";
+    fr.srcdoc = '<link rel="stylesheet" href="' + new URL("../css/style.css", location.href) + '"><link rel="stylesheet" href="' + new URL("../css/mech.css", location.href) + '">' +
+      '<div id="wikiMech" style="position:relative"><div class="mech-pane"><div class="mrow out"><span class="l">А</span><span class="c">1</span><span class="u">шт.</span><span class="hint">Подсказка А</span></div>' +
+      '<div class="mrow out"><span class="l">Б</span><span class="c">2</span><span class="u">шт.</span><span class="hint">Подсказка Б</span></div></div></div><div class="hint" id="hint">карта</div>';
+    document.body.append(fr);
+    try {
+      await new Promise(res => { fr.onload = res; });
+      const d = fr.contentDocument;
+      for (let i = 0; i < 50 && ![...d.styleSheets].every(s => { try { return s.cssRules.length > 0; } catch (e) { return false; } }); i++) await new Promise(r => setTimeout(r, 50));
+      const cs = el => fr.contentWindow.getComputedStyle(el);
+      const rows = [...d.querySelectorAll(".mrow")];
+      for (const row of rows) {
+        const hnt = row.querySelector(".hint"), a = hnt.getBoundingClientRect(), b = row.getBoundingClientRect();
+        assert(cs(hnt).position === "static", "подсказка строки «" + row.querySelector(".l").textContent + "» спозиционирована: " + cs(hnt).position);
+        assert(a.top >= b.top - 1 && a.bottom <= b.bottom + 1, "подсказка вылезает из своей строки");
+      }
+      assert(cs(d.getElementById("hint")).position === "absolute", "плашка подсказки карты сломалась");
+    } finally { fr.remove(); }
+  });
   await test("Карта: Солнечная система → Земля / Луна → привычная карта / проекция шара", () => {
     assert(pageDoc.getElementById("solar") && pageDoc.getElementById("solarSvg"), "нет Солнечной системы");
     assert([...pageDoc.querySelectorAll("#solarPick [data-proj]")].map(b => b.dataset.proj).join(",") === "flat,globe", "выбор проекции");

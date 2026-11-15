@@ -93,6 +93,12 @@
 .mrow .l { color: #c7d7ec; }
 .mrow .c { text-align: right; font-variant-numeric: tabular-nums; }
 .mrow .u { color: var(--muted); font-size: 12px; }
+/* .hint в style.css — плавающая подсказка карты (#hint, #moonHint: position:absolute внизу рамки, на телефоне скрыта).
+   В механиках подсказка — обычный текст в своей колонке, иначе все подсказки карточки слипаются внизу и закрывают строки */
+#wikiMech .hint { position: static; z-index: auto; left: auto; right: auto; bottom: auto; transform: none; max-width: none; padding: 0;
+  background: none; border: 0; border-radius: 0; text-align: left; pointer-events: auto; display: block; }
+#wikiMech td.hint { display: table-cell; }
+#wikiMech .hint:empty { display: none; }
 .mrow .hint { color: var(--muted); font-size: 12px; line-height: 1.35; }
 .mrow.in .l::before { content: "✎ "; color: var(--pink-soft); font-size: 11px; opacity: 0; }
 .mrow.in.edit .l::before { opacity: .8; }
@@ -188,6 +194,22 @@
 .corp-card h3 { margin: 0 0 4px; font-family: var(--font-wide); font-weight: 400; font-size: 13px; letter-spacing: .06em; color: var(--line); }
 .corp-meta { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
 .corp-card p { margin: 0; font-size: 13.5px; line-height: 1.5; }
+
+/* правка механик на страницах (Режим ГМа → «✎ Правка») */
+.mech-editbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 10px 0 14px; padding: 8px 12px; border: 1px dashed rgba(255, 63, 208, .55); border-radius: 4px; background: rgba(255, 63, 208, .06); font-size: 13px; color: var(--text); }
+.mech-editbar span { flex: 1 1 260px; min-width: 0; }
+.mech-editbar button { flex: none; }
+.corp-lore-tools { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 6px; }
+.corp-lore-tools .small-btn, .corp-group h2 .small-btn, .corp-tools .small-btn, .row-tools .small-btn { margin: 0; font-size: 12px; letter-spacing: 0; text-transform: none; }
+.corp-group h2 .small-btn { margin-left: 10px; vertical-align: middle; }
+.corp-card { min-width: 0; }
+.corp-tools { float: right; display: flex; gap: 4px; margin: -2px -6px 4px 8px; }
+.mech-editbar button { background: rgba(24, 217, 245, .06); border: 1px solid var(--line-dim); border-radius: 3px; padding: 6px 12px; font-size: 13px; color: var(--text); }
+.mech-editbar button:hover, .corp-lore-tools .small-btn:hover, .corp-group h2 .small-btn:hover, .corp-tools .small-btn:hover, .row-tools .small-btn:hover { border-color: var(--line); color: var(--line); }
+.mech-editbar button.accent { border-color: var(--pink); background: rgba(255, 63, 208, .12); box-shadow: 0 0 8px rgba(255, 63, 208, .3); }
+.corp-tools .small-btn.danger, .row-tools .small-btn.danger { border-color: rgba(255, 84, 112, .6); color: #ff9aac; }
+.row-tools { white-space: nowrap; }
+.row-tools .small-btn + .small-btn { margin-left: 4px; }
 
 /* лор: идеологии */
 .ideo-top { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 22px; align-items: center; margin: 14px 0 6px; }

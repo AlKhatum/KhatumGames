@@ -211,14 +211,33 @@
     root.append(kSec);
     return root;
   }
+  // ---------- правка механик прямо на страницах (Режим ГМа → «✎ Правка») ----------
+  // правила общие с калькулятором: правятся только после расшифровки, попадают в его черновик и публикуются его кнопкой «Опубликовать»
+  const pageEdit = () => isGm() && !!(window.KGSite && window.KGSite.editing);
+  const canEditRules = () => pageEdit() && !!mk;
+  let corpLoreEl = null;
+  function rulesNote() {
+    if (!pageEdit()) return null;
+    if (!mk) return h("div", { class: "mech-editbar" }, h("span", { text: "Справочник и корпорации правятся после расшифровки калькулятора паролем ГМа." }),
+      h("button", { class: "accent", text: "Расшифровать", onclick: async () => { if (await unlockGm()) refreshMechViews(); } }));
+    return h("div", { class: "mech-editbar" }, h("span", { text: "Правка включена. Изменения попадают в черновик калькулятора и сразу пересчитывают страны; на сайт их выкладывает «Опубликовать» в калькуляторе." }),
+      h("button", { text: "Калькулятор →", onclick: () => window.KG.go("wiki/mech/calc") }));
+  }
+  function refreshMechViews() {
+    renderRef(); renderRating(); renderGm();
+    if (corpLoreEl && corpLoreEl.isConnected) Promise.resolve(renderCorpLore(corpLoreEl)).then(() => { if (window.KGSite) window.KGSite.applyTexts(corpLoreEl); });
+  }
   function renderRef() {
     const box = $("mechRef"); box.innerHTML = "";
-    box.append(h("p", { class: "mech-note", text: "Действующие правила игры: характеристики юнитов, стоимость постройки и коэффициенты формул. Меняет их ГМ." }), rulesView(false));
+    const ed = canEditRules();
+    box.append(h("p", { class: "mech-note", text: "Действующие правила игры: характеристики юнитов, стоимость постройки и коэффициенты формул. Меняет их ГМ." }), rulesNote(),
+      rulesView(ed, ed ? () => markDirty() : null, ed ? refreshMechViews : null));
   }
 
   // ---------- рейтинг ----------
   function renderRating() {
     const box = $("mechRating"); box.innerHTML = "";
+    const note = rulesNote(); if (note) box.append(note);
     const list = Object.keys(mech.countries).filter(id => mech.countries[id].pub).map(id => Object.assign({ id }, mech.countries[id].pub)).sort((a, b) => a.rank - b.rank);
     box.append(h("p", { class: "mech-note" }, "Ход " + mech.turn + ", " + mech.year + " год. Индекс национальной мощи (ИНМ) сравнивает страну с мировым лидером по ВВП, армии, населению, технологиям, стабильности и спутникам." +
       (mech.updated ? " Обновлено " + new Date(mech.updated).toLocaleString("ru-RU") + "." : "")));
@@ -234,22 +253,27 @@
     renderCorpRating(box);
   }
   function renderCorpRating(box) {
-    const corps = rules.tables.corp;
-    if (!corps.length) return;
+    const corps = rules.tables.corp, ed = canEditRules();
+    if (!corps.length && !ed) return;
     const pub = mech.corpPub || {};
     const has = Object.keys(pub).length > 0;
     box.append(h("h2", { text: "Корпорации" }), h("p", { class: "mech-note", text: "Транснациональные корпорации не принадлежат ни одному государству. Выручка — доля ВВП стран, которую корпорация контролирует, за ход." + (has ? "" : " ГМ ещё не публиковал выручку корпораций.") }));
     const ord = corps.slice().sort((a, b) => ((pub[a.id] || {}).rank || 999) - ((pub[b.id] || {}).rank || 999));
     const tbl = h("table", { class: "mt rating" }, h("thead", null, h("tr", null, h("th", { text: "Место" }), h("th", { text: "Корпорация" }), h("th", { text: "Отрасль" }), h("th", { text: "Класс" }),
-      h("th", { text: "Штаб-квартира" }), h("th", { class: "num", text: "Выручка, млрд кр." }), h("th", { class: "num", text: "Стран" }))));
+      h("th", { text: "Штаб-квартира" }), h("th", { class: "num", text: "Выручка, млрд кр." }), h("th", { class: "num", text: "Стран" }), ed ? h("th") : null)));
     tbl.append(h("tbody", null, ord.map(x => {
       const p = pub[x.id] || {}, par = x.parent && corpById(x.parent) && x.parent !== x.id ? corpById(x.parent).name : "";
       return h("tr", { class: p.rank <= 3 && p.rev > 0 ? "top" + p.rank : "" }, h("td", { class: "num", text: p.rank && p.rev > 0 ? String(p.rank) : "—" }),
         h("td", null, h("b", { text: x.name }), par ? h("small", { class: "sub", text: "входит в " + par }) : null), h("td", { class: "tag", text: sectorName(x.sector) }), h("td", { class: "tag", text: M.corpClass(x.scale) }),
-        h("td", { class: "tag", text: x.hq || "—" }), h("td", { class: "num", text: has ? fmt(p.rev || 0, "d1") + (p.grp > p.rev ? " (группа " + fmt(p.grp, "d1") + ")" : "") : "—" }), h("td", { class: "num", text: has ? String(p.n || 0) : "—" }));
+        h("td", { class: "tag", text: x.hq || "—" }), h("td", { class: "num", text: has ? fmt(p.rev || 0, "d1") + (p.grp > p.rev ? " (группа " + fmt(p.grp, "d1") + ")" : "") : "—" }), h("td", { class: "num", text: has ? String(p.n || 0) : "—" }),
+        ed ? h("td", { class: "row-tools" }, corpTools(x)) : null);
     })));
     box.append(h("div", { class: "mt-scroll" }, tbl));
+    if (ed) box.append(h("button", { class: "small-btn", text: "+ Корпорация", onclick: () => editCorp(null) }));
   }
+  // кнопки правки корпорации (рейтинг и лор)
+  const corpTools = x => [h("button", { class: "small-btn", title: "Изменить корпорацию", text: "✎", onclick: () => editCorp(x) }),
+    h("button", { class: "small-btn danger", title: "Удалить корпорацию", text: "✕", onclick: () => deleteCorp(x) })];
 
   // ---------- лор: корпорации ----------
   async function renderCorpLore(el) {
@@ -257,12 +281,16 @@
     el.append(h("p", { class: "mech-note", text: "Загрузка…" }));
     await init();
     el.innerHTML = "";
-    const corps = rules.tables.corp;
+    corpLoreEl = el;
+    const corps = rules.tables.corp, ed = canEditRules();
     // вступление правит ГМ (Режим ГМа → «✎ Правка»), карточки — из справочника корпораций
     const intro = h("div", { class: "rich", "data-edit": "lore.corp.intro", "data-label": "Лор: вступление к корпорациям" });
     intro.innerHTML = "<p class=\"lead\">После Великой ошибки государства потеряли берега, столицы и казну. Корпорации потеряли меньше: их заводы стояли в горах, деньги лежали на орбитальных серверах, а охрана никуда не делась. К 2200 году самые сильные из них стали государствами в государстве: строят дамбы, кормят и лечат, держат собственные армии, отключают воду и свет несговорчивым правительствам.</p>" +
       "<p>Корпорациями не управляет ни один игрок. Их ведёт ГМ, а страна может с ними договариваться, воевать, пускать их на свою территорию или изгонять. Чем глубже корпорация вросла в страну, тем больше она даёт экономике и тем меньше у страны суверенитета. Подробности — в Вики → Механики, раздел «Корпорации».</p>";
     el.append(intro);
+    const note = rulesNote(); if (note) el.append(note);
+    if (ed) el.append(h("div", { class: "corp-lore-tools" }, h("button", { class: "small-btn", text: "+ Корпорация", onclick: () => editCorp(null) }),
+      h("button", { class: "small-btn", text: "+ Отрасль", onclick: addSector })));
     const isChild = x => x.parent && corpById(x.parent) && x.parent !== x.id;
     const arc = corps.filter(x => !isChild(x) && corps.some(y => y.parent === x.id && y.id !== x.id));
     for (const g of arc) {
@@ -271,11 +299,13 @@
     }
     for (const s of rules.tables.csector) {
       const list = corps.filter(x => x.sector === s.id && !isChild(x) && !arc.includes(x));
-      if (list.length) el.append(h("section", { class: "corp-group" }, h("h2", { text: s.name }), h("div", { class: "corp-cards" }, list.map(x => corpCard(x)))));
+      if (list.length || ed) el.append(h("section", { class: "corp-group" }, h("h2", null, s.name,
+        ed ? h("button", { class: "small-btn", title: "Переименовать отрасль", text: "✎", onclick: () => renameSector(s) }) : null),
+        list.length ? h("div", { class: "corp-cards" }, list.map(x => corpCard(x))) : h("p", { class: "empty", text: "В этой отрасли пока нет корпораций." })));
     }
     function corpCard(x, wide) {
       const par = isChild(x) ? corpById(x.parent).name : "";
-      return h("article", { class: "corp-card" + (wide ? " wide" : "") }, h("h3", { text: x.name }),
+      return h("article", { class: "corp-card" + (wide ? " wide" : "") }, ed ? h("div", { class: "corp-tools" }, corpTools(x)) : null, h("h3", { text: x.name }),
         h("div", { class: "corp-meta", text: [M.corpClass(x.scale), sectorName(x.sector), x.hq, par ? "входит в " + par : "", +x.cap ? "капитализация " + fmt(+x.cap, "int") + " млрд кр." : ""].filter(Boolean).join(" · ") }),
         x.desc ? h("p", { text: x.desc }) : null);
     }
@@ -1000,23 +1030,60 @@
     markDirty(); renderGm();
     toast("Импортировано стран: " + n + ". Проверьте и нажмите «Опубликовать».");
   }
-  async function addCorp() {
-    const R = rules;
-    const v = await window.KGForm("Новая корпорация", [
+  // корпорация: добавление (corp = null) и правка — из калькулятора, рейтинга и лора
+  async function editCorp(corp, fromCalc) {
+    if (!mk) { toast("Сначала расшифруйте калькулятор паролем ГМа"); return; }
+    const R = rules, isNew = !corp;
+    const v = await window.KGForm(isNew ? "Новая корпорация" : "Корпорация: " + corp.name, [
       { key: "name", label: "Название" },
       { key: "sector", label: "Отрасль", type: "select", options: R.tables.csector.map(s => [s.id, s.name]) },
-      { key: "parent", label: "Входит в", type: "select", options: [["", "— самостоятельная —"]].concat(R.tables.corp.map(s => [s.id, s.name])) },
+      { key: "parent", label: "Входит в", type: "select", options: [["", "— самостоятельная —"]].concat(R.tables.corp.filter(s => !corp || s.id !== corp.id).map(s => [s.id, s.name])) },
       { key: "hq", label: "Штаб-квартира" },
       { key: "scale", label: "Масштаб", type: "number", step: "any", hint: "0,3 — региональная, 1 — транснациональная, 1,5 и выше — мегакорпорация" },
       { key: "cap", label: "Капитализация, млрд кр.", type: "number", step: "any" },
       { key: "desc", label: "Описание (для лора и рейтинга)", type: "textarea" }
-    ], { name: "", sector: (R.tables.csector[0] || {}).id || "", parent: "", hq: "", scale: 1, cap: 500, desc: "" }, v => (!v.name ? "Введите название" : !(+v.scale > 0) ? "Масштаб больше нуля" : ""));
+    ], isNew ? { name: "", sector: (R.tables.csector[0] || {}).id || "", parent: "", hq: "", scale: 1, cap: 500, desc: "" }
+      : { name: corp.name || "", sector: corp.sector || "", parent: corp.parent || "", hq: corp.hq || "", scale: corp.scale, cap: corp.cap || 0, desc: corp.desc || "" },
+    v => (!String(v.name || "").trim() ? "Введите название" : !(+v.scale > 0) ? "Масштаб больше нуля" : ""));
     if (!v) return;
-    const corp = { id: uid("corp_"), name: v.name, sector: v.sector, parent: v.parent, hq: v.hq, scale: +v.scale, cap: +v.cap || 0, desc: v.desc || "" };
-    R.tables.corp.push(corp);
-    gmCorpSel = corp.id; gmView = "corps";
-    markDirty(); renderGm();
-    toast("Корпорация добавлена. Присутствие в странах задайте в таблице «По странам», затем опубликуйте.");
+    const vals = { name: String(v.name).trim(), sector: v.sector, parent: v.parent, hq: v.hq || "", scale: +v.scale, cap: +v.cap || 0, desc: v.desc || "" };
+    if (isNew) { corp = Object.assign({ id: uid("corp_") }, vals); R.tables.corp.push(corp); }
+    else Object.assign(corp, vals);
+    if (fromCalc || isNew) gmCorpSel = corp.id;
+    if (fromCalc) gmView = "corps";
+    markDirty(); refreshMechViews();
+    toast(isNew ? "Корпорация добавлена. Присутствие в странах задайте в калькуляторе («Корпорации»), затем опубликуйте." : "Сохранено в черновик калькулятора. Не забудьте опубликовать.");
+  }
+  function addCorp() { return editCorp(null, true); }
+  async function deleteCorp(corp) {
+    if (!mk) return;
+    const ok = await ask("Удалить корпорацию «" + corp.name + "»?", "", { confirm: true, note: "Её присутствие в странах и договоры с союзами тоже удалятся. Изменение попадёт в черновик калькулятора." });
+    if (!ok) return;
+    const T = rules.tables, id = corp.id, i = T.corp.indexOf(corp);
+    if (i >= 0) T.corp.splice(i, 1);
+    T.corp.forEach(x => { if (x.parent === id) x.parent = ""; });
+    T.cdeal = T.cdeal.filter(d => d.corp !== id);
+    for (const cid in gmData) if (gmData[cid].corp) delete gmData[cid].corp[id];
+    if (gmCorpSel === id) gmCorpSel = null;
+    markDirty(); refreshMechViews();
+    toast("Корпорация удалена из черновика");
+  }
+  async function renameSector(s) {
+    if (!mk) return;
+    const v = await ask("Название отрасли", s.name);
+    if (!v || !v.trim() || v.trim() === s.name) return;
+    s.name = v.trim();
+    markDirty(); refreshMechViews();
+  }
+  async function addSector() {
+    if (!mk) return;
+    const v = await ask("Новая отрасль", "", { note: "Эффекты отрасли (ВВП, ПМ, военная мощь и др.) задаются в Справочнике, таблица «Отрасли корпораций»." });
+    if (!v || !v.trim()) return;
+    const row = { id: uid("csector_") };
+    for (const [f, , type] of M.TABLES.csector.fields) row[f] = type === "num" ? 0 : "";
+    row.name = v.trim(); row.infl = 1;
+    rules.tables.csector.push(row);
+    markDirty(); refreshMechViews();
   }
   async function showPassword(id) {
     try {
@@ -1234,6 +1301,12 @@
     if (!e.detail && pane === "calc" && !$("wikiMech").classList.contains("hidden")) window.KG.go("wiki/mech/article", true);
     // вход ГМа восстановился уже после открытия адреса #wiki/mech/calc — показываем калькулятор
     if (e.detail && /^#wiki\/mech\/calc/.test(location.hash)) openPane("calc");
+  });
+  // «✎ Правка» включена или выключена — справочник, рейтинг и лор корпораций переключаются между чтением и правкой
+  window.addEventListener("siteedit", async () => {
+    if (!inited) return;
+    await loading;
+    refreshMechViews();
   });
   window.addEventListener("beforeunload", e => { if (mk && gmDirty) { e.preventDefault(); e.returnValue = ""; } });
 
