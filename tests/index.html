@@ -23,6 +23,8 @@
 <script src="../js/sats.js?v=20261115c"></script>
 <script src="../js/moon-names.js?v=20261115a"></script>
 <script src="../js/wrap.js?v=20261115a"></script>
+<script src="../js/mech-model.js?v=20261115a"></script>
+<script src="../js/mech-crypto.js?v=20261115a"></script>
 <script>
 (async function () {
   "use strict";
@@ -301,6 +303,79 @@
   });
   await test("Конфигурация ГМа: хэш пароля PBKDF2", () => {
     assert(cfg.gm && cfg.gm.salt && cfg.gm.hash && cfg.gm.iter >= 100000, "нет хэша"); assert(cfg.repo.owner && cfg.repo.name, "нет репозитория");
+  });
+
+  group("Механики");
+  const MM = window.KGMechModel, CR = window.KGCrypto;
+  // эталон — пересчёт таблицы «Механики_Мир2200.xlsx» в Excel (5 государств-образцов)
+  const XL = {
+    gdp: [950.2198, 589.7354, 520.1329, 379.5462, 487.0322], pm_eff: [320.7537, 261.2809, 141.4621, 120.1224, 137.6666],
+    export: [112.6583, 209.9643, 114.3922, 31.7849, 71.5913], import: [0, 62.3002, 0, 0, 2.08], world_share: [0.2085, 0.3885, 0.2117, 0.0588, 0.1325],
+    gdp_svc: [269.6557, 113.8763, 137.3987, 120.0047, 161.5834], budget: [250.858, 193.1973, 105.587, 96.7843, 85.2306],
+    d_tech: [0.1458, 0.1461, 0.0424, 0.0459, 0.0369], d_stab: [-0.45, 3.3714, -2.7667, 8.1, -0.3374], d_gdp: [0.0506, 0.05, 0.0415, 0.0463, 0.0438],
+    active: [671.36, 285.96, 542.64, 378.93, 519.9], security: [0.8667, 0.9714, 1.1022, 1.2, 1.1636], labor: [25.6486, 9.914, 15.5278, 13.2336, 17.9921],
+    ground_power: [483.8543, 213.5296, 278.1702, 224.8714, 164.0584], air_power: [385.3938, 201.9091, 155.0902, 169.9698, 90.5088],
+    navy_power: [166.9216, 823.2059, 162.6277, 35.0482, 153.2428], ad_power: [259.1363, 139.8179, 90.2762, 132.5497, 51.7931],
+    strat_power: [381.6, 32, 0, 154.2436, 0], readiness: [1, 1, 1, 0.9797, 0.7552], total_power: [2065.5006, 1988.6047, 870.6626, 801.4551, 586.9005],
+    hdi: [0.7288, 0.8943, 0.6599, 0.7124, 0.5936], inm: [92.9552, 76.7021, 50.5776, 46.7959, 46.9283], rank: [1, 2, 3, 5, 4], kessler: [0.7425, 0.7425, 0.7425, 0.7425, 0.7425]
+  };
+  const rulesM = MM.defaultRules();
+  const samples = {}; MM.SAMPLES.forEach((s, i) => (samples["s" + i] = s.make()));
+  const all = MM.computeAll(rulesM, samples);
+  for (const key in XL) {
+    await test("Совпадение с Excel: " + MM.OUT[key][0], () => {
+      XL[key].forEach((v, i) => near(all.results["s" + i][key], v, Math.max(0.0006, Math.abs(v) * 1e-4), MM.SAMPLES[i].name));
+    });
+  }
+  await test("Уровень экономики по ВВП на душу", () => {
+    const lv = [0, 1, 2, 3, 4].map(i => all.results["s" + i].econ_level);
+    assert(lv.join("|") === "Индустриальная|Развитая|Развивающаяся|Развивающаяся|Развивающаяся", lv.join(", "));
+  });
+  await test("Игрок по сводке мира получает те же цифры, что ГМ", () => {
+    for (const id in samples) {
+      const r = MM.compute(rulesM, samples[id]); MM.applyWorld(rulesM, samples[id], r, all.ctx[id]);
+      for (const k of ["inm", "rank", "world_share", "world_mil_share", "kessler"]) near(r[k], all.results[id][k], 1e-9, id + " " + k);
+    }
+  });
+  await test("Особый эффект: +10% к ВВП и −50 к мощи ВМФ", () => {
+    const c = MM.SAMPLES[0].make();
+    c.mods = [{ id: "a", name: "тест", target: "gdp", mode: "pct", value: 10 }, { id: "b", name: "шторм", target: "navy_power", mode: "add", value: -50 }];
+    const r0 = MM.compute(rulesM, MM.SAMPLES[0].make()), r1 = MM.compute(rulesM, c);
+    near(r1.gdp, r0.gdp * 1.1, 1e-6, "ВВП"); near(r1.navy_power, r0.navy_power - 50, 1e-6, "ВМФ"); assert(r1.applied.length === 2, "применено " + r1.applied.length);
+  });
+  await test("Новый тип юнита из правил учитывается в мощи", () => {
+    const rl = MM.defaultRules(); rl.tables.ship.push({ id: "x", name: "Плавучая крепость", pers: 2, power: 100, upkeep: 1, ton: 50, air: 0, wh: 0, kind: "combat", cost: 200 });
+    const c = MM.SAMPLES[1].make(); c.cnt.ship.x = 1;
+    const a = MM.compute(rl, MM.SAMPLES[1].make()), b = MM.compute(rl, c);
+    near(b.navy_base - a.navy_base, 100, 1e-9, "мощь"); near(b.pers_navy - a.pers_navy, 2, 1e-9, "экипаж");
+  });
+  await test("Пустая страна считается без ошибок", () => {
+    const r = MM.compute(rulesM, MM.emptyCountry()); MM.applyWorld(rulesM, MM.emptyCountry(), r, null);
+    const bad = Object.keys(r).filter(k => typeof r[k] === "number" && !isFinite(r[k]));
+    assert(!bad.length, "не числа: " + bad.join(", "));
+  });
+  await test("Шифрование: пароль игрока и мастер-ключ ГМа открывают одни данные", async () => {
+    const dk = CR.newKey(), mk = CR.newKey();
+    const kp = await CR.lockWithPassword("ковчег-прилив-орбита-маяк-42", dk), kg = await CR.lockWithKey(mk, dk);
+    const box = await CR.encJSON(dk, { c: samples.s0 });
+    const viaPlayer = await CR.decJSON(await CR.unlockWithPassword("ковчег-прилив-орбита-маяк-42", kp), box);
+    const viaGm = await CR.decJSON(await CR.unlockWithKey(mk, kg), box);
+    assert(viaPlayer.c.in.capital === "Новый Екатеринбург" && viaGm.c.in.tech === 6.5, "данные не совпали");
+    let wrong = false; try { await CR.unlockWithPassword("неверный", kp); } catch (e) { wrong = true; }
+    assert(wrong, "неверный пароль подошёл");
+    assert(!JSON.stringify(box).includes("Екатеринбург"), "открытый текст в шифровке");
+  });
+  await test("data/mech.json: структура и шифровки", async () => {
+    const mj = await json("../data/mech.json");
+    assert(mj.v === 1 && mj.turn >= 1 && typeof mj.countries === "object", "структура");
+    for (const id in mj.countries) {
+      const c = mj.countries[id];
+      assert(map.countries[id], "страна " + id + " есть на карте");
+      assert(c.kg && c.kp && c.kp.salt && c.kp.iter >= 100000 && c.pw, "ключи страны " + id);
+      assert(!c.data || (c.data.iv && c.data.ct), "данные страны " + id + " зашифрованы");
+      assert(!c.in && !c.cnt, "открытые данные страны " + id);
+    }
+    return Object.keys(mj.countries).length + " стран";
   });
 
   const sm = document.getElementById("summary");

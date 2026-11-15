@@ -841,6 +841,7 @@
     if (b64(h) !== g.hash) { fails++; toast("Неверный пароль"); return; }
     fails = 0;
     try { sessionStorage.setItem(GM_KEY, g.hash); } catch (e) { /* */ }
+    if (window.KGMech) window.KGMech.gmPassword(pw); // механикам: расшифровать данные стран без повторного ввода
     setGm(true);
     toast("Режим ГМа включён");
     offerDraft();
@@ -863,6 +864,7 @@
     updateCard();
     try { refreshSats(); } catch (e) { /* */ }
     if (window.KGMoon) window.KGMoon.onGmChange();
+    window.dispatchEvent(new CustomEvent("gmchange", { detail: gm }));
   }
   $("gmLoginBtn").onclick = login;
   $("logoutBtn").onclick = logout;
@@ -940,8 +942,11 @@
     const salt = crypto.getRandomValues(new Uint8Array(16)), iter = 150000;
     const h = await pbkdf2(p1, salt, iter);
     const next = clone(config); next.gm = { salt: b64(salt), hash: b64(h), iter };
+    // мастер-ключ механик зашифрован паролем ГМа — перешифровываем тем же коммитом
+    const mechFiles = window.KGMech ? await window.KGMech.rewrapGm(p1) : [];
+    if (mechFiles === null) { toast("Пароль не изменён"); return; }
     try {
-      await GH.commit(config.repo, [{ path: "data/config.json", content: JSON.stringify(next, null, 2) + "\n" }], "Карта: смена пароля ГМа");
+      await GH.commit(config.repo, [{ path: "data/config.json", content: JSON.stringify(next, null, 2) + "\n" }].concat(mechFiles), "Карта: смена пароля ГМа");
       config = next;
       try { sessionStorage.setItem(GM_KEY, next.gm.hash); } catch (e) { /* */ }
       toast("Пароль изменён (вступит в силу после обновления сайта)");
@@ -2078,5 +2083,5 @@
   setTool("pan");
   requestAnimationFrame(fit);
   load();
-  window.KGMap = { get state() { return state; }, select, setTool, fit, T, setView3, measures, get globe() { return globe; }, get view() { return { s, tx, ty }; }, get gm() { return gm; }, get fonts() { return currentFonts(); }, get fontScale() { return fontScales(); }, get sat() { return satUi; } };
+  window.KGMap = { get state() { return state; }, login, select, setTool, fit, T, setView3, measures, get globe() { return globe; }, get view() { return { s, tx, ty }; }, get gm() { return gm; }, get fonts() { return currentFonts(); }, get fontScale() { return fontScales(); }, get sat() { return satUi; } };
 })();

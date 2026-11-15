@@ -1,0 +1,595 @@
+// Механики военно-политической игры: правила, схема данных и расчёт всех показателей государства.
+// Перенос формул из таблицы «Механики_Мир2200.xlsx». Чистые функции без DOM — их проверяют tests/index.html.
+(function () {
+  "use strict";
+
+  // ---------- константы (Справочник) ----------
+  // [ключ, подпись, значение по умолчанию, ед. изм., пояснение]
+  const K_GROUPS = [
+    ["Общие множители", [
+      ["tech_base", "Множитель технологий: база", 0.6, "коэф.", "Множитель = база + шаг × уровень технологий"],
+      ["tech_step", "Множитель технологий: шаг", 0.08, "за уровень", ""],
+      ["infra_base", "Множитель инфраструктуры: база", 0.7, "коэф.", "Множитель = база + шаг × уровень инфраструктуры"],
+      ["infra_step", "Множитель инфраструктуры: шаг", 0.03, "за уровень", ""],
+      ["stab_base", "Множитель стабильности при 0", 0.7, "коэф.", "При стабильности 100 множитель равен 1"],
+      ["rad_health", "Потеря здоровья за 1 ед. радиации", 0.03, "доля", ""],
+      ["health_bonus", "Бонус здоровья за 1 ед. медицины", 0.01, "доля", ""],
+      ["hdi_ref", "ВВП на душу для максимума индекса развития", 40, "тыс. кр.", ""]
+    ]],
+    ["Экономика: потребление и выработка", [
+      ["energy_pc", "Энергопотребление населения", 0.8, "ГВт на млн чел.", ""],
+      ["energy_pm", "Энергопотребление промышленности", 0.05, "ГВт на ед. ПМ", ""],
+      ["workers", "Рабочих на 1 промышленную единицу", 0.04, "млн чел.", ""],
+      ["raw_per_pm", "Потребность в сырье", 0.5, "ед. на ед. ПМ", ""],
+      ["food_pc", "Потребление продовольствия", 0.35, "млн т на млн чел.", ""],
+      ["water_pc", "Потребление пресной воды", 0.2, "млн м³/сут на млн чел.", ""],
+      ["climate_pen", "Потеря урожая за 1 ед. суровости климата", 0.05, "доля", "Только для источников, зависящих от погоды"],
+      ["rad_crop", "Потеря урожая за 1 ед. радиации", 0.04, "доля", ""],
+      ["svc_meg", "Выработка услуг на жителя мегаполиса", 6, "тыс. кр.", ""],
+      ["svc_waste", "Выработка на жителя пустошей", 0.8, "тыс. кр.", "Умножается на безопасность"]
+    ]],
+    ["Экономика: цены и торговля", [
+      ["price_pm", "Цена 1 ед. промышленной мощи", 1.5, "млрд кр.", ""],
+      ["price_food", "Цена 1 млн т продовольствия", 3, "млрд кр.", ""],
+      ["price_raw", "Цена 1 ед. сырья", 0.6, "млрд кр.", ""],
+      ["price_energy", "Цена экспорта 1 ГВт излишка", 1.2, "млрд кр.", ""],
+      ["price_water", "Цена покрытия 1 млн м³/сут дефицита воды", 2, "млрд кр.", ""],
+      ["import_markup", "Наценка на импорт", 1.3, "коэф.", ""],
+      ["access_base", "Доступ к рынкам: база", 0.6, "коэф.", ""],
+      ["access_route", "Доступ к рынкам за 1 торговый маршрут", 0.08, "коэф.", ""],
+      ["corr_loss", "Потери бюджета при коррупции 100", 0.5, "доля", ""]
+    ]],
+    ["Динамика между ходами", [
+      ["tech_cost", "Стоимость прироста технологий", 25, "млрд кр. × уровень", ""],
+      ["soc_norm", "Норма соцрасходов", 0.25, "доля бюджета", ""],
+      ["soc_eff", "Влияние соцрасходов на стабильность", 40, "пунктов", "За 100% отклонения от нормы"],
+      ["food_stab", "Штраф стабильности за дефицит еды и воды", 30, "пунктов", "За 100% дефицита"],
+      ["en_stab", "Штраф стабильности за дефицит энергии", 30, "пунктов", ""],
+      ["sec_stab", "Влияние безопасности мегаполисов", 15, "пунктов", ""],
+      ["support_stab", "Влияние поддержки власти", 0.05, "пункта за ед.", ""],
+      ["pop_growth", "Базовый прирост населения", 0.012, "доля за ход", ""],
+      ["rad_mort", "Смертность от радиации за 1 ед.", 0.001, "доля за ход", ""],
+      ["growth_base", "Базовый рост ВВП", 0.01, "доля за ход", ""],
+      ["infra_growth", "Отдача инфраструктурных расходов", 0.1, "коэф.", ""],
+      ["stab_growth", "Влияние стабильности на рост", 0.0004, "за пункт", ""],
+      ["nav_growth", "Влияние навигационных спутников на рост", 0.1, "коэф.", ""],
+      ["mop_safe", "Безопасная нагрузка на МОП", 0.5, "доля", ""],
+      ["mop_pen", "Штраф роста за перегрузку МОП", 0.1, "коэф.", ""]
+    ]],
+    ["Армия: гарнизоны, базы, дух", [
+      ["garr_base", "Гарнизон на мегаполис: база", 1, "дивизий", ""],
+      ["garr_threat", "Гарнизон за 1 ед. угрозы пустошей", 0.25, "дивизий", ""],
+      ["eq_floor", "Мощь СВ без техники", 0.4, "доля", ""],
+      ["ac_per_base", "Вместимость аэродрома", 100, "ЛА", ""],
+      ["fuel_floor", "Мощь ВВС при нулевой энергии", 0.5, "доля", ""],
+      ["ships_per_base", "Вместимость военно-морской базы", 25, "кораблей", ""],
+      ["ships_per_aux", "Кораблей на 1 судно снабжения", 8, "кораблей", ""],
+      ["navy_world", "Морской коэффициент мира", 1.3, "коэф.", "Затопленный мир: море — главный путь"],
+      ["morale_base", "Боевой дух: база", 0.6, "коэф.", ""],
+      ["morale_stab", "Боевой дух: вес стабильности", 0.3, "коэф.", ""],
+      ["morale_sup", "Боевой дух: вес поддержки власти", 0.2, "коэф.", ""]
+    ]],
+    ["Стратегические силы и ПВО", [
+      ["sam_power", "Мощь 1 дивизиона ПВО/ПРО", 1.5, "очки", ""],
+      ["sam_pers", "Личный состав дивизиона ПВО", 0.15, "тыс. чел.", ""],
+      ["sam_upkeep", "Содержание дивизиона ПВО", 0.03, "млрд кр./ход", ""],
+      ["icbm_wh", "Боеголовок на 1 МБР", 3, "шт.", ""],
+      ["nuke_val", "Мощь 1 доставляемой боеголовки", 1, "очки", ""],
+      ["icbm_pers", "Личный состав на 1 МБР", 0.1, "тыс. чел.", ""],
+      ["icbm_upkeep", "Содержание 1 МБР", 0.05, "млрд кр./ход", ""],
+      ["wh_upkeep", "Содержание 1 боеголовки", 0.01, "млрд кр./ход", ""],
+      ["strat_weight", "Вес стратегических сил в общей мощи", 0.5, "коэф.", ""]
+    ]],
+    ["Военное производство", [
+      ["ovp_unit", "ОВП с 1 эффективной ед. ВПК", 1, "ОВП/ход", ""],
+      ["ton_unit", "Спуск на воду с 1 ед. верфей", 2, "тыс. т/ход", ""],
+      ["ac_unit", "Выпуск ЛА с 1 ед. авиапрома", 1.5, "ЛА/ход", ""]
+    ]],
+    ["Космос и спутники", [
+      ["launch_pad", "Пусков за ход с 1 космодрома", 4, "пусков", "× множитель технологий"],
+      ["pad_pers", "Персонал космодрома", 2, "тыс. чел.", ""],
+      ["pad_upkeep", "Содержание космодрома", 0.5, "млрд кр./ход", ""],
+      ["sat_decay", "Доля нефинансируемых спутников, сходящих с орбиты", 0.5, "доля за ход", ""],
+      ["sci_cap", "Научные: предел бонуса", 0.4, "доля", "Бонус = предел × (1 − e^(−N × шаг / предел))"],
+      ["sci_per", "Научные: бонус за 1 спутник", 0.03, "доля", ""],
+      ["navt_cap", "Навигационные: предел бонуса к торговле", 0.25, "доля", ""],
+      ["navt_per", "Навигационные: бонус к торговле за 1", 0.02, "доля", ""],
+      ["navm_cap", "Навигационные: предел бонуса к точности", 0.15, "доля", ""],
+      ["navm_per", "Навигационные: бонус к точности за 1", 0.012, "доля", ""],
+      ["come_cap", "Связи: предел бонуса к услугам", 0.2, "доля", ""],
+      ["come_per", "Связи: бонус к услугам за 1", 0.012, "доля", ""],
+      ["c2_cap", "Связи: предел бонуса к управлению войсками", 0.25, "доля", ""],
+      ["c2_per", "Связи: бонус к управлению за 1", 0.015, "доля", ""],
+      ["recon_cap", "Военные: предел бонуса разведки", 0.3, "доля", ""],
+      ["recon_per", "Военные: бонус разведки за 1", 0.03, "доля", ""],
+      ["warn_cap", "Военные: предел бонуса ПВО/ПРО", 0.4, "доля", ""],
+      ["warn_per", "Военные: бонус ПВО/ПРО за 1", 0.05, "доля", ""],
+      ["rod_strikes", "«Стержни Бога»: ударов за ход с 1 спутника", 1, "ударов", ""],
+      ["rod_power", "«Стержни Бога»: мощь 1 удара", 40, "очки", "× множитель технологий"],
+      ["rod_tension", "«Стержни Бога»: напряжение за 1 удар/ход", 10, "пунктов", ""],
+      ["asat", "ПСО: перехватов за ход с 1 спутника", 1, "спутников", ""],
+      ["debris_base", "Орбитальный мусор со времён Великой ошибки", 0.25, "индекс", ""],
+      ["kessler_cap", "Порог синдрома Кесслера", 400, "спутников", ""]
+    ]],
+    ["Индекс национальной мощи (сумма весов = 1)", [
+      ["w_gdp", "Вес ВВП", 0.3, "доля", ""],
+      ["w_mil", "Вес военной мощи", 0.3, "доля", ""],
+      ["w_pop", "Вес населения", 0.1, "доля", ""],
+      ["w_tech", "Вес технологий", 0.1, "доля", ""],
+      ["w_stab", "Вес стабильности", 0.1, "доля", ""],
+      ["w_space", "Вес орбитальной группировки", 0.1, "доля", ""]
+    ]]
+  ];
+  const K_META = {};
+  K_GROUPS.forEach(([g, list]) => list.forEach(([key, label, v, unit, hint]) => (K_META[key] = { key, label, v, unit, hint, group: g })));
+
+  // ---------- таблицы (типы юнитов и источников) ----------
+  const ROLE_IND = [["civil", "Гражданская"], ["vpk", "ВПК (даёт ОВП)"], ["ship", "Верфи"], ["aero", "Авиапром"]];
+  const KIND_SHIP = [["combat", "Боевой"], ["patrol", "Патрульный"], ["aux", "Снабжение"]];
+  const EFFECT_SAT = [["sci", "Научный"], ["nav", "Навигационный"], ["comm", "Связи"], ["mil", "Военный"], ["rod", "«Стержни Бога»"], ["asat", "Противоспутниковый"], ["none", "Без эффекта"]];
+  const YESNO = [["0", "Нет"], ["1", "Да"]];
+  const TABLES = {
+    energy: { title: "Источники энергии", unit: "ГВт", fields: [["name", "Название", "text"]],
+      rows: [["fusion", "Термоядерная и атомная генерация"], ["renew", "Возобновляемая (ГЭС, ветер, солнце, приливы)"], ["fossil", "Ископаемая и резервная"]] },
+    industry: { title: "Отрасли промышленности", unit: "пром. ед.", fields: [["name", "Название", "text"], ["role", "Роль", "sel", ROLE_IND]],
+      rows: [["heavy", "Тяжёлая промышленность и металлургия", "civil"], ["light", "Лёгкая и пищевая", "civil"], ["chem", "Химия и топливопереработка", "civil"],
+        ["hitech", "Высокие технологии (электроника, ИИ, роботы)", "civil"], ["vpk", "Военно-промышленный комплекс", "vpk"], ["ship", "Судостроительные верфи", "ship"], ["aero", "Авиакосмическая промышленность", "aero"]] },
+    food: { title: "Источники продовольствия", unit: "млн т", fields: [["name", "Название", "text"], ["weather", "Зависит от климата и радиации", "sel", YESNO]],
+      rows: [["hydro", "Гидропонные фермы мегаполисов", "0"], ["aqua", "Морская аквакультура и рыболовство", "0"], ["field", "Полевое земледелие (потенциал)", "1"]] },
+    div: { title: "Типы дивизий", unit: "дивизий",
+      fields: [["name", "Тип", "text"], ["pers", "Л/с, тыс.", "num"], ["power", "Мощь", "num"], ["upkeep", "Содержание, млрд/ход", "num"], ["tank", "Танки (штат)", "num"], ["ifv", "БМП/БТР (штат)", "num"], ["art", "Артиллерия (штат)", "num"], ["garr", "Зачёт в гарнизон", "num"], ["cost", "Постройка, ОВП", "num"]],
+      rows: [["motor", "Мотострелковая", 12, 10, 0.6, 90, 300, 72, 0, 10], ["tank", "Танковая", 10, 14, 0.9, 320, 150, 54, 0, 14],
+        ["airborne", "Воздушно-десантная / горная", 7, 9, 0.6, 0, 120, 36, 0, 9], ["marine", "Морской пехоты", 8, 9, 0.65, 40, 150, 36, 0, 10],
+        ["art", "Артиллерийская", 6, 11, 0.7, 0, 30, 300, 0, 10], ["garrison", "Гарнизонная (стены мегаполиса)", 10, 5, 0.3, 20, 60, 48, 1, 5],
+        ["raider", "Рейдерская «пустошная»", 6, 7, 0.4, 30, 150, 18, 0.5, 6], ["militia", "Ополчение", 15, 3, 0.1, 0, 0, 12, 0.2, 2]] },
+    ac: { title: "Типы летательных аппаратов", unit: "ед.",
+      fields: [["name", "Тип", "text"], ["pers", "Персонал на 1 ЛА, тыс.", "num"], ["power", "Мощь", "num"], ["upkeep", "Содержание, млрд/ход", "num"], ["wh", "Ядерные боеголовки (носитель)", "num"], ["cost", "Постройка, ОВП", "num"]],
+      rows: [["fighter", "Истребители", 0.025, 0.5, 0.012, 0, 0.6], ["attack", "Многоцелевые / штурмовики", 0.02, 0.4, 0.008, 0, 0.45],
+        ["bomber", "Стратегические бомбардировщики", 0.06, 2, 0.05, 4, 3], ["awacs", "ДРЛО и разведчики", 0.04, 0.3, 0.03, 0, 1.5],
+        ["transport", "Военно-транспортные", 0.03, 0.1, 0.01, 0, 0.4], ["drone", "Ударные БПЛА", 0.005, 0.15, 0.002, 0, 0.1], ["heli", "Вертолёты", 0.015, 0.2, 0.004, 0, 0.25]] },
+    ship: { title: "Классы кораблей", unit: "кораблей",
+      fields: [["name", "Класс", "text"], ["pers", "Экипаж, тыс.", "num"], ["power", "Мощь", "num"], ["upkeep", "Содержание, млрд/ход", "num"], ["ton", "Водоизмещение, тыс. т", "num"], ["air", "Авиагруппа, ЛА", "num"], ["wh", "Ядерные боеголовки (носитель)", "num"], ["kind", "Вид", "sel", KIND_SHIP], ["cost", "Постройка, ОВП", "num"]],
+      rows: [["carrier", "Авианосцы", 3, 60, 1.2, 90, 60, 0, "combat", 120], ["lhd", "Универсальные десантные (УДК)", 1.2, 20, 0.4, 35, 20, 0, "combat", 45],
+        ["battleship", "Линкоры / арсенальные корабли", 1.5, 35, 0.6, 40, 0, 0, "combat", 70], ["cruiser", "Крейсеры", 0.8, 18, 0.3, 12, 0, 0, "combat", 35],
+        ["destroyer", "Эсминцы", 0.3, 10, 0.15, 9, 0, 0, "combat", 18], ["frigate", "Фрегаты", 0.2, 6, 0.08, 5, 0, 0, "combat", 10],
+        ["corvette", "Корветы", 0.1, 3, 0.04, 2, 0, 0, "combat", 5], ["ssn", "Атомные многоцелевые подлодки", 0.13, 12, 0.2, 8, 0, 0, "combat", 30],
+        ["ssk", "Дизель-электрические подлодки", 0.05, 5, 0.05, 3, 0, 0, "combat", 10], ["ssbn", "Стратегические подлодки (ПЛАРБ)", 0.15, 5, 0.35, 18, 0, 16, "combat", 40],
+        ["landing", "Десантные корабли", 0.15, 3, 0.05, 8, 0, 0, "combat", 8], ["patrol", "Патрульные катера / речные мониторы", 0.03, 1, 0.01, 0.5, 0, 0, "patrol", 1],
+        ["ekranoplan", "Экранопланы", 0.04, 4, 0.06, 0.5, 0, 0, "combat", 4], ["aux", "Вспомогательные суда снабжения", 0.1, 0.5, 0.03, 20, 0, 0, "aux", 6]] },
+    sat: { title: "Типы спутников", unit: "шт.",
+      fields: [["name", "Тип", "text"], ["upkeep", "Содержание, млрд/ход", "num"], ["cost", "Запуск, млрд кр.", "num"], ["pers", "Персонал, тыс.", "num"], ["effect", "Эффект", "sel", EFFECT_SAT]],
+      rows: [["sci", "Научные", 0.2, 1, 0.05, "sci"], ["nav", "Навигационные", 0.15, 0.8, 0.05, "nav"], ["comm", "Связи", 0.12, 0.6, 0.04, "comm"],
+        ["mil", "Военные (разведка, СПРН)", 0.3, 1.5, 0.08, "mil"], ["rod", "Ударные «Стержни Бога»", 1.5, 6, 0.2, "rod"], ["asat", "Противоспутниковые (ПСО)", 0.2, 1, 0.06, "asat"]] },
+    law: { title: "Законы о мобилизации", fields: [["name", "Режим", "text"], ["share", "Доля МОП к призыву", "num"], ["stab", "Штраф стабильности за ход", "num"]],
+      rows: [["l1", "Добровольческая армия", 0.1, 0], ["l2", "Ограниченный призыв", 0.2, 0], ["l3", "Всеобщая воинская обязанность", 0.35, 1],
+        ["l4", "Частичная мобилизация", 0.6, 3], ["l5", "Тотальная мобилизация", 0.9, 6]] },
+    tier: { title: "Уровни экономики", fields: [["min", "Порог ВВП на душу, тыс. кр.", "num"], ["name", "Уровень", "text"], ["desc", "Описание", "text"]],
+      rows: [["t0", 0, "Экономика выживания", "Натуральный обмен, пайки, чёрный рынок"], ["t1", 5, "Восстанавливающаяся", "Базовая промышленность, зависимость от импорта"],
+        ["t2", 10, "Развивающаяся", "Устойчивое производство, первые экспортные отрасли"], ["t3", 18, "Индустриальная", "Мощная промышленность, собственный ВПК"],
+        ["t4", 28, "Развитая", "Сильный сектор услуг, космическая программа"], ["t5", 40, "Высокотехнологичная", "Лидер науки и орбитальной инфраструктуры"]] }
+  };
+  // таблицы, у которых у страны есть количество (counts)
+  const COUNT_TABLES = ["energy", "industry", "food", "div", "ac", "ship", "sat"];
+
+  function defaultRules() {
+    const K = {}; for (const k in K_META) K[k] = K_META[k].v;
+    const tables = {};
+    for (const t in TABLES) {
+      const fl = TABLES[t].fields;
+      tables[t] = TABLES[t].rows.map(row => { const o = { id: row[0] }; fl.forEach(([f], i) => (o[f] = row[i + 1])); return o; });
+    }
+    return { K, tables };
+  }
+  // недостающие ключи правил берутся по умолчанию (на случай старого mech.json)
+  function normalizeRules(r) {
+    const d = defaultRules();
+    if (!r) return d;
+    const K = Object.assign({}, d.K, r.K || {});
+    const tables = {};
+    for (const t in d.tables) tables[t] = Array.isArray(r.tables && r.tables[t]) ? r.tables[t] : d.tables[t];
+    return { K, tables };
+  }
+
+  // ---------- входные данные страны ----------
+  // [ключ, подпись, ед., формат, min, max, пояснение]
+  const INPUTS = {
+    capital: ["Столица (мегаполис-ковчег)", "", "txt"], gov: ["Форма правления", "", "txt"], ideology: ["Государственная идеология", "", "txt"],
+    position: ["Географическое положение", "", "txt"],
+    megapolis: ["Укреплённых мегаполисов", "шт.", "int", 0, 1000, "Каждому мегаполису нужен гарнизон"],
+    territory: ["Контролируемая территория", "тыс. км²", "int", 0, 1e6],
+    habitable: ["Доля пригодной для жизни территории", "%", "pct", 0, 1],
+    flooded: ["Затоплено исторической территории", "%", "pct", 0, 1, "Лор: океан поднялся на 50 м"],
+    radiation: ["Радиационное заражение", "0–10", "d1", 0, 10, "Снижает здоровье, урожай, прирост"],
+    waste_threat: ["Угроза из пустошей", "0–10", "d1", 0, 10, "Рейдеры, банды, мутировавшая фауна"],
+    climate: ["Суровость климата", "0–10", "d1", 0, 10, "Штормы, засухи, кислотные дожди"],
+    pop_meg: ["Население мегаполисов", "млн чел.", "d2", 0, 1e4],
+    pop_waste: ["Население пустошей под контролем", "млн чел.", "d2", 0, 1e4],
+    working_share: ["Доля трудоспособного населения", "%", "pct", 0, 1],
+    mob_share: ["Доля годных к военной службе", "%", "pct", 0, 1],
+    education: ["Уровень образования", "%", "pct", 0, 1],
+    healthcare: ["Уровень медицины", "0–10", "d1", 0, 10],
+    stability: ["Стабильность", "0–100", "d1", 0, 100],
+    support: ["Поддержка власти", "0–100", "d1", 0, 100],
+    corruption: ["Коррупция", "0–100", "d1", 0, 100],
+    mob_law: ["Закон о мобилизации", "уровень", "int", 1, 99, "1 — добровольческая армия … 5 — тотальная мобилизация"],
+    tech: ["Уровень технологий", "1–10", "d2", 1, 10],
+    infra: ["Уровень инфраструктуры", "0–10", "d1", 0, 10],
+    raw: ["Добыча сырья (металлы, топливо, редкоземы)", "ед.", "d1", 0, 1e6],
+    water: ["Пресная вода (опреснение, ледники, очистка)", "млн м³/сут", "d1", 0, 1e6],
+    routes: ["Защищённые торговые маршруты", "шт.", "int", 0, 1000],
+    exp_share: ["Доля промышленной продукции на экспорт", "%", "pct", 0, 1],
+    tax: ["Налоговая нагрузка", "% ВВП", "pct", 0, 1],
+    b_def: ["Расходы: оборона", "% бюджета", "pct", 0, 1, "→ боеготовность"],
+    b_space: ["Расходы: космос", "% бюджета", "pct", 0, 1, "→ содержание спутников"],
+    b_sci: ["Расходы: наука", "% бюджета", "pct", 0, 1, "→ рост технологий"],
+    b_soc: ["Расходы: социальная сфера", "% бюджета", "pct", 0, 1, "→ стабильность"],
+    b_infra: ["Расходы: инфраструктура", "% бюджета", "pct", 0, 1, "→ рост ВВП"],
+    eq_tank: ["Танки в наличии", "шт.", "int", 0, 1e7], eq_ifv: ["БМП / БТР в наличии", "шт.", "int", 0, 1e7], eq_art: ["Артиллерия и РСЗО в наличии", "шт.", "int", 0, 1e7],
+    airbases: ["Военные аэродромы", "шт.", "int", 0, 1e5], navbases: ["Военно-морские базы", "шт.", "int", 0, 1e5],
+    sam: ["Комплексы ПВО/ПРО", "дивизионов", "int", 0, 1e6], icbm: ["Межконтинентальные баллистические ракеты", "шт.", "int", 0, 1e6],
+    warheads: ["Ядерные боеголовки", "шт.", "int", 0, 1e7, "Пережили Великую ошибку. Применение — решение ГМа"],
+    pads: ["Космодромы / стартовые комплексы", "шт.", "int", 0, 1000]
+  };
+
+  // ---------- результаты ----------
+  // [подпись, ед., формат, вид (coef — красным, если < 1; neg — красным, если < 0; load — нагрузка; res — итог), пояснение]
+  const OUT = {
+    pop_total: ["Общее население", "млн чел.", "d2", "res"], urban: ["Доля населения в мегаполисах", "%", "pct"],
+    pop_per_meg: ["Среднее население мегаполиса", "млн чел.", "d2"], habitable_area: ["Пригодная территория", "тыс. км²", "int"],
+    health: ["Коэффициент здоровья нации", "коэф.", "d2", "coef", "1 − радиация × K + медицина × K"],
+    labor: ["Трудовые ресурсы (за вычетом армии)", "млн чел.", "d2", "", "Население × доля трудоспособных × здоровье − армия"],
+    mob_law_name: ["Режим мобилизации", "", "txt"],
+    tech_mult: ["Множитель технологий", "коэф.", "d2"], infra_mult: ["Множитель инфраструктуры", "коэф.", "d2"], stab_mult: ["Множитель стабильности", "коэф.", "d2"],
+    hdi: ["Индекс развития", "0–1", "d2", "", "Образование, ВВП на душу, здоровье, стабильность"],
+    en_supply: ["Выработка энергии", "ГВт", "d1"], en_demand: ["Потребность в энергии", "ГВт", "d1", "", "Население × K + базовая ПМ × K"],
+    en_balance: ["Энергобаланс", "ГВт", "d1", "neg", "Излишек идёт на экспорт"],
+    en_coef: ["Энергообеспеченность", "коэф.", "d2", "coef", "Ниже 1 — веерные отключения"],
+    ind_total: ["Всего промышленных единиц", "пром. ед.", "int"], labor_need: ["Потребность в рабочих", "млн чел.", "d2"],
+    labor_coef: ["Обеспеченность рабочей силой", "коэф.", "d2", "coef"], pm_base: ["Базовая промышленная мощь", "ед. ПМ", "d1"],
+    ind_eff: ["Эффективность промышленности", "коэф.", "d2", "coef", "Энергия × рабочие × стабильность"],
+    pm_eff: ["Промышленная мощь (ПМ)", "ед. ПМ", "d1", "res"], pm_pc: ["ПМ на 1 млн жителей", "ед. ПМ", "d2"],
+    vpk_eff: ["Эффективная мощь ВПК", "ед. ПМ", "d1"], ship_eff: ["Эффективная мощь верфей", "ед. ПМ", "d1"], aero_eff: ["Эффективная мощь авиапрома", "ед. ПМ", "d1"],
+    raw_need: ["Потребность в сырье", "ед.", "d1"], raw_bal: ["Сырьевой баланс", "ед.", "d1", "neg", "Излишек — экспорт, дефицит — импорт"],
+    field_yield: ["Урожайность погодозависимых источников", "коэф.", "d2"], food_prod: ["Производство продовольствия", "млн т", "d1"],
+    food_need: ["Потребность в продовольствии", "млн т", "d1"], food_coef: ["Продовольственная обеспеченность", "коэф.", "d2", "coef"],
+    water_need: ["Потребность в воде", "млн м³/сут", "d1"], water_coef: ["Водная обеспеченность", "коэф.", "d2", "coef"],
+    access: ["Доступ к внешним рынкам", "коэф.", "d2", "", "(база + маршруты × K) × (1 + навигационные спутники)"],
+    export: ["Экспорт", "млрд кр.", "d1", "res"], import: ["Импорт (покрытие дефицитов)", "млрд кр.", "d1"],
+    trade_bal: ["Торговое сальдо", "млрд кр.", "d1", "neg"], world_share: ["Доля мирового экспортного рынка", "%", "pct", "res"],
+    gdp_ind: ["Промышленный сектор (внутренний рынок)", "млрд кр.", "d1"], gdp_agro: ["Аграрный сектор", "млрд кр.", "d1"],
+    gdp_raw: ["Сырьевой сектор", "млрд кр.", "d1"], gdp_svc: ["Сектор услуг", "млрд кр.", "d1"],
+    gdp: ["ВВП", "млрд кр.", "d1", "res", "Сектора + экспорт − импорт"], gdp_pc: ["ВВП на душу населения", "тыс. кр.", "d1", "res"],
+    econ_level: ["Уровень экономики", "", "txt", "res"], ind_share: ["Доля промышленности в ВВП", "%", "pct"],
+    budget: ["Доходы бюджета", "млрд кр.", "d1", "res", "ВВП × налоги × (1 − потери от коррупции)"],
+    b_other: ["Прочее / резерв", "% бюджета", "pct", "neg", "Отрицательное значение — перерасход"],
+    def_budget: ["Военный бюджет", "млрд кр.", "d1"], space_budget: ["Космический бюджет", "млрд кр.", "d1"], sci_budget: ["Научный бюджет", "млрд кр.", "d1"],
+    soc_budget: ["Социальный бюджет", "млрд кр.", "d1"], infra_budget: ["Инфраструктурный бюджет", "млрд кр.", "d1"],
+    d_tech: ["Прирост уровня технологий", "за ход", "d3", "", "Наука / (K × уровень) × (1 + научные спутники)"],
+    d_stab: ["Изменение стабильности", "пунктов", "d1", "neg", "Соцрасходы, дефициты, безопасность, поддержка, мобилизация"],
+    d_pop: ["Прирост населения", "за ход", "pct", "neg"], d_gdp: ["Рост ВВП", "за ход", "pct", "neg"],
+    next_tech: ["Технологии в следующем ходу", "1–10", "d2", "res"], next_stab: ["Стабильность в следующем ходу", "0–100", "d1", "res"],
+    next_pop: ["Население в следующем ходу", "млн чел.", "d2", "res"], next_gdp: ["ВВП в следующем ходу (ориентир)", "млрд кр.", "d1"],
+    mop_total: ["МОП: годные к службе", "тыс. чел.", "int", "", "Население × доля годных × здоровье"],
+    mop_share: ["Доля МОП, доступная к призыву", "%", "pct"], mop_avail: ["Доступный МОП", "тыс. чел.", "int", "res"],
+    active: ["Личный состав вооружённых сил", "тыс. чел.", "d1", "res"], mop_load: ["Нагрузка на МОП", "%", "pct", "load", "Выше 50% — экономика теряет рост"],
+    staffing: ["Укомплектованность войск", "коэф.", "d2", "coef"], reserve: ["Мобилизационный резерв", "тыс. чел.", "int"],
+    div_total: ["Всего дивизий", "дивизий", "int", "res"], pers_ground: ["Личный состав СВ", "тыс. чел.", "d1"],
+    need_tank: ["Танки по штату", "шт.", "int"], need_ifv: ["БМП / БТР по штату", "шт.", "int"], need_art: ["Артиллерия по штату", "шт.", "int"],
+    equip: ["Оснащённость техникой", "коэф.", "d2", "coef"],
+    garr_need: ["Потребность в гарнизонах", "дивизий", "d1", "", "Мегаполисы × (база + угроза пустошей × K)"],
+    garr_have: ["Гарнизонные силы (зачёт)", "дивизий", "d1"], security: ["Безопасность мегаполисов и пустошей", "коэф.", "d2", "coef"],
+    ground_power: ["Мощь сухопутных войск", "очки", "d1", "res"], ground_upkeep: ["Содержание СВ", "млрд кр./ход", "d1"],
+    ac_total: ["Всего летательных аппаратов", "ед.", "int", "res"], ac_base_coef: ["Обеспеченность аэродромами", "коэф.", "d2", "coef"],
+    pers_air: ["Личный состав ВВС", "тыс. чел.", "d1"], air_power: ["Мощь ВВС", "очки", "d1", "res"], air_upkeep: ["Содержание ВВС", "млрд кр./ход", "d1"],
+    ships_total: ["Всего кораблей", "кораблей", "int", "res"], ships_combat: ["Корабли, требующие снабжения", "кораблей", "int"],
+    tonnage: ["Суммарное водоизмещение", "тыс. т", "d1"], deck_ac: ["Вместимость палубной авиации", "ЛА", "int"],
+    nav_base_coef: ["Обеспеченность базами", "коэф.", "d2", "coef"], nav_supply: ["Обеспеченность снабжением", "коэф.", "d2", "coef"],
+    pers_navy: ["Личный состав ВМФ", "тыс. чел.", "d1"], navy_power: ["Мощь ВМФ", "очки", "d1", "res"], navy_upkeep: ["Содержание ВМФ", "млрд кр./ход", "d1"],
+    ad_power: ["Мощь ПВО/ПРО", "очки", "d1"], nuke_cap: ["Носители: вместимость боеголовок", "шт.", "int"], nuke_deliv: ["Доставляемые боеголовки", "шт.", "int"],
+    nuke_power: ["Ядерный потенциал сдерживания", "очки", "d1"], rod_power: ["Орбитальный удар («Стержни Бога»)", "очки", "d1"],
+    strat_power: ["Стратегический потенциал", "очки", "d1", "res"], pers_strat: ["Личный состав ПВО и РВСН", "тыс. чел.", "d1"],
+    strat_upkeep: ["Содержание ПВО и стратегических сил", "млрд кр./ход", "d1"],
+    upkeep_total: ["Содержание вооружённых сил", "млрд кр./ход", "d1", "", "Космические войска оплачиваются из космического бюджета"],
+    mil_bal: ["Профицит / дефицит военного бюджета", "млрд кр./ход", "d1", "neg"],
+    readiness: ["Боеготовность", "коэф.", "d2", "coef", "Военный бюджет / содержание"], morale: ["Боевой дух", "коэф.", "d2", "", "От стабильности и поддержки власти"],
+    sat_mult: ["Спутниковый множитель", "коэф.", "d2", "", "1 + управление + разведка + точность"],
+    ovp: ["Очки военного производства (ОВП)", "ОВП/ход", "d1", "res"], ship_ton: ["Лимит спуска кораблей", "тыс. т/ход", "d1"], ac_prod: ["Лимит выпуска ЛА", "ЛА/ход", "d1"],
+    conv_power: ["Конвенциональная мощь", "очки", "d1", "res", "(СВ + ВВС + ВМФ + ПВО) × спутниковый множитель"],
+    total_power: ["Совокупная военная мощь", "очки", "d1", "res", "Конвенциональная + стратегическая × вес"],
+    world_mil_share: ["Доля мировой военной мощи", "%", "pct"], power_pc: ["Военная мощь на 1 млн жителей", "очки", "d1"],
+    launch_cap: ["Пусковые мощности", "пусков/ход", "d1"], sat_total: ["Всего спутников", "шт.", "int", "res"],
+    sat_pers: ["Личный состав космических войск", "тыс. чел.", "d1"], sat_upkeep: ["Содержание группировки", "млрд кр./ход", "d1"],
+    coverage: ["Финансирование группировки", "коэф.", "d2", "coef"], sat_loss: ["Сойдут с орбиты в конце хода", "шт.", "int"],
+    b_sci: ["Научные → ускорение технологий", "%", "pct"], b_nav_trade: ["Навигационные → торговля и логистика", "%", "pct"],
+    b_nav_mil: ["Навигационные → точность оружия", "%", "pct"], b_comm_econ: ["Связи → сектор услуг", "%", "pct"],
+    b_c2: ["Связи → управление войсками", "%", "pct"], b_recon: ["Военные → разведка", "%", "pct"], b_warn: ["Военные → бонус ПВО/ПРО", "%", "pct"],
+    rod_strikes: ["«Стержни Бога» → ударов за ход", "ударов", "int"], rod_tension: ["«Стержни Бога» → международное напряжение", "пунктов", "int"],
+    asat_cap: ["ПСО → перехватов вражеских спутников", "шт./ход", "int"],
+    world_sats: ["Спутников на орбите (весь мир)", "шт.", "int"], kessler: ["Индекс риска синдрома Кесслера", "индекс", "d2", "load"],
+    kessler_status: ["Состояние орбиты", "", "txt"],
+    inm: ["Индекс национальной мощи (ИНМ)", "0–100", "d1", "res"], rank: ["Место в мировом рейтинге", "место", "int", "res"]
+  };
+
+  // ---------- модификаторы (особые эффекты ГМа) ----------
+  const MOD_TARGETS = [
+    ["gdp", "ВВП"], ["pm_eff", "Промышленная мощь"], ["budget", "Доходы бюджета"], ["export", "Экспорт"], ["import", "Импорт"],
+    ["en_supply", "Выработка энергии"], ["food_prod", "Производство продовольствия"], ["security", "Безопасность мегаполисов"],
+    ["mop_avail", "Доступный МОП"], ["morale", "Боевой дух"], ["readiness", "Боеготовность"],
+    ["ground_power", "Мощь СВ"], ["air_power", "Мощь ВВС"], ["navy_power", "Мощь ВМФ"], ["ad_power", "Мощь ПВО/ПРО"],
+    ["strat_power", "Стратегический потенциал"], ["total_power", "Совокупная военная мощь"], ["ovp", "Очки военного производства"],
+    ["d_stab", "Изменение стабильности за ход"], ["d_gdp", "Рост ВВП за ход"], ["d_tech", "Прирост технологий за ход"], ["d_pop", "Прирост населения за ход"]
+  ];
+
+  // ---------- расчёт ----------
+  const num = v => { const n = +v; return isFinite(n) ? n : 0; };
+  const dv = (a, b, d) => (b ? a / b : (d === undefined ? 0 : d));
+  const min = Math.min, max = Math.max;
+
+  function compute(rules, country) {
+    rules = normalizeRules(rules);
+    const K = rules.K, T = rules.tables;
+    const c = country || {};
+    const I = new Proxy(c.in || {}, { get: (o, k) => num(o[k]) });
+    const cnt = c.cnt || {};
+    const n = (t, id) => num(cnt[t] && cnt[t][id]);
+    const sum = (t, f, pred) => T[t].reduce((s, row) => (!pred || pred(row) ? s + n(t, row.id) * (f ? num(row[f]) : 1) : s), 0);
+    const mods = Array.isArray(c.mods) ? c.mods : [];
+    const applied = [];
+    const mod = (key, v) => {
+      for (const m of mods) {
+        if (m.target !== key || m.off) continue;
+        const before = v;
+        v = m.mode === "add" ? v + num(m.value) : v * (1 + num(m.value) / 100);
+        applied.push({ id: m.id, name: m.name, target: key, before, after: v });
+      }
+      return v;
+    };
+    const r = { applied };
+
+    // государство
+    r.pop_total = I.pop_meg + I.pop_waste;
+    r.urban = dv(I.pop_meg, r.pop_total);
+    r.pop_per_meg = dv(I.pop_meg, I.megapolis);
+    r.habitable_area = I.territory * I.habitable;
+    r.health = max(0.3, 1 - I.radiation * K.rad_health + I.healthcare * K.health_bonus);
+    r.tech_mult = K.tech_base + K.tech_step * I.tech;
+    r.infra_mult = K.infra_base + K.infra_step * I.infra;
+    r.stab_mult = K.stab_base + (1 - K.stab_base) * I.stability / 100;
+    const laws = T.law.length ? T.law : [{ name: "—", share: 0, stab: 0 }];
+    const law = laws[min(laws.length, max(1, Math.round(I.mob_law || 1))) - 1];
+    r.mob_law_name = law.name;
+
+    // личный состав и юниты
+    r.div_total = sum("div");
+    r.pers_ground = sum("div", "pers");
+    r.need_tank = sum("div", "tank"); r.need_ifv = sum("div", "ifv"); r.need_art = sum("div", "art");
+    r.ground_base = sum("div", "power"); r.ground_upkeep = sum("div", "upkeep");
+    r.garr_have = sum("div", "garr");
+    r.ac_total = sum("ac"); r.pers_air = sum("ac", "pers"); r.air_base = sum("ac", "power"); r.air_upkeep = sum("ac", "upkeep");
+    const acWh = sum("ac", "wh");
+    r.ships_total = sum("ship");
+    const aux = sum("ship", null, s => s.kind === "aux"), patrol = sum("ship", null, s => s.kind === "patrol");
+    r.ships_combat = r.ships_total - aux - patrol;
+    r.tonnage = sum("ship", "ton"); r.deck_ac = sum("ship", "air"); r.pers_navy = sum("ship", "pers");
+    r.navy_base = sum("ship", "power"); r.navy_upkeep = sum("ship", "upkeep");
+    const shipWh = sum("ship", "wh");
+    r.sat_total = sum("sat");
+    const satN = e => sum("sat", null, s => s.effect === e);
+    r.sat_pers = sum("sat", "pers") + I.pads * K.pad_pers;
+    r.sat_upkeep = sum("sat", "upkeep") + I.pads * K.pad_upkeep;
+    r.pers_strat = I.sam * K.sam_pers + I.icbm * K.icbm_pers;
+    r.active = r.pers_ground + r.pers_air + r.pers_navy + r.pers_strat + r.sat_pers;
+    r.labor = r.pop_total * I.working_share * min(1, r.health) - r.active / 1000;
+
+    // спутники: бонусы с убывающей отдачей
+    const eff = (cnt, cap, per) => (K[cap] > 0 ? K[cap] * (1 - Math.exp(-cnt * K[per] / K[cap])) : 0);
+    r.b_sci = eff(satN("sci"), "sci_cap", "sci_per");
+    r.b_nav_trade = eff(satN("nav"), "navt_cap", "navt_per");
+    r.b_nav_mil = eff(satN("nav"), "navm_cap", "navm_per");
+    r.b_comm_econ = eff(satN("comm"), "come_cap", "come_per");
+    r.b_c2 = eff(satN("comm"), "c2_cap", "c2_per");
+    r.b_recon = eff(satN("mil"), "recon_cap", "recon_per");
+    r.b_warn = eff(satN("mil"), "warn_cap", "warn_per");
+    r.rod_strikes = satN("rod") * K.rod_strikes;
+    r.rod_power = r.rod_strikes * K.rod_power * r.tech_mult;
+    r.rod_tension = r.rod_strikes * K.rod_tension;
+    r.asat_cap = satN("asat") * K.asat;
+    r.launch_cap = I.pads * K.launch_pad * r.tech_mult;
+
+    // энергетика и промышленность
+    r.en_supply = mod("en_supply", sum("energy"));
+    r.ind_total = sum("industry");
+    const role = x => sum("industry", null, s => s.role === x);
+    r.pm_base = r.ind_total * r.tech_mult * r.infra_mult;
+    r.en_demand = r.pop_total * K.energy_pc + r.pm_base * K.energy_pm;
+    r.en_balance = r.en_supply - r.en_demand;
+    r.en_coef = r.en_demand > 0 ? min(1, r.en_supply / r.en_demand) : 1;
+    r.labor_need = r.ind_total * K.workers;
+    r.labor_coef = r.labor_need > 0 ? min(1, max(0, r.labor) / r.labor_need) : 1;
+    r.ind_eff = r.en_coef * r.labor_coef * r.stab_mult;
+    r.pm_eff = mod("pm_eff", r.pm_base * r.ind_eff);
+    r.pm_pc = dv(r.pm_eff, r.pop_total);
+    const effUnits = u => u * r.tech_mult * r.infra_mult * r.ind_eff;
+    r.vpk_eff = effUnits(role("vpk")); r.ship_eff = effUnits(role("ship")); r.aero_eff = effUnits(role("aero"));
+
+    // сырьё, еда, вода
+    r.raw_need = r.pm_base * K.raw_per_pm;
+    r.raw_bal = I.raw - r.raw_need;
+    r.field_yield = max(0, (1 - I.climate * K.climate_pen) * (1 - I.radiation * K.rad_crop));
+    r.food_prod = mod("food_prod", sum("food", null, s => String(s.weather) !== "1") + sum("food", null, s => String(s.weather) === "1") * r.field_yield);
+    r.food_need = r.pop_total * K.food_pc;
+    r.food_coef = r.food_need > 0 ? r.food_prod / r.food_need : 1;
+    r.water_need = r.pop_total * K.water_pc;
+    r.water_coef = r.water_need > 0 ? I.water / r.water_need : 1;
+
+    // торговля
+    r.access = (K.access_base + I.routes * K.access_route) * (1 + r.b_nav_trade);
+    r.export = mod("export", (r.pm_eff * I.exp_share * K.price_pm + max(0, r.food_prod - r.food_need) * K.price_food +
+      max(0, r.raw_bal) * K.price_raw + max(0, r.en_balance) * K.price_energy) * r.access);
+    r.import = mod("import", (max(0, r.food_need - r.food_prod) * K.price_food + max(0, -r.raw_bal) * K.price_raw +
+      max(0, r.water_need - I.water) * K.price_water) * K.import_markup);
+    r.trade_bal = r.export - r.import;
+
+    // гарнизоны и безопасность
+    r.garr_need = I.megapolis * (K.garr_base + I.waste_threat * K.garr_threat);
+    r.security = mod("security", r.garr_need > 0 ? min(1.2, r.garr_have / r.garr_need) : 1.2);
+
+    // ВВП
+    r.gdp_ind = r.pm_eff * (1 - I.exp_share) * K.price_pm;
+    r.gdp_agro = min(r.food_prod, r.food_need) * K.price_food;
+    r.gdp_raw = min(I.raw, r.raw_need) * K.price_raw;
+    r.gdp_svc = I.pop_meg * K.svc_meg * r.tech_mult * r.stab_mult * (1 + r.b_comm_econ) + I.pop_waste * K.svc_waste * r.security;
+    r.gdp = mod("gdp", r.gdp_ind + r.gdp_agro + r.gdp_raw + r.gdp_svc + r.export - r.import);
+    r.gdp_pc = dv(r.gdp, r.pop_total);
+    const tiers = T.tier.slice().sort((a, b) => num(a.min) - num(b.min));
+    r.econ_level = (tiers.filter(t => r.gdp_pc >= num(t.min)).pop() || tiers[0] || { name: "—" }).name;
+    r.ind_share = dv(r.gdp_ind + r.pm_eff * I.exp_share * K.price_pm, r.gdp);
+    r.hdi = (I.education + min(1, dv(r.gdp_pc, K.hdi_ref)) + min(1, r.health) + I.stability / 100) / 4;
+
+    // бюджет
+    r.budget = mod("budget", r.gdp * I.tax * (1 - I.corruption / 100 * K.corr_loss));
+    r.b_other = 1 - (I.b_def + I.b_space + I.b_sci + I.b_soc + I.b_infra);
+    r.def_budget = r.budget * I.b_def; r.space_budget = r.budget * I.b_space; r.sci_budget = r.budget * I.b_sci;
+    r.soc_budget = r.budget * I.b_soc; r.infra_budget = r.budget * I.b_infra;
+    r.coverage = r.sat_upkeep > 0 ? min(1, r.space_budget / r.sat_upkeep) : 1;
+    r.sat_loss = r.coverage < 1 ? Math.ceil(r.sat_total * (1 - r.coverage) * K.sat_decay - 1e-9) : 0;
+
+    // мобилизация
+    r.mop_total = r.pop_total * I.mob_share * min(1, r.health) * 1000;
+    r.mop_share = num(law.share);
+    r.mop_avail = mod("mop_avail", r.mop_total * r.mop_share);
+    r.mop_load = dv(r.active, r.mop_avail, r.active > 0 ? 9.99 : 0);
+    r.staffing = r.active > 0 ? min(1, r.mop_avail / r.active) : 1;
+    r.reserve = max(0, r.mop_avail - r.active);
+
+    // обеспечение
+    r.strat_upkeep = I.sam * K.sam_upkeep + I.icbm * K.icbm_upkeep + I.warheads * K.wh_upkeep;
+    r.upkeep_total = r.ground_upkeep + r.air_upkeep + r.navy_upkeep + r.strat_upkeep;
+    r.mil_bal = r.def_budget - r.upkeep_total;
+    r.readiness = mod("readiness", r.upkeep_total > 0 ? min(1, r.def_budget / r.upkeep_total) : 1);
+    r.morale = mod("morale", K.morale_base + K.morale_stab * I.stability / 100 + K.morale_sup * I.support / 100);
+
+    // рода войск
+    const ratio = (have, need) => (need > 0 ? min(1, have / need) : 1);
+    r.equip = (ratio(I.eq_tank, r.need_tank) + ratio(I.eq_ifv, r.need_ifv) + ratio(I.eq_art, r.need_art)) / 3;
+    const common = r.staffing * r.tech_mult * r.readiness * r.morale;
+    r.ground_power = mod("ground_power", r.ground_base * (K.eq_floor + (1 - K.eq_floor) * r.equip) * common);
+    r.ac_base_coef = r.ac_total > 0 ? min(1, I.airbases * K.ac_per_base / r.ac_total) : 1;
+    r.air_power = mod("air_power", r.air_base * r.ac_base_coef * common * (K.fuel_floor + (1 - K.fuel_floor) * r.en_coef));
+    r.nav_base_coef = r.ships_total > 0 ? min(1, I.navbases * K.ships_per_base / r.ships_total) : 1;
+    r.nav_supply = r.ships_combat > 0 ? min(1, aux * K.ships_per_aux / r.ships_combat) : 1;
+    r.navy_power = mod("navy_power", r.navy_base * r.nav_base_coef * (0.6 + 0.4 * r.nav_supply) * common * K.navy_world);
+    r.ad_power = mod("ad_power", I.sam * K.sam_power * r.tech_mult * r.readiness * (1 + r.b_warn));
+    r.nuke_cap = I.icbm * K.icbm_wh + shipWh + acWh;
+    r.nuke_deliv = min(I.warheads, r.nuke_cap);
+    r.nuke_power = r.nuke_deliv * K.nuke_val * r.readiness;
+    r.strat_power = mod("strat_power", r.nuke_power + r.rod_power);
+    r.sat_mult = 1 + r.b_c2 + r.b_recon + r.b_nav_mil;
+    r.ovp = mod("ovp", r.vpk_eff * K.ovp_unit);
+    r.ship_ton = r.ship_eff * K.ton_unit;
+    r.ac_prod = r.aero_eff * K.ac_unit;
+    r.conv_power = (r.ground_power + r.air_power + r.navy_power + r.ad_power) * r.sat_mult;
+    r.total_power = mod("total_power", r.conv_power + r.strat_power * K.strat_weight);
+    r.power_pc = dv(r.total_power, r.pop_total);
+
+    // прогноз на следующий ход
+    r.d_tech = mod("d_tech", dv(r.sci_budget, K.tech_cost * I.tech) * (1 + r.b_sci));
+    r.d_stab = mod("d_stab", (I.b_soc - K.soc_norm) * K.soc_eff + min(0, r.food_coef - 1) * K.food_stab + min(0, r.water_coef - 1) * K.food_stab +
+      min(0, r.en_coef - 1) * K.en_stab + (min(1.2, r.security) - 1) * K.sec_stab + (I.support - 50) * K.support_stab - num(law.stab));
+    r.d_pop = mod("d_pop", K.pop_growth * min(1.2, r.food_coef) * min(1, r.water_coef) - I.radiation * K.rad_mort);
+    r.d_gdp = mod("d_gdp", K.growth_base + I.b_infra * K.infra_growth + (I.stability - 50) * K.stab_growth + r.b_nav_trade * K.nav_growth -
+      max(0, r.mop_load - K.mop_safe) * K.mop_pen);
+    r.next_tech = min(10, I.tech + r.d_tech);
+    r.next_stab = max(0, min(100, I.stability + r.d_stab));
+    r.next_pop = r.pop_total * (1 + r.d_pop);
+    r.next_gdp = r.gdp * (1 + r.d_gdp);
+    return r;
+  }
+
+  // ---------- мировые показатели ----------
+  // ctx — сводка по ОСТАЛЬНЫМ странам: { exportSum, milSum, satSum, gdpMax, milMax, popMax, satMax, inms: [...] }
+  function worldCtx(results, exceptId) {
+    const w = { exportSum: 0, milSum: 0, satSum: 0, gdpMax: 0, milMax: 0, popMax: 0, satMax: 0, inms: [] };
+    for (const id in results) {
+      if (id === String(exceptId)) continue;
+      const r = results[id];
+      w.exportSum += r.export; w.milSum += r.total_power; w.satSum += r.sat_total;
+      w.gdpMax = max(w.gdpMax, r.gdp); w.milMax = max(w.milMax, r.total_power); w.popMax = max(w.popMax, r.pop_total); w.satMax = max(w.satMax, r.sat_total);
+    }
+    return w;
+  }
+  function applyWorld(rules, country, r, w) {
+    const K = normalizeRules(rules).K, I = (country && country.in) || {};
+    w = w || { exportSum: 0, milSum: 0, satSum: 0, gdpMax: 0, milMax: 0, popMax: 0, satMax: 0, inms: [] };
+    r.world_share = dv(r.export, r.export + w.exportSum);
+    r.world_mil_share = dv(r.total_power, r.total_power + w.milSum);
+    r.world_sats = r.sat_total + w.satSum;
+    r.kessler = K.debris_base + dv(r.world_sats, K.kessler_cap);
+    r.kessler_status = r.kessler >= 1 ? "КАТАСТРОФА" : r.kessler >= 0.75 ? "Критическое" : r.kessler >= 0.5 ? "Повышенный риск" : "Умеренное";
+    const rel = (v, m) => dv(v, max(v, m));
+    r.inm = 100 * (K.w_gdp * rel(r.gdp, w.gdpMax) + K.w_mil * rel(r.total_power, w.milMax) + K.w_pop * rel(r.pop_total, w.popMax) +
+      K.w_tech * num(I.tech) / 10 + K.w_stab * num(I.stability) / 100 + K.w_space * rel(r.sat_total, w.satMax));
+    r.rank = 1 + (w.inms || []).filter(x => x > r.inm + 1e-9).length;
+    return r;
+  }
+  // все страны сразу (для ГМа): { id: country } → { results, ctx }
+  function computeAll(rules, countries) {
+    const results = {}, ctx = {};
+    for (const id in countries) results[id] = compute(rules, countries[id]);
+    for (const id in countries) ctx[id] = worldCtx(results, id);
+    for (const id in countries) applyWorld(rules, countries[id], results[id], ctx[id]);
+    for (const id in countries) ctx[id].inms = Object.keys(results).filter(x => x !== id).map(x => results[x].inm);
+    for (const id in countries) results[id].rank = 1 + ctx[id].inms.filter(x => x > results[id].inm + 1e-9).length;
+    return { results, ctx };
+  }
+
+  // ---------- образцы (5 государств из таблицы Excel) ----------
+  const S = (vals, i) => vals[i];
+  const SAMPLE_BASE = [
+    ["Индустриальная держава", "Уральский Союз"], ["Морская держава", "Скандинавский Архипелаг"], ["Горная сырьевая держава", "Андская Федерация"],
+    ["Высокогорная теократия", "Гималайский Доминион"], ["Аграрно-торговая держава", "Конгломерат Килиманджаро"]
+  ];
+  const SV = {
+    capital: ["Новый Екатеринбург", "Нордхавн", "Ла-Пас-Цитадель", "Катманду-Верхний", "Найроби-Арколог"],
+    gov: ["Технократическая республика", "Морская олигархия", "Военная хунта", "Теократическая монархия", "Корпоративное государство"],
+    ideology: ["Индустриальный реваншизм", "Неоганзейский меркантилизм", "Национальное возрождение", "Хранители Вершин", "Корпоративный прагматизм"],
+    position: ["Берег Обского моря", "Островное, архипелаг", "Горы, берег Тихого океана", "Высокогорье, без моря", "Нагорье, берег Индийского океана"],
+    megapolis: [6, 4, 5, 3, 4], territory: [850, 220, 640, 480, 390], habitable: [0.35, 0.4, 0.25, 0.2, 0.45], flooded: [0.08, 0.62, 0.15, 0.05, 0.22],
+    radiation: [4, 2, 3, 2, 5], waste_threat: [6, 3, 5, 4, 7], climate: [6, 7, 5, 6, 4], pop_meg: [38, 14, 22, 18, 26], pop_waste: [12, 3, 9, 7, 14],
+    working_share: [0.56, 0.6, 0.54, 0.55, 0.52], mob_share: [0.2, 0.17, 0.19, 0.18, 0.21], education: [0.82, 0.93, 0.71, 0.76, 0.68], healthcare: [6, 8, 5, 5, 4],
+    stability: [68, 78, 55, 72, 50], support: [61, 70, 48, 80, 52], corruption: [35, 18, 55, 30, 60], mob_law: [3, 2, 4, 2, 3], tech: [6.5, 8, 5.5, 5.8, 5.2], infra: [6, 8, 5, 5, 4],
+    raw: [210, 60, 190, 70, 95], water: [11, 5, 6.5, 12, 7.2], routes: [4, 9, 5, 3, 6], exp_share: [0.15, 0.3, 0.12, 0.1, 0.2], tax: [0.32, 0.36, 0.28, 0.3, 0.25],
+    b_def: [0.28, 0.24, 0.34, 0.24, 0.22], b_space: [0.06, 0.09, 0.05, 0.08, 0.07], b_sci: [0.08, 0.12, 0.05, 0.06, 0.05], b_soc: [0.3, 0.32, 0.22, 0.34, 0.28], b_infra: [0.18, 0.15, 0.2, 0.18, 0.22],
+    eq_tank: [4290, 1060, 1980, 1340, 1390], eq_ifv: [8090, 2940, 4920, 3520, 3740], eq_art: [3460, 1190, 2160, 1560, 1500],
+    airbases: [14, 7, 8, 7, 6], navbases: [2, 5, 2, 1, 3], sam: [120, 60, 50, 70, 40], icbm: [60, 0, 0, 30, 0], warheads: [300, 60, 0, 120, 0], pads: [2, 1, 1, 1, 2]
+  };
+  const SC = {
+    energy: { fusion: [42, 22, 18, 10, 14], renew: [12, 18, 10, 26, 16], fossil: [8, 2, 14, 2, 10] },
+    industry: { heavy: [120, 30, 60, 30, 35], light: [60, 35, 30, 40, 70], chem: [40, 25, 20, 15, 25], hitech: [30, 55, 10, 20, 15], vpk: [70, 35, 45, 30, 30], ship: [15, 45, 10, 0, 15], aero: [25, 15, 10, 10, 5] },
+    food: { hydro: [9, 3, 3, 3, 4], aqua: [1, 4, 1, 0, 3], field: [18, 1, 12, 9, 16] },
+    div: { motor: [18, 4, 12, 8, 10], tank: [8, 1, 3, 2, 2], airborne: [3, 1, 2, 4, 1], marine: [1, 6, 3, 0, 2], art: [4, 1, 3, 2, 2], garrison: [8, 5, 7, 5, 6], raider: [6, 2, 6, 4, 8], militia: [10, 4, 12, 8, 14] },
+    ac: { fighter: [220, 140, 90, 110, 70], attack: [180, 90, 120, 60, 110], bomber: [20, 0, 0, 6, 0], awacs: [12, 10, 4, 6, 3], transport: [60, 30, 40, 50, 40], drone: [600, 500, 300, 400, 350], heli: [250, 80, 150, 180, 140] },
+    ship: { carrier: [0, 1, 0, 0, 0], lhd: [0, 2, 0, 0, 1], battleship: [0, 0, 0, 0, 0], cruiser: [0, 3, 1, 0, 0], destroyer: [2, 10, 3, 0, 2], frigate: [6, 14, 6, 0, 4], corvette: [12, 16, 10, 2, 10],
+      ssn: [0, 6, 0, 0, 0], ssk: [8, 4, 6, 0, 4], ssbn: [2, 2, 0, 0, 0], landing: [3, 6, 3, 0, 4], patrol: [40, 60, 35, 20, 45], ekranoplan: [0, 8, 0, 0, 4], aux: [4, 12, 4, 1, 5] },
+    sat: { sci: [8, 14, 4, 6, 5], nav: [12, 10, 6, 6, 8], comm: [18, 22, 10, 8, 12], mil: [10, 8, 4, 6, 3], rod: [2, 0, 0, 1, 0], asat: [6, 4, 1, 3, 0] }
+  };
+  function sample(i) {
+    const c = { in: {}, cnt: {}, mods: [], notes: "" };
+    for (const k in SV) c.in[k] = S(SV[k], i);
+    for (const t in SC) { c.cnt[t] = {}; for (const id in SC[t]) c.cnt[t][id] = S(SC[t][id], i); }
+    return c;
+  }
+  const SAMPLES = SAMPLE_BASE.map(([profile, name], i) => ({ profile, name, make: () => sample(i) }));
+  function emptyCountry() {
+    const c = { in: {}, cnt: {}, mods: [], notes: "" };
+    for (const k in INPUTS) c.in[k] = INPUTS[k][2] === "txt" ? "" : 0;
+    Object.assign(c.in, { mob_law: 1, tech: 1, stability: 50, support: 50, working_share: 0.55, mob_share: 0.18, tax: 0.25 });
+    COUNT_TABLES.forEach(t => (c.cnt[t] = {}));
+    return c;
+  }
+
+  window.KGMechModel = {
+    K_GROUPS, K_META, TABLES, COUNT_TABLES, INPUTS, OUT, MOD_TARGETS, SAMPLES,
+    defaultRules, normalizeRules, compute, worldCtx, applyWorld, computeAll, emptyCountry
+  };
+})();
