@@ -19,6 +19,7 @@
     { id: "ocean", name: "Океан", kind: "div", cls: "ocean", vis: true },
     { id: "landDark", name: "Суша вне стран", kind: "img", src: "assets/map/land.png", cls: "land-dark", vis: true, internal: true }, // подложка суши: всегда видна, в списке слоёв её нет
     { id: "countries", name: "Заливка стран", kind: "svg", vis: true },
+    { id: "alliances", name: "Союзы", kind: "svg", vis: false }, // страны союза — цветом союза, остальные притемнены
     { id: "relief", name: "Рельеф", kind: "img", src: "assets/map/land.png", cls: "relief", vis: true },
     { id: "hydro", name: "Гидрография", kind: "img", src: "assets/map/hydro.png", cls: "hydro", vis: true },
     { group: "roads", name: "Дороги", children: [
@@ -97,6 +98,7 @@
       el.classList.toggle("hl", !!ui.hl[l.id]);
       el.style.setProperty("--glow", l.glow);
     }
+    if (l.id === "alliances") allyVisChanged();
   }
   function buildLayerList() {
     const list = $("layerList"); list.innerHTML = "";
@@ -198,7 +200,7 @@
     e.setAttribute("d", d || "");
     if (selProv === id) provSelPath.setAttribute("d", d || "");
   }
-  const els = { cfill: {}, cborder: {}, clabel: {}, cities: {}, labels: {}, satellites: {}, satTypes: {}, debris: {}, settings: {} };
+  const els = { cfill: {}, cborder: {}, clabel: {}, cities: {}, labels: {}, satellites: {}, satTypes: {}, debris: {}, settings: {}, alliances: {} };
   const paths = new Map(); // id страны -> d
   const flagCache = {};   // id -> dataURL (флаги, загруженные в этой сессии)
 
@@ -210,6 +212,7 @@
     if (!b) { b = svgEl("path", {}, L.borders); els.cborder[id] = b; }
     f.setAttribute("d", d || ""); b.setAttribute("d", d || "");
     if (sel && sel.col === "countries" && sel.id === id) selPath.setAttribute("d", d || "");
+    scheduleAlly();
   }
   function renderCountry(id) {
     const c = state.countries[id];
@@ -392,8 +395,127 @@
     window.KG.lines.svg(t, e.name);
   }
   const renderSatsAny = () => { try { refreshSats(); } catch (e) { /* глобус ещё не готов */ } };
-  const RENDER = { countries: renderCountry, cities: renderCity, labels: renderLabel, provinces: renderProvince, satellites: renderSatsAny, satTypes: renderSatsAny, debris: renderSatsAny, settings: () => applyFonts() };
-  const COLS = ["countries", "cities", "labels", "provinces", "satellites", "satTypes", "debris", "settings"];
+  const RENDER = { countries: renderCountry, cities: renderCity, labels: renderLabel, provinces: renderProvince, satellites: renderSatsAny, satTypes: renderSatsAny, debris: renderSatsAny, settings: () => applyFonts(), alliances: () => scheduleAlly() };
+  const COLS = ["countries", "cities", "labels", "provinces", "satellites", "satTypes", "debris", "settings", "alliances"];
+
+  // ---------- союзы (фракции): слой «Союзы» и вкладка легенды ----------
+  // Союз — запись в state.alliances { id, name, color, leader, desc }; страна входит в союз полем country.alliance.
+  // Слой рисует страны союза его цветом, остальные притемняет. Луна берёт союзы отсюда же (событие kg-alliances).
+  const allyLayer = LAYERS.find(l => l.id === "alliances");
+  const allyOn = () => isVisible(allyLayer);
+  const allyOf = c => (c && c.alliance && state && state.alliances && state.alliances[c.alliance]) || null;
+  let allyHl = null, allyOpen = null, allyQueued = false, allyStale = true;
+  function scheduleAlly() {
+    allyStale = true;
+    if (allyQueued) return; allyQueued = true;
+    setTimeout(() => { allyQueued = false; if (allyOn()) renderAlliances(); }, 0); // rAF в фоновой вкладке не идёт
+  }
+  function renderAlliances() {
+    if (!state) return;
+    const by = {}, none = [];
+    for (const id in state.countries) {
+      const d = paths.get(id); if (!d) continue;
+      const a = allyOf(state.countries[id]);
+      if (a) (by[a.id] = by[a.id] || []).push(d); else none.push(d);
+    }
+    let h = `<path class="al-none" d="${none.join("")}"/>`;
+    for (const a of Object.values(state.alliances || {})) {
+      if (by[a.id]) h += `<path class="al-fill${allyHl === a.id ? " hl" : ""}" data-al="${esc(a.id)}" fill="${esc(a.color)}" d="${by[a.id].join("")}"/>`;
+    }
+    L.alliances.innerHTML = h;
+    allyStale = false;
+  }
+  function setAllyHl(id) {
+    allyHl = id || null;
+    L.alliances.querySelectorAll("path.al-fill").forEach(p => p.classList.toggle("hl", p.dataset.al === allyHl));
+  }
+  function allyVisChanged() {
+    try {
+      if (!state) return;
+      if (allyOn() && allyStale) renderAlliances();
+      const cb = $("allyShow"); if (cb) cb.checked = allyOn();
+      if (globe && viewMode === "globe") syncGlobe(false);
+    } catch (e) { /* при первом построении слоёв карта ещё не загружена */ }
+  }
+  function showAllyLayer(on) {
+    ui.vis.alliances = on; if (allyLayer._cb) allyLayer._cb.checked = on;
+    applyLayer(allyLayer); saveUi();
+  }
+  const allyChanged = () => { scheduleAlly(); buildAllyList(); window.dispatchEvent(new Event("kg-alliances")); };
+  function buildAllyList() {
+    const list = $("allyList"); if (!list || !state) return;
+    $("allyShow").checked = allyOn();
+    list.innerHTML = "";
+    const all = Object.values(state.alliances || {}).sort((a, b) => a.name.localeCompare(b.name, "ru"));
+    if (!all.length) { list.innerHTML = `<div class="small">Союзов пока нет.</div>`; return; }
+    const one = window.KG.lines.oneLine;
+    for (const a of all) {
+      const mem = Object.values(state.countries).filter(c => c.alliance === a.id)
+        .sort((x, y) => (x.id === a.leader ? -1 : y.id === a.leader ? 1 : one(x.name).localeCompare(one(y.name), "ru")));
+      const r = document.createElement("div"); r.className = "c-row al-row" + (allyOpen === a.id ? " active" : ""); r.dataset.al = a.id;
+      r.title = "Показать страны союза";
+      r.innerHTML = `<span class="swatch" style="background:${esc(a.color)}"></span><span class="c-name">${esc(a.name)}</span><span class="al-n">${mem.length}</span>` +
+        (gm ? `<button class="c-go" title="Изменить союз">✎</button><button class="c-del" title="Удалить союз">✕</button>` : "");
+      r.addEventListener("click", e => {
+        if (e.target.closest(".c-go")) { editAlly(a.id); return; }
+        if (e.target.closest(".c-del")) { deleteAlly(a.id); return; }
+        allyOpen = allyOpen === a.id ? null : a.id;
+        if (allyOpen && !allyOn()) showAllyLayer(true);
+        setAllyHl(allyOpen); buildAllyList();
+      });
+      r.addEventListener("mouseenter", () => setAllyHl(a.id));
+      r.addEventListener("mouseleave", () => setAllyHl(allyOpen));
+      list.append(r);
+      if (allyOpen !== a.id) continue;
+      const box = document.createElement("div"); box.className = "al-members";
+      if (a.desc) { const d = document.createElement("div"); d.className = "al-desc"; d.textContent = a.desc; box.append(d); }
+      if (!mem.length) box.insertAdjacentHTML("beforeend", `<div class="small">На карте Земли стран в союзе нет.</div>`);
+      for (const c of mem) {
+        const m = document.createElement("div"); m.className = "c-row";
+        m.innerHTML = `<span class="swatch" style="background:${esc(c.color)}"></span><span class="c-name">${esc(one(c.name))}${c.id === a.leader ? ' <small class="al-lead">лидер</small>' : ""}</span>`;
+        m.addEventListener("click", () => focusCountry(c.id));
+        box.append(m);
+      }
+      list.append(box);
+    }
+  }
+  async function editAlly(id) {
+    if (!gm) return;
+    const before = id ? state.alliances[id] : null, one = window.KG.lines.oneLine;
+    const leaders = [["", "—"]].concat(Object.values(state.countries).map(c => [c.id, one(c.name)]).sort((x, y) => x[1].localeCompare(y[1], "ru")));
+    const base = Object.assign(before ? clone(before) : { name: "", color: "#9fb4d8", leader: "", desc: "" }, { __opts: { validate: v => (v.name ? "" : "Введите название союза") } });
+    const v = await openForm(before ? "Союз: " + before.name : "Новый союз", [
+      { key: "name", label: "Название" },
+      { key: "color", label: "Цвет на слое «Союзы»", type: "color" },
+      { key: "leader", label: "Лидер", type: "select", options: leaders, hint: "Лидер сразу входит в союз. Остальные страны — в карточке страны, поле «Союз»; территории Луны — в карточке территории" },
+      { key: "desc", label: "Описание", type: "textarea" }
+    ], base);
+    if (!v) return;
+    const nid = before ? id : uid("al_");
+    const rec = { id: nid, name: v.name, color: v.color, leader: v.leader && state.countries[v.leader] ? v.leader : "", desc: v.desc };
+    const items = [{ kind: "entity", col: "alliances", id: nid, before: clone(before), after: rec }];
+    const lc = rec.leader ? state.countries[rec.leader] : null;
+    if (lc && lc.alliance !== nid) { const a = clone(lc); a.alliance = nid; items.push({ kind: "entity", col: "countries", id: lc.id, before: clone(lc), after: a }); }
+    pushUndo({ kind: "multi", items }); items.forEach(it => applyEntry(it, false));
+    allyOpen = nid; buildAllyList();
+    toast(before ? "Союз изменён" : "Союз создан");
+  }
+  async function deleteAlly(id) {
+    const a = state.alliances[id]; if (!a || !gm) return;
+    const mem = Object.values(state.countries).filter(c => c.alliance === id);
+    const ok = await ask("Удалить союз «" + a.name + "»?", "", { confirm: true, note: (mem.length ? "Из союза выйдут страны: " + mem.length + ". " : "") + "Ctrl+Z — вернуть." });
+    if (!ok) return;
+    const items = mem.map(c => { const x = clone(c); delete x.alliance; return { kind: "entity", col: "countries", id: c.id, before: clone(c), after: x }; });
+    items.push({ kind: "entity", col: "alliances", id, before: clone(a), after: null });
+    pushUndo({ kind: "multi", items }); items.forEach(it => applyEntry(it, false));
+    if (allyOpen === id) allyOpen = null;
+    buildAllyList();
+  }
+  function setCountryAlly(id, v) {
+    const c = state.countries[id]; if (!c || !gm || (c.alliance || "") === v) return;
+    const a = clone(c); if (v) a.alliance = v; else delete a.alliance;
+    commit("countries", id, c, a);
+  }
 
   // ---------- вид ----------
   let s = 0.3, tx = 0, ty = 0, fitS = 0.3;
@@ -573,6 +695,7 @@
       `<div class="sc-name">${esc(window.KG.lines.oneLine(c.name))}</div></div></div>` +
       `<dl class="sc-rows">` +
       INFO.slice(0, 1).map(([k, l]) => field(k, l)).join("") +
+      allyField(c) +
       row("Площадь", area ? "≈ " + fmtArea(area) : "—") +
       row("Провинций", provs ? String(provs) : "—") +
       row("Городов на карте", inC.length ? String(inC.length) : "—") +
@@ -583,6 +706,16 @@
         : desc ? `<div class="sc-desc-view">${esc(desc)}</div>` : "");
     stateCard.classList.remove("hidden");
   }
+  // строка «Союз» в карточке: ГМ выбирает из списка, остальные видят название (лидер помечен)
+  function allyField(c) {
+    const al = allyOf(c);
+    if (gm) {
+      const opts = [["", "— не в союзе —"]].concat(Object.values(state.alliances || {}).sort((a, b) => a.name.localeCompare(b.name, "ru")).map(a => [a.id, a.name]));
+      return `<dt>Союз</dt><dd><select class="sc-ally" title="Союз (фракция) страны">${opts.map(([v, t]) => `<option value="${esc(v)}"${(al ? al.id : "") === v ? " selected" : ""}>${esc(t)}</option>`).join("")}</select></dd>`;
+    }
+    return `<dt>Союз</dt>` + (al ? `<dd><span class="sc-swatch" style="background:${esc(al.color)}"></span>${esc(al.name)}${al.leader === c.id ? " (лидер)" : ""}</dd>` : `<dd class="sc-tbd">—</dd>`);
+  }
+  $("stateCardBody").addEventListener("change", e => { if (e.target.matches(".sc-ally") && sel) setCountryAlly(sel.id, e.target.value); });
   // правка полей карточки: сохраняем при уходе из поля (Enter — тоже), одна правка — один шаг Ctrl+Z
   function saveInfo(inp) {
     const c = sel && sel.col === "countries" ? state.countries[sel.id] : null;
@@ -686,11 +819,14 @@
   $("flagClear").addEventListener("click", () => { if (!sel || !gm) return; delete flagCache[sel.id]; const b = state.countries[sel.id], a = clone(b); a.flag = null; commit("countries", sel.id, b, a); });
 
   // вкладки легенды
-  document.querySelectorAll(".legend-tabs button").forEach(b => b.addEventListener("click", () => {
-    document.querySelectorAll(".legend-tabs button").forEach(x => x.classList.toggle("active", x === b));
-    $("paneCountries").classList.toggle("hidden", b.dataset.ltab !== "countries");
-    $("paneLayers").classList.toggle("hidden", b.dataset.ltab !== "layers");
+  const PANES = { countries: "paneCountries", layers: "paneLayers", alliances: "paneAlliances" };
+  document.querySelectorAll("#legend .legend-tabs button").forEach(b => b.addEventListener("click", () => {
+    document.querySelectorAll("#legend .legend-tabs button").forEach(x => x.classList.toggle("active", x === b));
+    for (const k in PANES) $(PANES[k]).classList.toggle("hidden", b.dataset.ltab !== k);
+    if (b.dataset.ltab === "alliances") buildAllyList();
   }));
+  $("allyShow").addEventListener("change", e => showAllyLayer(e.target.checked));
+  $("addAllyBtn").addEventListener("click", () => editAlly(null));
   // список стран
   function buildCountryList() {
     const list = $("countryList"), q = $("countrySearch").value.trim().toLowerCase();
@@ -744,6 +880,7 @@
     RENDER[col](id);
     if (sel && sel.col === col && sel.id === id) { if (val == null) select(null); else { select(sel); } }
     if (col === "countries") { buildCountryList(); fillBrushSelect(); if (globe && viewMode === "globe") syncGlobe(false); }
+    if (col === "countries" || col === "alliances") { allyChanged(); if (col === "alliances" && globe && viewMode === "globe") syncGlobe(false); }
     if (col === "cities") { refreshCityKey(); if (globe && viewMode === "globe") syncGlobe(false); }
   }
   function commit(col, id, before, after) {
@@ -860,7 +997,7 @@
     $("gmLoginBtn").classList.toggle("hidden", gm);
     $("gmActions").classList.toggle("hidden", !gm);
     setTool("pan");
-    buildCountryList();
+    buildCountryList(); buildAllyList();
     updateCard();
     try { refreshSats(); } catch (e) { /* */ }
     if (window.KGMoon) window.KGMoon.onGmChange();
@@ -1572,11 +1709,11 @@
   }
   function syncGlobe(withIds) {
     if (withIds) { globe.setIds(T.ids, T.W, T.H); if (P.ids) globe.setProv(P.ids, P.W, P.H); }
-    const pal = {}, labels = [];
+    const pal = {}, labels = [], on = allyOn();
     const cx = document.createElement("canvas").getContext("2d");
     for (const id in state.countries) {
-      const c = state.countries[id];
-      cx.fillStyle = c.color; pal[id] = cx.fillStyle;
+      const c = state.countries[id], a = on ? allyOf(c) : null;
+      cx.fillStyle = on ? (a ? a.color : "#3a3346") : c.color; pal[id] = cx.fillStyle; // слой «Союзы»: цвет союза, вне союзов — тёмный
       const ll = Geo.toLL(c.label[0], c.label[1]);
       labels.push({ id, name: c.name, lat: ll[0], lon: ll[1], size: c.size * fk("country") });
     }
@@ -2176,7 +2313,8 @@
       console.info("контуры " + (hit ? "из кэша" : "построены") + " за", Math.round(performance.now() - t0), "мс");
       rebuildAll(false);
       applyFonts(); refreshCityKey();
-      buildCountryList(); fillBrushSelect();
+      buildCountryList(); fillBrushSelect(); buildAllyList(); allyVisChanged();
+      window.dispatchEvent(new Event("kg-alliances"));
       let saved = null; try { saved = sessionStorage.getItem(GM_KEY); } catch (e) { /* */ }
       setGm(!!saved && saved === config.gm.hash);
       updUndo();

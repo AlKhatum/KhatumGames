@@ -146,6 +146,17 @@ main { position: relative; z-index: 5; height: calc(100% - var(--topbar-h)); }
 
 #countriesLayer path { fill-opacity: .9; pointer-events: visiblePainted; cursor: pointer; }
 #bordersLayer path { fill: none; stroke: rgba(26, 18, 40, .62); stroke-width: 1px; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+/* слой «Союзы» (Земля и Луна): страны союза — его цветом, остальные притемнены */
+path.al-fill { fill-opacity: .92; stroke: none; pointer-events: none; }
+path.al-fill.hl { stroke: #fff; stroke-width: 2.2px; vector-effect: non-scaling-stroke; stroke-linejoin: round; fill-opacity: 1; }
+path.al-none { fill: #160f24; fill-opacity: .66; pointer-events: none; }
+.al-row .al-n { font-size: 11px; color: var(--muted, #9aa); min-width: 18px; text-align: right; }
+.al-members { margin: 0 0 6px 20px; padding-left: 8px; border-left: 1px solid var(--line-dim); }
+.al-members .c-row { font-size: 12px; }
+.al-desc { font-size: 12px; opacity: .8; margin: 2px 0 4px; }
+.al-lead { opacity: .7; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; }
+.al-show { flex: 1; }
+.sc-ally, .m-ally { width: 100%; background: var(--panel-solid); color: var(--text); border: 1px solid var(--line-dim); border-radius: 3px; font-size: 12px; padding: 2px 4px; }
 .coast-line { fill: none; stroke: rgba(70, 215, 240, .8); stroke-width: 1.1px; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
 .sel-outline {
   fill: none; stroke: var(--pink); stroke-width: 2.4px; stroke-dasharray: 7 3 1.5 3; vector-effect: non-scaling-stroke;
@@ -441,6 +452,8 @@ body.moon-mode .map-frame::before, body.moon-mode .map-frame::after { z-index: 1
 .moon-panel .lp-tools .small-btn { margin: 0; }
 #moonTypeList .legend-label { margin: 8px 0 3px; }
 #mFill path { fill-opacity: .42; pointer-events: visiblePainted; }
+#mAlly path.al-fill { fill-opacity: .6; } /* на Луне сквозь союз видна поверхность */
+#mAlly path.al-none { fill-opacity: .5; }
 #mBorder path { fill: none; stroke: rgba(20, 10, 30, .75); stroke-width: 1px; vector-effect: non-scaling-stroke; }
 #mBorder.hl { filter: drop-shadow(0 0 1.2px #ff3fd0) drop-shadow(0 0 4px #ff3fd0); }
 #mBorder.hl path { stroke: #ff9be9; stroke-width: 1.7px; }

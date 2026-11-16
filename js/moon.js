@@ -68,7 +68,7 @@
   const wrap = $("moonWrap"), vp = $("moonViewport"), world = $("moonWorld");
   const svg = id => { const e = document.createElementNS(NS, "svg"); e.setAttribute("viewBox", `0 0 ${MW} ${MH}`); e.setAttribute("width", MW); e.setAttribute("height", MH); e.classList.add("layer"); e.id = id; world.append(e); return e; };
   const tex = document.createElement("img"); tex.className = "layer"; tex.alt = ""; tex.draggable = false; world.append(tex); // текстура грузится при первом открытии Луны
-  const Lfill = svg("mFill"), Lborder = svg("mBorder"), Lroads = svg("mRoads");
+  const Lfill = svg("mFill"), Lally = svg("mAlly"), Lborder = svg("mBorder"), Lroads = svg("mRoads");
   const paintCv = document.createElement("canvas"); paintCv.width = MW; paintCv.height = MH; paintCv.className = "layer"; world.append(paintCv);
   const paintCtx = paintCv.getContext("2d", { willReadFrequently: true });
   const Lfeat = svg("mFeat"), Lnames = svg("mNames"), Lmarks = svg("mMarks"), Lmeas = svg("mMeasure"), Lover = svg("mOver");
@@ -78,7 +78,7 @@
   const vtxG = document.createElementNS(NS, "g"); Lover.append(vtxG);
   // Бесшовная карта: копии слоёв слева и справа (курсор кисти и холст рисования не копируются)
   const WR = window.KGWrap.create(world, MW, MH);
-  [tex, Lfill, Lborder, Lroads, Lfeat, Lnames, Lmarks, Lmeas, Lover].forEach(el => WR.add(el));
+  [tex, Lfill, Lally, Lborder, Lroads, Lfeat, Lnames, Lmarks, Lmeas, Lover].forEach(el => WR.add(el));
   const Lcur = svg("mCursor");
   const cursor = document.createElementNS(NS, "circle"); cursor.setAttribute("class", "brush-cursor"); cursor.setAttribute("r", 8); Lcur.append(cursor);
   const tPaths = new Map(), tEls = {};
@@ -199,9 +199,32 @@
     renderFeatures();
     Lborder.classList.toggle("hl", !!mui.hl.borders);
     Lnames.classList.toggle("hl", !!mui.hl.tnames);
-    renderRoads(); renderMarks();
-    if (sub === "globe") globeDirty();
+    renderRoads(); renderMarks(); renderAlly();
+    if (sub === "globe") syncGlobe(false);
   }
+  // ---------- союзы: те же, что на Земле (map.json → alliances); территория входит в союз полем alliance ----------
+  const allies = () => (window.KGMap && window.KGMap.state && window.KGMap.state.alliances) || {};
+  const allyOfT = t => (t && t.alliance && allies()[t.alliance]) || null;
+  const allyVis = () => visOf("alliances", false);
+  const terrColor = t => (allyVis() ? (allyOfT(t) ? allyOfT(t).color : "#3a3346") : t.color); // цвет на шаре
+  let mAllyHl = null;
+  function renderAlly() {
+    Lally.style.display = allyVis() ? "" : "none";
+    if (!st || !allyVis()) return;
+    const by = {}, none = [];
+    for (const id in st.territories) {
+      const d = tPaths.get(id); if (!d) continue;
+      const a = allyOfT(st.territories[id]);
+      if (a) (by[a.id] = by[a.id] || []).push(d); else none.push(d);
+    }
+    let h = none.length ? `<path class="al-none" d="${none.join("")}"/>` : "";
+    for (const a of Object.values(allies())) if (by[a.id]) h += `<path class="al-fill${mAllyHl === a.id ? " hl" : ""}" data-al="${esc(a.id)}" fill="${esc(a.color)}" d="${by[a.id].join("")}"/>`;
+    Lally.innerHTML = h;
+  }
+  function setMAllyHl(id) { mAllyHl = id || null; Lally.querySelectorAll("path.al-fill").forEach(p => p.classList.toggle("hl", p.dataset.al === mAllyHl)); }
+  function showMAlly(on) { mui.vis.alliances = on; saveUi(); applyLayers(); buildLists(); }
+  // союзы правятся на карте Земли: перерисовать Луну, если она уже открывалась
+  window.addEventListener("kg-alliances", () => { if (!st) return; renderAlly(); buildLists(); updateCard(); syncGlobe(false); });
   // общий масштаб надписей Луны (окно «Шрифты» на карте Земли)
   const fkOf = slot => { const k = window.KGMap && window.KGMap.fontScale; return (k && k[slot]) || 1; };
   window.addEventListener("kg-fonts", () => { if (!st) return; for (const id in st.territories) renderTerr(id); renderMarks(); globeDirty(); });
@@ -273,6 +296,7 @@
           `<div class="legend-label">Территория</div>` + (gm ? `<input type="text" id="mName" value="${esc(L.toInput(e.name))}" title="« ↵ » — перенос строки">` : `<div class="country-title">${esc(L.oneLine(e.name))}</div>`) +
           (gm ? `<div class="legend-row"><span>Цвет</span><input type="color" id="mColor" value="${e.color}"><button class="small-btn" id="mDel">Удалить</button></div>` +
             (fsrc ? `<div class="legend-row"><button class="small-btn" id="mFlagClear">Убрать флаг</button></div>` : "") : "") +
+          allyRowT(e, gm) +
           `<div class="legend-meta">Площадь ≈ ${Math.round(areaKm2(sel.id)).toLocaleString("ru-RU")} км²</div></div></div>`;
       } else if (sel.col === "marks") {
         const t = st.markTypes[e.type] || {};
@@ -292,10 +316,46 @@
     const e = st[sel.col][sel.id];
     const nm = $("mName"); if (nm) { nm.addEventListener("keydown", ev => { if (ev.key === "Enter") nm.blur(); ev.stopPropagation(); }); nm.addEventListener("change", () => { const v = L.fromInput(nm.value); if (v && v !== e.name) { const a = clone(e); a.name = v; commit(sel.col, sel.id, e, a); } }); }
     const cl = $("mColor"); if (cl) cl.addEventListener("change", () => { const a = clone(e); a.color = cl.value; commit(sel.col, sel.id, e, a); });
+    const ma = $("mAlly"); if (ma) ma.addEventListener("change", () => { const a = clone(e); if (ma.value) a.alliance = ma.value; else delete a.alliance; commit(sel.col, sel.id, e, a); });
     const ty2 = $("mType"); if (ty2) ty2.addEventListener("change", () => { const a = clone(e); a.type = ty2.value; commit(sel.col, sel.id, e, a); });
     const dl = $("mDel"); if (dl) dl.addEventListener("click", () => removeEntity(sel.col, sel.id));
     if (sel.col === "territories") bindFlag(sel.id);
   }
+  // строка «Союз» в карточке территории: ГМ выбирает из союзов Земли, остальные видят название
+  function allyRowT(e, gm) {
+    const al = allyOfT(e);
+    if (gm) {
+      const opts = [["", "— не в союзе —"]].concat(Object.values(allies()).sort((a, b) => a.name.localeCompare(b.name, "ru")).map(a => [a.id, a.name]));
+      return `<div class="legend-row"><span>Союз</span><select id="mAlly" class="m-ally">${opts.map(([v, t]) => `<option value="${esc(v)}"${(al ? al.id : "") === v ? " selected" : ""}>${esc(t)}</option>`).join("")}</select></div>`;
+    }
+    return `<div class="legend-meta">Союз: ${al ? `<span class="sc-swatch" style="background:${esc(al.color)}"></span>${esc(al.name)}` : "—"}</div>`;
+  }
+  function buildAllyPane(terr, gm) {
+    const box = $("moonAllyList"); box.innerHTML = "";
+    $("mAllyShow").checked = allyVis();
+    const groups = Object.values(allies()).map(a => ({ a, ts: terr.filter(t => t.alliance === a.id) })).filter(g => g.ts.length)
+      .sort((x, y) => x.a.name.localeCompare(y.a.name, "ru"));
+    if (!groups.length) {
+      box.innerHTML = `<div class="small">Ни одна территория Луны пока не входит в союз.${gm ? " Союз выбирается в карточке территории; сами союзы — на карте Земли, вкладка «Союзы»." : ""}</div>`;
+      return;
+    }
+    for (const g of groups) {
+      const r = document.createElement("div"); r.className = "c-row al-row";
+      r.innerHTML = `<span class="swatch" style="background:${esc(g.a.color)}"></span><span class="c-name">${esc(g.a.name)}</span><span class="al-n">${g.ts.length}</span>`;
+      r.addEventListener("mouseenter", () => setMAllyHl(g.a.id)); r.addEventListener("mouseleave", () => setMAllyHl(null));
+      r.addEventListener("click", () => { if (!allyVis()) showMAlly(true); });
+      box.append(r);
+      const sub = document.createElement("div"); sub.className = "al-members";
+      for (const t of g.ts) {
+        const m = document.createElement("div"); m.className = "c-row";
+        m.innerHTML = `<span class="swatch" style="background:${esc(t.color)}"></span><span class="c-name">${esc(L.oneLine(t.name))}</span>`;
+        m.addEventListener("click", () => { select({ col: "territories", id: t.id }); centerOn(t.label[0], t.label[1]); });
+        sub.append(m);
+      }
+      box.append(sub);
+    }
+  }
+  $("mAllyShow").addEventListener("change", e => showMAlly(e.target.checked));
   function buildLists() {
     if (!st) return;
     const gm = isGm();
@@ -309,12 +369,13 @@
       r.addEventListener("click", () => { select({ col: "territories", id: t.id }); centerOn(t.label[0], t.label[1]); });
       tl.append(r);
     }
+    buildAllyPane(terr, gm);
     // слои
     const ll = $("moonLayerList"); ll.innerHTML = "";
     const row = (id, name, opt) => {
       const r = document.createElement("label"); r.className = "layer-row" + (opt && opt.sub ? " sub" : "");
-      const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = visOf(id);
-      cb.addEventListener("change", () => { mui.vis[id] = cb.checked; saveUi(); applyLayers(); });
+      const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = visOf(id, opt && opt.def);
+      cb.addEventListener("change", () => { mui.vis[id] = cb.checked; saveUi(); applyLayers(); if (id === "alliances") $("mAllyShow").checked = cb.checked; });
       r.append(cb);
       if (opt && opt.color) { const sw = document.createElement("span"); sw.className = "swatch"; sw.style.background = opt.color; r.append(sw); }
       const n = document.createElement("span"); n.className = "lname"; n.textContent = name; r.append(n);
@@ -335,6 +396,7 @@
     CATS.forEach(c => row("cat:" + c.id, c.name + " · " + FEATURES.filter(f => f[4] === c.id).length, { sub: true, color: c.color }));
     row("tnames", "Названия территорий", { hl: "#ff7fd8" });
     row("borders", "Границы территорий", { hl: "#ff3fd0" });
+    row("alliances", "Союзы", { def: false });
     row("fills", "Заливка территорий");
     row("tex", "Поверхность (NASA LRO)");
     // типы (ГМ)
@@ -365,7 +427,7 @@
   // ---------- правки и история ----------
   function setEntity(col, id, val) {
     if (val == null) delete st[col][id]; else st[col][id] = val;
-    if (col === "territories") renderTerr(id);
+    if (col === "territories") { renderTerr(id); renderAlly(); }
     if (sel && sel.col === col && sel.id === id && val == null) sel = null;
     renderRoads(); renderMarks(); renderVertices(); buildLists(); updateCard();
     if (col === "satellites" || col === "satTypes") refreshSats();
@@ -388,6 +450,7 @@
   function recompute(labels) {
     const r = TM.pathsFor(labels);
     for (const [L, d] of r) if (st.territories[String(L)]) setTerrPath(L, d);
+    renderAlly();
     if (sub === "globe" && globe) { globe.setIds(TM.ids); globeDirty(); }
   }
   async function removeEntity(col, id) {
@@ -724,7 +787,7 @@ void main(){
   MoonGlobe.prototype.setIds = function (ids) { const gl = this.gl; this._bind("ids", 1, gl.NEAREST); gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1); gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, MW, MH, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, ids); };
   MoonGlobe.prototype.setPal = function (st2) {
     const gl = this.gl, d = new Uint8Array(1024), c = document.createElement("canvas").getContext("2d");
-    for (const id in st2.territories) { c.fillStyle = st2.territories[id].color; const h = c.fillStyle; const i = +id; if (i > 0 && i < 256) { d[i * 4] = parseInt(h.slice(1, 3), 16); d[i * 4 + 1] = parseInt(h.slice(3, 5), 16); d[i * 4 + 2] = parseInt(h.slice(5, 7), 16); d[i * 4 + 3] = 255; } }
+    for (const id in st2.territories) { c.fillStyle = terrColor(st2.territories[id]); const h = c.fillStyle; const i = +id; if (i > 0 && i < 256) { d[i * 4] = parseInt(h.slice(1, 3), 16); d[i * 4 + 1] = parseInt(h.slice(3, 5), 16); d[i * 4 + 2] = parseInt(h.slice(5, 7), 16); d[i * 4 + 3] = 255; } }
     this._bind("pal", 2, gl.NEAREST); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, d);
   };
   MoonGlobe.prototype.radius = function () { return Math.min(this.cv.clientWidth, this.cv.clientHeight) * 0.45 * this.zoom; };
@@ -859,7 +922,7 @@ void main(){
   $("moonZoomFit").onclick = () => (sub === "globe" ? (globe.zoom = 1, globeDirty()) : fit());
   document.querySelectorAll(".moon-tabs button").forEach(b => b.addEventListener("click", () => {
     document.querySelectorAll(".moon-tabs button").forEach(x => x.classList.toggle("active", x === b));
-    ["Terr", "Layers", "Types"].forEach(k => $("moonPane" + k).classList.toggle("hidden", b.dataset.mtab !== k));
+    ["Terr", "Layers", "Types", "Ally"].forEach(k => $("moonPane" + k).classList.toggle("hidden", b.dataset.mtab !== k));
   }));
 
 
