@@ -23,7 +23,7 @@
 <script src="../js/sats.js?v=20261115e"></script>
 <script src="../js/moon-names.js?v=20261115a"></script>
 <script src="../js/wrap.js?v=20261115a"></script>
-<script src="../js/mech-model.js?v=20261115h"></script>
+<script src="../js/mech-model.js?v=20261116l"></script>
 <script src="../js/mech-crypto.js?v=20261115a"></script>
 <script>
 (async function () {
@@ -590,6 +590,288 @@
     }
     return Object.keys(mj.countries).length + " стран";
   });
+
+  // ================= лор, союзы и карта: всё сходится между летописью, картой и механиками =================
+  group("Лор: государства, союзы, хронология");
+  const lore = await json("../data/lore.json"), mechJ = await json("../data/mech.json");
+  const rulesLive = MM.normalizeRules(mechJ.rules), AL = map.alliances || {}, MC = map.countries;
+  const low = t => String(t || "").toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ").trim();
+  const nm = id => String((MC[id] || {}).name || id).replace(/\n/g, " ");
+  const ideoNames = new Set(rulesLive.tables.ideo.map(x => low(x.name)));
+  // одно ли это название: общее значимое слово (по основе из 4 букв) или аббревиатура («ЮАР», «КНР»)
+  const GENERIC = new Set(["республика", "народная", "федеративная", "федерация", "королевство", "государство", "исламская", "объединённая", "объединенные", "социальная", "соединённое", "арабская"]);
+  const words = t => low(t).replace(/\(.*?\)/g, " ").split(/[\s—–-]+/).filter(w => w.length > 3 && !GENERIC.has(w));
+  const initials = t => low(t).replace(/\(.*?\)/g, " ").split(/[\s-]+/).filter(Boolean).map(w => w[0]).join("");
+  function sameName(a, b) {
+    const A = low(a), Bn = low(b), wa = words(a), wb = words(b);
+    if (A.includes(Bn.replace(/\s*\(.*\)$/, "")) || Bn.includes(A.replace(/\s*[—(].*$/, ""))) return true;
+    if (wa.some(x => wb.some(y => x.slice(0, 4) === y.slice(0, 4)))) return true;
+    const ab = s => s.replace(/[^а-яa-z]/g, "");
+    return [ab(A), ...A.split(/[\s·,]+/).map(ab)].some(x => x.length >= 2 && (x === initials(b) || x === initials(a))) || [ab(Bn), ...Bn.split(/[\s·,]+/).map(ab)].some(x => x.length >= 2 && x === initials(a));
+  }
+  const inLine = (line, name) => sameName(line, name) || line.split(/\s*[·,]\s*/).some(part => sameName(part, name));
+  await test("data/lore.json: структура, регионы, хронология", () => {
+    assert(lore.v === 1 && Array.isArray(lore.states) && Array.isArray(lore.unions) && Array.isArray(lore.regions), "структура");
+    assert(lore.regions.map(r => r.id).join(",") === "powers,eu,af,as,na,la,oc", "регионы " + lore.regions.map(r => r.id));
+    assert(/Великую ошибку/.test(lore.chronology) && /Тёмные века/.test(lore.chronology), "хронология без пролога");
+    const ids = lore.states.map(s => s.id), dup = ids.filter((x, i) => ids.indexOf(x) !== i);
+    assert(!dup.length, "повторы статей: " + dup);
+    const reg = new Set(lore.regions.map(r => r.id)), bad = lore.states.filter(s => !reg.has(s.region) || !s.title || !s.html || !s.map.length);
+    assert(!bad.length, "неполные статьи: " + bad.map(s => s.id));
+    return lore.states.length + " статей, " + lore.unions.length + " союзов";
+  });
+  await test("Каждая страна карты — в одной статье лора (кроме территорий без государства)", () => {
+    const seen = {};
+    for (const s of lore.states) for (const id of s.map) { assert(MC[id], s.id + ": нет страны " + id + " на карте"); assert(!seen[id], "страна " + nm(id) + " в двух статьях: " + seen[id] + ", " + s.id); seen[id] = s.id; }
+    const miss = Object.keys(MC).filter(id => !seen[id] && !(lore.notStates || {})[id]);
+    assert(!miss.length, "без статьи: " + miss.map(nm).join(", "));
+    const wrongNot = Object.keys(lore.notStates || {}).filter(id => !MC[id]);
+    assert(!wrongNot.length, "лишние исключения: " + wrongNot);
+    return Object.keys(seen).length + " стран со статьями, без государства: " + Object.values(lore.notStates || {}).join(", ");
+  });
+  await test("Название статьи совпадает со страной карты", () => {
+    // статьи на несколько стран («Шотландия и Англия», «Чили и Валмапу») и уточнения в скобках/через тире допускаются
+    const bad = lore.states.filter(s => s.map.length === 1 && !sameName(s.title, nm(s.map[0])));
+    assert(!bad.length, bad.map(s => s.title + " ↔ " + nm(s.map[0])).join("; "));
+  });
+  await test("Паспорт статьи: союз — как на карте, лидер союза помечен", () => {
+    const errs = [];
+    for (const s of lore.states) {
+      const als = [...new Set(s.map.map(id => MC[id].alliance).filter(Boolean))], p = s.passport["Союз"];
+      const lead = s.map.some(id => MC[id].alliance && String((AL[MC[id].alliance] || {}).leader) === id);
+      if (als.length && !p) errs.push(s.title + ": в паспорте нет союза «" + AL[als[0]].name + "»");
+      if (!als.length && p) errs.push(s.title + ": в паспорте союз «" + p + "», на карте нет");
+      if (p && als.length && !als.some(a => low(AL[a].name) === low(p.replace(/\s*\(.*\)\s*$/, "")))) errs.push(s.title + ": «" + p + "» ≠ «" + AL[als[0]].name + "»");
+      if (p && lead !== /лидер/.test(p)) errs.push(s.title + (lead ? ": лидер союза не помечен" : ": помечен лидером, но лидер другой"));
+    }
+    assert(!errs.length, errs.join("; "));
+  });
+  await test("Паспорт статьи: идеология из списка, население указано", () => {
+    const bad = lore.states.filter(s => (s.passport["Идеология"] && !s.passport["Идеология"].split(/[,/]| и /).every(x => ideoNames.has(low(x)))) || !s.passport["Население"]);
+    assert(!bad.length, bad.map(s => s.title + ": " + s.passport["Идеология"] + " / " + s.passport["Население"]).join("; "));
+  });
+  await test("Союзы лора = 16 союзов карты, состав совпадает", () => {
+    assert(lore.unions.length === Object.keys(AL).length, lore.unions.length + " ≠ " + Object.keys(AL).length);
+    const errs = [];
+    for (const u of lore.unions) {
+      const a = AL[u.id]; if (!a) { errs.push("нет на карте: " + u.name); continue; }
+      if (low(a.name) !== low(u.name)) errs.push(u.name + " ≠ " + a.name);
+      const mem = Object.keys(MC).filter(id => MC[id].alliance === u.id);
+      if (!mem.length) errs.push(u.name + ": пустой");
+      if (!mem.includes(String(a.leader))) errs.push(u.name + ": лидер " + nm(a.leader) + " не в союзе");
+      // каждая страна союза названа в строке состава (полностью, значимым словом или аббревиатурой)
+      const missed = mem.filter(id => !inLine(u.members, nm(id)));
+      if (missed.length) errs.push(u.name + ": в составе не названы " + missed.map(nm).join(", "));
+    }
+    assert(!errs.length, errs.join("; "));
+  });
+  await test("Корректировки ГМа: А.Р.К. не союз; САС — Централ и 8 дистриктов; Андский пакт без Боливара и Панамы; Гренландия в Североморском альянсе", () => {
+    assert(!AL.al_arc && !lore.unions.some(u => /А\.Р\.К|ARC/.test(u.name)), "А.Р.К. остался союзом");
+    const of = a => Object.keys(MC).filter(id => MC[id].alliance === a).sort((x, y) => x - y).join(",");
+    assert(of("al_nau_united") === "116,117,118,119,120,121,122,123,141" && AL.al_nau_united.leader === "116", "САС: " + of("al_nau_united"));
+    assert(of("al_pru") === "35,134,136,137,139" && AL.al_pru.leader === "35", "Андский пакт: " + of("al_pru"));
+    assert(!MC["36"].alliance && !MC["130"].alliance, "Боливар/Панама в союзе");
+    assert(MC["15"].alliance === "al_sco_nsa", "Гренландия");
+    const arc = lore.states.find(s => s.id === "arc");
+    assert(arc && !/Союз <b>А\.Р\.К/.test(arc.html) && /Североамериканский союз \(лидер\)/.test(arc.passport["Союз"]), "статья Централа");
+  });
+  await test("Карточки стран на карте заполнены из паспортов летописи", () => {
+    const miss = [];
+    for (const s of lore.states) if (s.map.length === 1) {
+      const info = MC[s.map[0]].info || {};
+      for (const [k, f] of [["Столица", "capital"], ["Лидер", "head"], ["Правление", "gov"], ["Население", "pop"]]) if (s.passport[k] && !info[f]) miss.push(s.title + ": " + k);
+    }
+    assert(!miss.length, miss.join(", "));
+    assert(MC["8"].info.head === "Вадим Петрович Козлов" && MC["8"].info.capital === "Москва", "Москва → Козлов");
+  });
+
+  group("Союзы и блоки в механиках");
+  MM.setMap(MC, AL);
+  const B = rulesLive.tables.bloc, Bid = new Set(B.map(b => b.id));
+  await test("Таблица «Союзы и блоки» = все союзы карты + блоки КНР и ИСР", () => {
+    const miss = Object.keys(AL).filter(a => !Bid.has(a));
+    assert(!miss.length, "нет в механиках: " + miss.map(a => AL[a].name));
+    const extra = B.filter(b => !AL[b.id]).map(b => b.id).sort().join(",");
+    assert(extra === "bloc_isr,bloc_prc", "лишние блоки: " + extra);
+    const kinds = new Set(MM.TABLES.bloc.fields[1][3].map(k => k[0]));
+    const bad = B.filter(b => !kinds.has(b.kind) || !b.name || !b.desc || (AL[b.id] && low(AL[b.id].name) !== low(b.name)));
+    assert(!bad.length, "ошибки: " + bad.map(b => b.name));
+    assert(B.find(b => b.id === "al_sco_nsa").kind === "mil" && B.find(b => b.id === "al_eqg_morgan").kind === "fac", "виды");
+    return B.length + " блоков";
+  });
+  await test("Каждый блок не пуст, номера в составе — страны карты", () => {
+    const errs = [];
+    for (const b of B) {
+      const mem = MM.blocMembers(rulesLive, b.id);
+      if (!mem.length) errs.push(b.name + ": пусто");
+      String(b.members || "").split(/[\s,;]+/).filter(Boolean).forEach(id => { if (!MC[id]) errs.push(b.name + ": нет страны " + id); });
+      if (AL[b.id] && !mem.some(x => x.leader && x.id === String(AL[b.id].leader))) errs.push(b.name + ": не найден лидер");
+    }
+    assert(!errs.length, errs.join("; "));
+    const prc = MM.blocMembers(rulesLive, "bloc_prc").map(x => x.id).sort().join(","), isr = MM.blocMembers(rulesLive, "bloc_isr").map(x => x.id).sort().join(",");
+    assert(prc === "14,31,84,85" && isr === "16,45", "КНР " + prc + ", ИСР " + isr);
+  });
+  await test("Членство с карты без данных ГМа: каждая страна союза в своём блоке", () => {
+    const bad = Object.keys(MC).filter(id => MC[id].alliance && !MM.blocsOf(rulesLive, MM.emptyCountry(), id).includes(MC[id].alliance));
+    assert(!bad.length, bad.map(nm).join(", "));
+    const kor = MM.blocLinks(rulesLive, MM.emptyCountry(), "84");
+    assert(kor.al_chin_strategic_cooperation_organization_faction === "map" && kor.bloc_prc === "list", JSON.stringify(kor));
+    assert(!MM.blocsOf(rulesLive, MM.emptyCountry(), "36").length, "Боливар в блоке");
+    assert(!MM.blocsOf(rulesLive, MM.emptyCountry()).length, "без номера страны союзов карты нет");
+  });
+  await test("Старые id блоков (bloc_integra, bloc_nsa, bloc_central) из данных ГМа понимаются", () => {
+    const c = MM.emptyCountry(); c.blocs = ["bloc_integra", "bloc_nsa", "bloc_central", "нет_такого"];
+    const L = MM.blocLinks(rulesLive, c, "61");
+    assert(L.al_ger_integr === "gm" && L.al_sco_nsa === "gm" && L.al_nau_united === "gm" && Object.keys(L).length === 3, JSON.stringify(L));
+  });
+  await test("Галочка ГМа добавляет страну в блок; союз карты галочкой не снимается", () => {
+    const c = MM.emptyCountry(); c.blocs = ["al_fra_mediterranean_bloc"];
+    const m = MM.blocMembers(rulesLive, "al_fra_mediterranean_bloc", { "26": c, "18": MM.emptyCountry() });
+    assert(m.some(x => x.id === "26" && x.how === "gm") && m.some(x => x.id === "18" && x.how === "map" && x.leader), JSON.stringify(m));
+    assert(MM.blocLinks(rulesLive, MM.emptyCountry(), "18").al_fra_mediterranean_bloc === "map", "Франко-Иберия");
+  });
+  await test("Договор корпорации с союзом карты действует на его страны без галочек", () => {
+    const rl = JSON.parse(JSON.stringify(rulesLive));
+    rl.tables.cdeal = [{ corp: "orbital", bloc: "al_sco_nsa", pres: 4, rel: 50, note: "" }];
+    const inn = MM.compute(rl, MM.SAMPLES[1].make(), "15"), out = MM.compute(rl, MM.SAMPLES[1].make(), "36");
+    const o = corpOf(inn, "orbital");
+    assert(o.pres === 4 && o.via === AL.al_sco_nsa.name, "Гренландия: " + JSON.stringify(o));
+    assert(corpOf(out, "orbital").pres === 0, "Боливар получил договор");
+    assert(inn.blocs.includes("al_sco_nsa"), "r.blocs");
+    const all3 = MM.computeAll(rl, { "15": MM.SAMPLES[1].make(), "36": MM.SAMPLES[1].make() });
+    assert(corpOf(all3.results["15"], "orbital").pres === 4 && corpOf(all3.results["36"], "orbital").pres === 0, "computeAll не передаёт номер страны");
+  });
+  await test("Страны_2200 и механики: те же блоки (импорт не вернёт старые)", async () => {
+    // файл стран лежит вне сайта; здесь проверяем то, что попадает в механики при импорте — id блоков из правил
+    const imp = MM.parseImport({ format: "khatum-countries", blocs: B.map(({ id, name, kind, desc }) => ({ id, name, kind, desc })), countries: {} });
+    assert(imp.blocs.length === B.length, "блоки импорта");
+  });
+
+  // ================= сквозной прогон сайта: каждый раздел Вики, каждая статья, связь с картой =================
+  group("Сайт целиком: все разделы, статьи и переходы на карту");
+  const fr = document.createElement("iframe");
+  fr.style.cssText = "position:absolute;left:-10000px;top:0;width:1280px;height:900px;border:0";
+  fr.src = "../index.html#home";
+  document.body.append(fr);
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  async function waitFor(fn, what, ms) {
+    const t0 = Date.now();
+    for (;;) { let v; try { v = fn(); } catch (e) { v = null; } if (v) return v; if (Date.now() - t0 > (ms || 20000)) throw new Error("не дождались: " + what); await sleep(60); }
+  }
+  let W, D;
+  const errs = [];
+  const go = async (path, cond, what, ms) => { W.KG.go(path); return waitFor(cond, what || path, ms); };
+  const text = sel => (D.querySelector(sel) || {}).textContent || "";
+  const visible = el => !!el && !el.closest(".hidden") && el.getClientRects().length > 0;
+  await test("Сайт загружается: карта, механики и лор готовы", async () => {
+    await new Promise(res => (fr.onload = res));
+    W = fr.contentWindow; D = fr.contentDocument;
+    W.addEventListener("error", e => errs.push(e.message)); W.addEventListener("unhandledrejection", e => errs.push(String(e.reason && e.reason.message || e.reason)));
+    const ce = W.console.error.bind(W.console); W.console.error = (...a) => { errs.push(a.map(x => (x && x.message) || String(x)).join(" ")); ce(...a); };
+    await waitFor(() => W.KG && W.KGMap && W.KGMap.state && W.KGMech && W.KGSite, "модули", 60000);
+    await W.KGMap.ready();
+    await W.KG.lore();
+  });
+  await test("Главная: вход за страну и вход ГМа", () => go("home", () => /Вход за страну/.test(text("#homeAuth")), "вход"));
+  await test("Вики → События", () => go("wiki/events", () => visible(D.getElementById("wikiEvents")), "события"));
+  await test("Вики → Лор: четыре раздела", () => go("wiki/lore", () => D.querySelectorAll("#loreGrid .lore-card").length === 4 &&
+    [...D.querySelectorAll("#loreGrid .lore-card b")].map(b => b.textContent).join("|") === "Идеологии 23-го века|Корпорации|Хронология|Государства", "разделы"));
+  await test("Лор → Идеологии: все 7", () => go("wiki/lore/ideologies", () => rulesLive.tables.ideo.every(x => D.getElementById("loreArticle").textContent.includes(x.name)), "идеологии"));
+  await test("Лор → Корпорации: все корпорации справочника", () => go("wiki/lore/corporations", () => rulesLive.tables.corp.every(x => D.getElementById("loreArticle").textContent.includes(x.name)), "корпорации", 30000));
+  await test("Лор → Хронология: пролог летописи", () => go("wiki/lore/chronology", () => /Великую ошибку/.test(text("#loreArticle .chron-text")), "хронология"));
+  await test("Лор → Государства: 16 союзов и все статьи по регионам", async () => {
+    await go("wiki/lore/states", () => D.querySelectorAll("#loreArticle .ls-state").length === lore.states.length && D.querySelectorAll("#loreArticle .ls-union").length === 16, "список");
+    const hs = [...D.querySelectorAll("#loreArticle .ls-h")].map(x => x.textContent).join("|");
+    assert(hs === "Союзы|" + lore.regions.map(r => r.title).join("|"), hs);
+    const q = D.querySelector("#loreArticle .ls-search"); q.value = "Козлов"; q.dispatchEvent(new W.Event("input"));
+    const shown = [...D.querySelectorAll("#loreArticle .ls-state")].filter(x => !x.classList.contains("hidden")).map(x => x.dataset.state);
+    assert(shown.join() === "sov", "поиск «Козлов»: " + shown);
+    q.value = ""; q.dispatchEvent(new W.Event("input"));
+  });
+  await test("Каждая статья о государстве открывается: заголовок, паспорт, текст, кнопки карты и союза", async () => {
+    const bad = [];
+    for (const s of lore.states) {
+      await go("wiki/lore/states/" + s.id, () => { const h2 = D.querySelector("#loreArticle .ls-title"); return h2 && h2.textContent.includes(s.title) && D.querySelector("#loreArticle .ls-text p"); }, s.title);
+      const A = D.getElementById("loreArticle");
+      const maps = [...A.querySelectorAll(".ls-map")].map(b => b.dataset.country).join();
+      if (maps !== s.map.join()) bad.push(s.title + ": кнопки карты " + maps);
+      if (A.querySelectorAll(".ls-passport span").length !== Object.keys(s.passport).length) bad.push(s.title + ": паспорт");
+      if (A.querySelector(".ls-text .passport")) bad.push(s.title + ": паспорт дважды");
+      const al = MC[s.map[0]].alliance, ub = A.querySelector(".ls-tools [data-union]");
+      if ((al || "") !== (ub ? ub.dataset.union : "")) bad.push(s.title + ": кнопка союза " + (ub && ub.dataset.union));
+      if ((s.html.match(/class="person"/g) || []).length !== A.querySelectorAll(".person").length) bad.push(s.title + ": персонажи");
+    }
+    assert(!bad.length, bad.join("; "));
+    return lore.states.length + " статей";
+  });
+  await test("Каждый союз в лоре: текст и страны-члены со ссылками на статьи", async () => {
+    const bad = [];
+    for (const u of lore.unions) {
+      await go("wiki/lore/states/" + u.id, () => (D.querySelector("#loreArticle .ls-title") || {}).textContent && D.querySelector("#loreArticle .ls-title").textContent.includes(u.name), u.name);
+      const ids = [...D.querySelectorAll("#loreArticle .ls-grid .ls-state")].map(b => b.dataset.state).filter(Boolean).sort().join();
+      const want = [...new Set(Object.keys(MC).filter(id => MC[id].alliance === u.id).map(id => (lore.states.find(s => s.map.includes(id)) || {}).id))].sort().join();
+      if (ids.split(",").filter((x, i, a) => a.indexOf(x) === i).join() !== want) bad.push(u.name + ": " + ids + " ≠ " + want);
+    }
+    assert(!bad.length, bad.join("; "));
+  });
+  await test("Статья → «на карте»: карта открывается на стране, в карточке лидер и ссылка обратно", async () => {
+    await go("wiki/lore/states/sov", () => D.querySelector('#loreArticle .ls-map[data-country="8"]'), "кнопка");
+    D.querySelector('#loreArticle .ls-map[data-country="8"]').click();
+    await waitFor(() => /#map\/earth\/flat\/8$/.test(W.location.hash) && D.getElementById("stateCardBody").dataset.id === "8" && visible(D.getElementById("stateCard")), "карточка Евразии", 30000);
+    const body = D.getElementById("stateCardBody");
+    assert(/Вадим Петрович Козлов/.test(body.textContent) && /Москва/.test(body.textContent), "поля карточки: " + body.textContent.slice(0, 200));
+    assert(/Славянская Федерация/.test(body.textContent), "союз в карточке");
+    const a = await waitFor(() => body.querySelector(".sc-lore"), "ссылка на лор");
+    assert(a.getAttribute("href") === "#wiki/lore/states/sov", a.getAttribute("href"));
+    a.click();
+    await waitFor(() => /#wiki\/lore\/states\/sov$/.test(W.location.hash) && (D.querySelector("#loreArticle .ls-title") || {}).textContent.includes("Евразийский Союз"), "статья по ссылке");
+  });
+  await test("Карточка каждой страны карты ведёт на её статью", async () => {
+    await go("map/earth/flat", () => visible(D.getElementById("page-map")), "карта");
+    const bad = [];
+    for (const id of Object.keys(MC)) {
+      W.KGMap.select({ col: "countries", id });
+      const want = (lore.states.find(s => s.map.includes(id)) || {}).id;
+      const a = D.querySelector("#stateCardBody .sc-lore");
+      if ((a ? a.getAttribute("href").split("/").pop() : undefined) !== want) bad.push(nm(id) + ": " + (a && a.getAttribute("href")));
+    }
+    W.KGMap.select(null);
+    assert(!bad.length, bad.join("; "));
+  });
+  await test("Механики: Статья, Справочник, Рейтинг, Союзы, Моя страна", async () => {
+    await go("wiki/mech/article", () => visible(D.getElementById("mechArticle")), "статья");
+    await go("wiki/mech/ref", () => visible(D.getElementById("mechRef")) && D.querySelectorAll("#mechRef table").length >= 10, "справочник");
+    assert(/Союзы и блоки/.test(text("#mechRef")) && D.querySelector("#mechRef").textContent.includes("Страны вне карты"), "таблица союзов в справочнике");
+    await go("wiki/mech/rating", () => visible(D.getElementById("mechRating")) && D.querySelector("#mechRating table"), "рейтинг");
+    await go("wiki/mech/blocs", () => D.querySelectorAll("#mechBlocs .bloc-card").length === B.length, "союзы");
+    await go("wiki/mech/my", () => visible(D.getElementById("mechMy")) && D.querySelector("#mechMy .login-box, #mechMy .cv-head"), "моя страна");
+  });
+  await test("Механики → Союзы: состав каждого блока как на карте, лидер помечен, фильтр по виду", async () => {
+    await go("wiki/mech/blocs", () => D.querySelectorAll("#mechBlocs .bloc-card").length === B.length, "союзы");
+    const bad = [];
+    for (const b of B) {
+      const card = D.querySelector('#mechBlocs [data-bloc="' + b.id + '"]');
+      const got = [...card.querySelectorAll("[data-country]")].map(x => x.dataset.country).sort().join();
+      const want = MM.blocMembers(rulesLive, b.id).map(x => x.id).sort().join();
+      if (got !== want) bad.push(b.name + ": " + got + " ≠ " + want);
+      if (AL[b.id] && !card.textContent.includes("лидер")) bad.push(b.name + ": лидер не помечен");
+    }
+    assert(!bad.length, bad.join("; "));
+    D.querySelector('#mechBlocs .bloc-filter [data-kind="mil"]').click();
+    const shown = [...D.querySelectorAll("#mechBlocs .bloc-card")].filter(c => !c.classList.contains("hidden")).map(c => c.dataset.bloc).sort().join();
+    assert(shown === B.filter(b => b.kind === "mil").map(b => b.id).sort().join(), "фильтр «Военный блок»: " + shown);
+    D.querySelector('#mechBlocs .bloc-filter [data-kind=""]').click();
+  });
+  await test("Механики → Союзы → страна: переход на карту", async () => {
+    D.querySelector('#mechBlocs [data-bloc="al_sco_nsa"] [data-country="15"]').click();
+    await waitFor(() => /#map\/earth\/flat\/15$/.test(W.location.hash) && D.getElementById("stateCardBody").dataset.id === "15", "Гренландия на карте", 30000);
+    assert(/Североморский Альянс/.test(text("#stateCardBody")), "союз в карточке Гренландии");
+  });
+  await test("Ни одной ошибки JavaScript за весь прогон", () => {
+    const e = errs.filter(x => !/youtube|ytimg|ERR_BLOCKED|Failed to load resource/i.test(x));
+    assert(!e.length, e.slice(0, 5).join(" | "));
+  });
+  fr.remove();
 
   const sm = document.getElementById("summary");
   sm.innerHTML = fail ? `<span class="fail">Провалено: ${fail}</span> · пройдено: ${pass}` : `<span class="ok">Все тесты пройдены: ${pass}</span>`;

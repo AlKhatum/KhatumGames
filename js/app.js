@@ -217,5 +217,21 @@
     }
   };
 
-  window.KG = { toast, ask, openTab, go, get route() { return route; }, lines, setMedia, ytId };
+  // ---------- лор (data/lore.json): статьи о государствах из летописи, союзы, хронология ----------
+  // Загружается один раз и нужен и Вики, и карте (ссылка «Статья в лоре» в карточке страны).
+  let lorePromise = null;
+  function lore() {
+    if (!lorePromise) lorePromise = fetch("data/lore.json?t=" + Date.now(), { cache: "no-store" })
+      .then(r => (r.ok ? r.json() : null)).catch(() => null)
+      .then(L => {
+        L = L && Array.isArray(L.states) ? L : { states: [], unions: [], regions: [], chronology: "" };
+        L.byMap = {}; L.byId = {};
+        for (const s of L.states) { L.byId[s.id] = s; for (const id of s.map || []) L.byMap[String(id)] = s; }
+        return L;
+      });
+    return lorePromise;
+  }
+  // показать страну карты: Земля, плоская карта, выбрать и приблизить
+  const showOnMap = id => go("map/earth/flat/" + encodeURIComponent(id));
+  window.KG = { toast, ask, openTab, go, get route() { return route; }, lines, setMedia, ytId, lore, showOnMap };
 })();

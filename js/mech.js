@@ -84,6 +84,7 @@
     mechPub = clone(mech);
     rules = M.normalizeRules(mech.rules);
     mapCountries = (mp && mp.countries) || {};
+    M.setMap(mapCountries, (mp && mp.alliances) || {}); // союзы карты = союзы механик
   }
   async function init() {
     if (inited) return loading;
@@ -92,7 +93,7 @@
       try { await load(); }
       catch (e) { $("mechRating").textContent = "Не удалось загрузить механики: " + e.message; $("homeAuth").textContent = "Не удалось загрузить данные стран: " + e.message; console.error(e); return; }
       fillArticleLists();
-      renderRef(); renderRating();
+      renderRef(); renderRating(); renderBlocs();
       await restorePlayer(); renderMy();
       await restoreGm(); renderGm();
       renderHomeAuth();
@@ -101,7 +102,7 @@
   }
 
   // ---------- вкладки внутри «Механик» (Вики → Механики → …) ----------
-  const PANES = { article: "mechArticle", ref: "mechRef", rating: "mechRating", my: "mechMy", calc: "mechGM" };
+  const PANES = { article: "mechArticle", ref: "mechRef", rating: "mechRating", blocs: "mechBlocs", my: "mechMy", calc: "mechGM" };
   let pane = "article";
   function openPane(name) {
     if (!PANES[name] || (name === "calc" && !isGm())) name = "article"; // калькулятор — только ГМу
@@ -109,6 +110,7 @@
     document.querySelectorAll("#mechNav button").forEach(b => b.classList.toggle("active", b.dataset.mech === name));
     for (const k in PANES) $(PANES[k]).classList.toggle("hidden", k !== name);
     if (name === "my" && mech) renderMy();
+    if (name === "blocs" && mech) renderBlocs();
     if (name === "calc" && mech) renderGm();
   }
   document.querySelectorAll("#mechNav button").forEach(b => b.addEventListener("click", () => window.KG.go("wiki/mech/" + b.dataset.mech, true)));
@@ -224,7 +226,7 @@
       h("button", { text: "Калькулятор →", onclick: () => window.KG.go("wiki/mech/calc") }));
   }
   function refreshMechViews() {
-    renderRef(); renderRating(); renderGm();
+    renderRef(); renderRating(); renderBlocs(); renderGm();
     if (corpLoreEl && corpLoreEl.isConnected) Promise.resolve(renderCorpLore(corpLoreEl)).then(() => { if (window.KGSite) window.KGSite.applyTexts(corpLoreEl); });
   }
   function renderRef() {
@@ -232,6 +234,38 @@
     const ed = canEditRules();
     box.append(h("p", { class: "mech-note", text: "Действующие правила игры: характеристики юнитов, стоимость постройки и коэффициенты формул. Меняет их ГМ." }), rulesNote(),
       rulesView(ed, ed ? () => markDirty() : null, ed ? refreshMechViews : null));
+  }
+
+  // ---------- союзы и блоки (Механики → Союзы) ----------
+  // Состав — с карты (союз в карточке страны) и из поля блока «Страны вне карты»; галочки ГМа видны только в режиме ГМа.
+  const plural = (n, a, b, c) => { const m = n % 100, k = n % 10; return m > 10 && m < 20 ? c : k === 1 ? a : k >= 2 && k <= 4 ? b : c; };
+  function renderBlocs() {
+    const box = $("mechBlocs"); if (!box || !rules) return;
+    box.innerHTML = "";
+    const kinds = M.TABLES.bloc.fields[1][3], kindName = k => (kinds.find(o => o[0] === k) || [, ""])[1];
+    const blocs = rules.tables.bloc, gm = isGm() ? gmData : null;
+    const colors = (window.KGMap && window.KGMap.state && window.KGMap.state.alliances) || {};
+    box.append(h("p", { class: "mech-note", text: "Политические, экономические и военные союзы мира. Состав союзов берётся с карты: страна в союзе, если он указан в её карточке на карте. " +
+      "Договор корпорации с союзом даёт ей присутствие во всех странах-членах. История союзов — в «Лор → Государства»." }));
+    if (!blocs.length) { box.append(h("p", { class: "empty", text: "Союзов пока нет." })); return; }
+    const grid = h("div", { class: "bloc-grid" });
+    const filt = h("div", { class: "bloc-filter" }, [["", "Все"]].concat(kinds).map(([k, t]) => h("button", { class: "small-btn" + (k ? "" : " active"), "data-kind": k, text: t, onclick: e => {
+      filt.querySelectorAll("button").forEach(x => x.classList.toggle("active", x === e.currentTarget));
+      grid.querySelectorAll(".bloc-card").forEach(x => x.classList.toggle("hidden", !!k && x.dataset.kind !== k));
+    } })));
+    for (const b of blocs) {
+      const mem = M.blocMembers(rules, b.id, gm), deals = rules.tables.cdeal.filter(d => d.bloc === b.id);
+      grid.append(h("section", { class: "bloc-card", id: "bloc-" + b.id, "data-kind": b.kind, "data-bloc": b.id },
+        h("h3", null, h("span", { class: "bloc-sw", style: "background:" + ((colors[b.id] || {}).color || "transparent") }), b.name),
+        h("div", { class: "bloc-kind", text: kindName(b.kind) + " · " + mem.length + " " + plural(mem.length, "страна", "страны", "стран") }),
+        mem.length ? h("ul", { class: "bloc-members" }, mem.map(x => h("li", null,
+          h("button", { class: "linkish", title: "Показать на карте", "data-country": x.id, onclick: () => window.KG.showOnMap(x.id) }, flagEl(x.id), " ", countryName(x.id)),
+          x.leader ? h("small", { text: " · лидер" }) : x.how === "gm" ? h("small", { text: " · отмечено ГМом" }) : null)))
+          : h("p", { class: "empty", text: "В блоке пока нет стран." }),
+        b.desc ? h("p", { class: "bloc-desc", text: b.desc }) : null,
+        deals.length ? h("div", { class: "hint", text: "Договоры корпораций: " + deals.map(d => groupName(d.corp) + " (присутствие " + fmt(+d.pres, "d1") + ")").join(", ") }) : null));
+    }
+    box.append(filt, grid);
   }
 
   // ---------- рейтинг ----------
@@ -487,7 +521,7 @@
     M.COUNT_TABLES.forEach(t => (c.cnt[t] = c.cnt[t] || {}));
     const lives = [];
     let r = null;
-    const calc = () => { r = M.compute(rules, c); M.applyWorld(rules, c, r, opts.world); return r; };
+    const calc = () => { r = M.compute(rules, c, opts.id); M.applyWorld(rules, c, r, opts.world); return r; };
     const live = (fn, cls) => { const e = h("span", { class: cls || "" }); lives.push({ e, fn }); return e; };
     function refresh() {
       calc();
@@ -656,17 +690,23 @@
       const blocs = rules.tables.bloc, kinds = M.TABLES.bloc.fields[1][3];
       const kindName = k => (kinds.find(o => o[0] === k) || [, ""])[1];
       const bsec = h("section", { class: "mblock" }, h("h3", { text: "Союзы и блоки" }));
-      const mine = blocs.filter(b => c.blocs.includes(b.id));
+      // членство: союз с карты и номер в блоке — сами, галочка — решение ГМа (или «Что если» игрока)
+      const links = () => M.blocLinks(rules, c, opts.id);
+      const HOW = { map: "по карте", list: "состав блока", gm: "отмечено ГМом" };
+      const L0 = links(), mine = blocs.filter(b => L0[b.id]);
       if (!blocs.length) bsec.append(h("p", { class: "empty", text: opts.gm ? "Союзов пока нет. Создайте их в «Правилах», таблица «Союзы и блоки»." : "Страна не состоит в союзах." }));
       else if (opts.editable) bsec.append(h("div", { class: "bloc-list" }, blocs.map(b => {
-        const cb = h("input", { type: "checkbox" }); cb.checked = c.blocs.includes(b.id);
-        cb.addEventListener("change", () => { c.blocs = c.blocs.filter(x => x !== b.id); if (cb.checked) c.blocs.push(b.id); changed(); });
-        return h("label", { class: "bloc" }, cb, h("b", { text: b.name }), h("small", { text: kindName(b.kind) }));
+        const how = L0[b.id], fixed = how === "map" || how === "list";
+        const cb = h("input", { type: "checkbox" }); cb.checked = !!how; cb.disabled = fixed;
+        if (fixed) cb.title = how === "map" ? "Союз задан на карте: поле «Союз» в карточке страны" : "Страна в составе блока («Правила» → «Союзы и блоки»)";
+        cb.addEventListener("change", () => { c.blocs = c.blocs.filter(x => x !== b.id && M.OLD_BLOCS[x] !== b.id); if (cb.checked) c.blocs.push(b.id); changed(); });
+        return h("label", { class: "bloc" + (how ? " on" : "") }, cb, h("b", { text: b.name }), h("small", { text: kindName(b.kind) + (how ? " · " + HOW[how] : "") }));
       })));
-      else bsec.append(mine.length ? h("ul", { class: "bloc-view" }, mine.map(b => h("li", null, h("b", { text: b.name }), " — " + kindName(b.kind) + (b.desc ? ". " + b.desc : "")))) : h("p", { class: "empty", text: "Страна не состоит в союзах." }));
+      else bsec.append(mine.length ? h("ul", { class: "bloc-view" }, mine.map(b => h("li", null, h("b", { text: b.name }), " — " + kindName(b.kind) + " (" + HOW[L0[b.id]] + ")" + (b.desc ? ". " + b.desc : "")))) : h("p", { class: "empty", text: "Страна не состоит в союзах." }));
       bsec.append(live(e => {
         e.innerHTML = "";
-        const ds = rules.tables.cdeal.filter(d => c.blocs.includes(d.bloc));
+        const cur = links();
+        const ds = rules.tables.cdeal.filter(d => cur[d.bloc]);
         if (!ds.length) return;
         e.append(h("div", { class: "hint", text: "Договоры корпораций с союзами страны:" }), h("ul", { class: "bloc-view" }, ds.map(d => h("li", null, h("b", { text: groupName(d.corp) }), " ↔ " + ((blocs.find(b => b.id === d.bloc) || {}).name || "союз") +
           ": присутствие " + fmt(+d.pres, "d1") + ", отношения " + signed(+d.rel, "int") + (d.note ? ". " + d.note : "")))));
@@ -785,7 +825,7 @@
     else btns.append(h("button", { class: "accent", text: "Что если…", title: "Прикинуть последствия решений. Правки не сохраняются", onclick: () => { sandbox = true; renderMy(); } }));
     btns.append(h("button", { text: "Выйти", onclick: logoutPlayer }));
     head.append(btns);
-    box.append(head, countryView({ c: sandbox ? player.c : clone(player.data.c), world: d.world, editable: sandbox, base: sandbox ? player.base : null }));
+    box.append(head, countryView({ id, c: sandbox ? player.c : clone(player.data.c), world: d.world, editable: sandbox, base: sandbox ? player.base : null }));
   }
 
   // ---------- Главная: вход за страну и вход ГМа ----------
@@ -960,7 +1000,7 @@
       mech = out; mechPub = clone(out);
       gmDirty = false; try { localStorage.removeItem(DRAFT_KEY); } catch (e) { /* */ }
       snapshotBase();
-      renderRef(); renderRating(); renderGm(); if (!player) renderMy();
+      renderRef(); renderRating(); renderBlocs(); renderGm(); if (!player) renderMy();
       toast("Опубликовано. Игроки увидят изменения примерно через минуту.");
     } catch (e) { toast("Не удалось опубликовать: " + e.message); console.error(e); }
     finally { if (btn) btn.disabled = false; }
@@ -1217,7 +1257,7 @@
     // договоры с союзами
     const deals = rules.tables.cdeal.filter(d => d.corp === corp.id);
     main.append(h("section", { class: "mblock" }, h("h3", { text: "Договоры с союзами" }), deals.length ? h("ul", { class: "bloc-view" }, deals.map(d => {
-      const b = rules.tables.bloc.find(x => x.id === d.bloc), mem = ids.filter(id => (gmData[id].blocs || []).includes(d.bloc));
+      const b = rules.tables.bloc.find(x => x.id === d.bloc), mem = ids.filter(id => M.blocsOf(rules, gmData[id], id).includes(d.bloc));
       return h("li", null, h("b", { text: b ? b.name : "союз удалён" }), ": присутствие " + fmt(+d.pres, "d1") + ", отношения " + signed(+d.rel, "int") + (d.note ? ". " + d.note : "") +
         " · члены: " + (mem.length ? mem.map(countryName).join(", ") : "нет"));
     })) : h("p", { class: "empty", text: "Договоров нет. Их заключают в «Правилах», таблица «Договоры корпораций с союзами»." })));
@@ -1284,7 +1324,7 @@
           h("button", { text: "Пароль игрока", onclick: () => showPassword(id) }),
           h("button", { text: "Сменить пароль", onclick: () => changePassword(id) }),
           h("button", { class: "danger", text: "Отключить", onclick: () => removeCountry(id) }))));
-      main.append(countryView({ c: gmData[id], world: ctx[id], editable: true, gm: true, base: gmBase[id] || null, onChange: () => markDirty() }));
+      main.append(countryView({ id, c: gmData[id], world: ctx[id], editable: true, gm: true, base: gmBase[id] || null, onChange: () => markDirty() }));
     }
     box.append(h("div", { class: "gm-grid" }, list, main));
   }
@@ -1296,7 +1336,7 @@
     if (!e.detail) { lockGm(); renderRating(); }
     else if (!mk && gmPw && mech.gm) await unlockGm(); // только что вошёл паролем — расшифровываем сразу
     else if (!mk) await restoreGm(); // вход сохранён в этой вкладке браузера
-    renderGm(); renderHomeAuth();
+    renderGm(); renderBlocs(); renderHomeAuth();
     // вышел из режима ГМа, стоя на калькуляторе, — уводим на статью
     if (!e.detail && pane === "calc" && !$("wikiMech").classList.contains("hidden")) window.KG.go("wiki/mech/article", true);
     // вход ГМа восстановился уже после открытия адреса #wiki/mech/calc — показываем калькулятор

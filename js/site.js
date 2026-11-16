@@ -16,8 +16,8 @@
   const DEF_LORE = [
     { id: "ideologies", title: "Идеологии 23-го века", sub: "Во что верят и за что воюют", html: "", special: "ideologies" },
     { id: "corporations", title: "Корпорации", sub: "Кто владеет водой, орбитой и всем остальным", html: "", special: "corporations" },
-    { id: "chronology", title: "Хронология", sub: "От Великого Потопа до наших дней", html: "" },
-    { id: "states", title: "Государства", sub: "Страны, союзы и территории на карте", html: "" }
+    { id: "chronology", title: "Хронология", sub: "От Великого Потопа до наших дней", html: "", special: "chronology" },
+    { id: "states", title: "Государства", sub: "Страны, союзы и территории на карте", html: "", special: "states" }
   ];
   // особые разделы (наполняются из механик); у разделов из старого site.json пометки может не быть — узнаём по id
   const specialOf = a => a.special || ((DEF_LORE.find(x => x.id === a.id) || {}).special || "");
@@ -268,7 +268,7 @@
     document.querySelectorAll("#wikiNav button").forEach(b => b.classList.toggle("active", b.dataset.wiki === wikiSub));
     for (const k in WIKI) $(WIKI[k]).classList.toggle("hidden", k !== wikiSub);
     if (wikiSub === "events") renderEvents();
-    if (wikiSub === "lore") { if (p[2]) renderLoreArticle(p[2]); else renderLoreGrid(); }
+    if (wikiSub === "lore") { if (p[2]) renderLoreArticle(p[2], p[3]); else renderLoreGrid(); }
   });
   const toolBtn = (text, title, onclick, cls) => h("button", { type: "button", class: "small-btn " + (cls || ""), text, title, onclick });
   function moveIn(list, item, d, redraw) {
@@ -337,24 +337,116 @@
     const a = { id: uid("lore"), title: "Новый раздел", sub: "Подпись на карточке", html: "" };
     site.lore.push(a); markDirty(); KG.go("wiki/lore/" + a.id);
   });
-  function renderLoreArticle(id) {
+  function renderLoreArticle(id, sub) {
     const a = site.lore.find(x => x.id === id);
     if (!a) { KG.go("wiki/lore", true); return; }
     $("loreHome").classList.add("hidden");
     const art = $("loreArticle"); art.classList.remove("hidden"); art.innerHTML = "";
+    if (specialOf(a) === "states" && sub) { renderStatePage(art, sub); return; }
     const k = f => "list:lore:" + a.id + ":" + f;
     art.append(h("button", { class: "lore-back", onclick: () => KG.go("wiki/lore") }, "← Все разделы"),
       h("h2", { "data-edit-text": k("title"), text: a.title || "" }),
       h("div", { class: "lore-sub edit-only" }, h("small", { text: "Подпись на карточке: " }), h("span", { "data-edit-text": k("sub"), text: a.sub || "" })),
-      h("div", { class: "rich lore-text", "data-edit": k("html"), "data-placeholder": specialOf(a) ? "Вступление к разделу (необязательно)…" : "Раздел в разработке. Скоро здесь появятся статьи — а пока лор живёт в головах игроков и ГМа.", html: a.html || "" }));
+      h("div", { class: "rich lore-text" + (specialOf(a) ? " special" : ""), "data-edit": k("html"), "data-placeholder": specialOf(a) ? "Вступление к разделу (необязательно)…" : "Раздел в разработке. Скоро здесь появятся статьи — а пока лор живёт в головах игроков и ГМа.", html: a.html || "" }));
     if (a.special === "corporations" && window.KGMech) {
       const body = h("div", { class: "lore-body" }); art.append(body);
       Promise.resolve(window.KGMech.renderCorpLore(body)).then(() => applyTexts(body));
+    }
+    if (specialOf(a) === "states") {
+      const body = h("div", { class: "lore-body" }); art.append(body);
+      renderStatesIndex(body);
+    }
+    if (specialOf(a) === "chronology") {
+      const body = h("div", { class: "lore-body chron" }); art.append(body);
+      KG.lore().then(L => { body.append(h("div", { class: "chron-text", html: L.chronology || "" }),
+        h("p", { class: "mech-note" }, "Летопись государств и союзов — в разделе ", h("button", { class: "linkish", text: "«Государства»", onclick: () => KG.go("wiki/lore/states") }), ".")); });
     }
     if (specialOf(a) === "ideologies" && window.KGMech) {
       const body = h("div", { class: "lore-body" }); art.append(body);
       Promise.resolve(window.KGMech.renderIdeoLore(body)).then(() => { applyTexts(body); refreshEditable(); });
     }
+    refreshEditable();
+  }
+
+  // ---------- лор: государства и союзы (data/lore.json, собран из «Летописи мира 2200») ----------
+  // Адреса: #wiki/lore/states — союзы и страны по регионам; #wiki/lore/states/<статья> — страна; #wiki/lore/states/<id союза> — союз.
+  async function mapState() {
+    const KM = window.KGMap;
+    if (KM && KM.state) return KM.state;
+    if (KM && KM.stateReady) { try { await KM.stateReady(); } catch (e) { /* */ } }
+    return (KM && KM.state) || { countries: {}, alliances: {} };
+  }
+  const oneLine = t => String(t || "").replace(/\s*\n\s*/g, " ");
+  function flagOf(c) {
+    const src = c && c.flag;
+    return h("span", { class: "ls-flag", style: src ? "background-image:url('" + String(src).replace(/'/g, "%27") + "')" : "", title: c ? oneLine(c.name) : "" });
+  }
+  const srcTags = list => (list || []).map(t => h("span", { class: "ls-src" + (t === "авторское" ? " own" : ""), text: t }));
+  async function renderStatesIndex(body) {
+    const [L, st] = await Promise.all([KG.lore(), mapState()]);
+    const C = st.countries || {}, AL = st.alliances || {};
+    if (!L.states.length) { body.append(h("p", { class: "empty", text: "Статьи о государствах ещё не загружены." })); return; }
+    const q = h("input", { type: "search", class: "ls-search", placeholder: "Найти страну, союз или лидера…" });
+    body.append(h("p", { class: "mech-note", text: L.states.length + " статей о государствах и " + L.unions.length + " союзов. Нажмите страну, чтобы прочесть о ней, или «на карте», чтобы увидеть её границы." }), q);
+    const cards = [];
+    // союзы
+    const ug = h("div", { class: "ls-unions" });
+    for (const u of L.unions) {
+      const al = AL[u.id] || {}, mem = Object.keys(C).filter(id => C[id].alliance === u.id);
+      const card = h("button", { class: "ls-union", "data-union": u.id, onclick: () => KG.go("wiki/lore/states/" + u.id) },
+        h("b", null, h("span", { class: "sc-swatch", style: "background:" + (al.color || "transparent") }), u.name),
+        h("span", { class: "ls-flags" }, mem.map(id => flagOf(C[id]))), h("small", { text: u.members }));
+      card.dataset.q = (u.name + " " + u.members).toLowerCase(); cards.push(card); ug.append(card);
+    }
+    body.append(h("h3", { class: "ls-h", text: "Союзы" }), ug);
+    // государства по регионам
+    for (const r of L.regions) {
+      const list = L.states.filter(s => s.region === r.id);
+      if (!list.length) continue;
+      const g = h("div", { class: "ls-grid" });
+      for (const s of list) {
+        const al = (C[s.map[0]] || {}).alliance, un = al && AL[al] ? AL[al].name : "";
+        const card = h("button", { class: "ls-state", "data-state": s.id, onclick: () => KG.go("wiki/lore/states/" + s.id) },
+          h("span", { class: "ls-flags" }, s.map.map(id => flagOf(C[id]))),
+          h("span", { class: "ls-name" }, h("b", { text: s.title }), h("small", { text: [s.passport["Лидер"] || s.passport["Власть"] || s.passport["Лидеры"] || "", un].filter(Boolean).join(" · ") })));
+        card.dataset.q = (s.title + " " + Object.values(s.passport).join(" ")).toLowerCase(); cards.push(card); g.append(card);
+      }
+      body.append(h("h3", { class: "ls-h", text: r.title }), g);
+    }
+    q.addEventListener("input", () => {
+      const v = q.value.trim().toLowerCase();
+      cards.forEach(c => c.classList.toggle("hidden", !!v && !c.dataset.q.includes(v)));
+      body.querySelectorAll(".ls-h").forEach(hh => { const n = hh.nextElementSibling; hh.classList.toggle("hidden", !!n && ![...n.children].some(c => !c.classList.contains("hidden"))); });
+    });
+  }
+  async function renderStatePage(art, sub) {
+    const [L, st] = await Promise.all([KG.lore(), mapState()]);
+    const C = st.countries || {}, AL = st.alliances || {};
+    const back = h("button", { class: "lore-back", onclick: () => KG.go("wiki/lore/states") }, "← Государства");
+    const onMap = id => h("button", { class: "small-btn ls-map", "data-country": id, title: "Открыть карту на этой стране", onclick: () => KG.showOnMap(id) }, flagOf(C[id]), " " + oneLine((C[id] || {}).name || id) + " на карте");
+    const u = L.unions.find(x => x.id === sub);
+    if (u) { // союз
+      const al = AL[u.id] || {}, mem = Object.keys(C).filter(id => C[id].alliance === u.id).sort((a, b) => (String(al.leader) === b) - (String(al.leader) === a));
+      art.append(back, h("h2", { class: "ls-title" }, h("span", { class: "sc-swatch", style: "background:" + (al.color || "transparent") }), u.name, ...srcTags(u.src)),
+        h("div", { class: "ls-passport", text: u.members }),
+        h("div", { class: "lore-body ls-text", html: u.html }),
+        h("h3", { class: "ls-h", text: "Страны союза" }),
+        h("div", { class: "ls-grid" }, mem.map(id => { const s = L.byMap[id]; return h("button", { class: "ls-state", "data-state": s ? s.id : "", onclick: () => (s ? KG.go("wiki/lore/states/" + s.id) : KG.showOnMap(id)) },
+          h("span", { class: "ls-flags" }, flagOf(C[id])), h("span", { class: "ls-name" }, h("b", { text: oneLine(C[id].name) }), h("small", { text: String(al.leader) === id ? "лидер союза" : "" }))); })),
+        h("p", { class: "mech-note" }, "Союз в механиках: ", h("button", { class: "linkish", text: "Механики → Союзы", onclick: () => KG.go("wiki/mech/blocs") }), "."));
+      refreshEditable(); return;
+    }
+    const s = L.byId[sub];
+    if (!s) { KG.go("wiki/lore/states", true); return; }
+    const al = (C[s.map[0]] || {}).alliance, un = L.unions.find(x => x.id === al);
+    const i = L.states.indexOf(s), prev = L.states[i - 1], next = L.states[i + 1];
+    const pas = h("div", { class: "ls-passport" }, Object.entries(s.passport).map(([k, v]) => h("span", null, k + " ", h("b", { text: v }))));
+    art.append(back, h("h2", { class: "ls-title" }, h("span", { class: "ls-flags" }, s.map.map(id => flagOf(C[id]))), s.title, ...srcTags(s.src)),
+      h("div", { class: "ls-tools" }, s.map.map(onMap), un ? h("button", { class: "small-btn", "data-union": un.id, onclick: () => KG.go("wiki/lore/states/" + un.id) }, "Союз: " + un.name) : null),
+      h("div", { class: "lore-body ls-text", html: s.html.replace(/<div class="passport">[\s\S]*?<\/div>/, "") }));
+    art.querySelector(".ls-text").prepend(pas);
+    art.append(h("div", { class: "ls-pager" }, prev ? h("button", { class: "small-btn", onclick: () => KG.go("wiki/lore/states/" + prev.id) }, "← " + prev.title) : h("span"),
+      next ? h("button", { class: "small-btn", onclick: () => KG.go("wiki/lore/states/" + next.id) }, next.title + " →") : h("span")));
     refreshEditable();
   }
 

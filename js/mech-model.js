@@ -365,8 +365,9 @@
           "Промышленный совет Великих озёр: представители корпораций в администрации дистрикта."],
         ["nautilus", "Nautilus Clique", "water", "", "США", 0.5, 200,
           "Клика морских и береговых интересов."]] },
-    bloc: { title: "Союзы и блоки", note: "Политические, экономические, военные союзы и фракции. Членство страны отмечается в её карточке, вкладка «Корпорации».",
-      fields: [["name", "Союз", "text"], ["kind", "Вид", "sel", [["pol", "Политический союз"], ["econ", "Экономический союз"], ["mil", "Военный блок"], ["fac", "Фракция"]]], ["desc", "Описание", "text"]],
+    bloc: { title: "Союзы и блоки", note: "Политические, экономические, военные союзы и фракции. Состав союзов карты берётся с карты (у страны в карточке — поле «Союз»). Блоку, которого нет на карте, состав задают номера стран карты через запятую; ещё страну можно добавить галочкой в её карточке.",
+      fields: [["name", "Союз", "text"], ["kind", "Вид", "sel", [["pol", "Политический союз"], ["econ", "Экономический союз"], ["mil", "Военный блок"], ["fac", "Фракция"]]], ["desc", "Описание", "text"],
+        ["members", "Страны вне карты (номера)", "text"]],
       rows: [] },
     cdeal: { title: "Договоры корпораций с союзами", note: "Договор даёт корпорации присутствие во всех странах союза. Значение, заданное самой стране, важнее договора.",
       fields: [["corp", "Корпорация", "sel", R => R.tables.corp.map(s => [s.id, s.name])], ["bloc", "Союз", "sel", R => (R.tables.bloc.length ? R.tables.bloc.map(s => [s.id, s.name]) : [["", "— сначала создайте союз —"]])],
@@ -586,12 +587,41 @@
 
   // ---------- корпорации в стране ----------
   // c.corp = { idКорпорации: { pres: 0–10, rel: −100…100, enc: анклавы } } — задаёт ГМ; пустое поле = «не задано» (берётся договор союза)
-  // c.blocs = [id союзов], в которых состоит страна
+  // c.blocs = [id союзов], в которые ГМ добавил страну галочкой; союзы карты добавляются сами (см. blocsOf)
   const isSet = v => v !== undefined && v !== null && v !== "";
-  function corpPresence(rules, c) {
+  // ---------- союзы и блоки: членство ----------
+  // Союз карты (map.json → alliances) и блок механик с тем же id — одно и то же. Страна состоит в блоке, если:
+  //  • на карте у неё этот союз (поле «Союз» в карточке страны), • её номер в поле «Страны вне карты» блока, • ГМ отметил блок в её карточке.
+  const OLD_BLOCS = { bloc_integra: "al_ger_integr", bloc_nsa: "al_sco_nsa", bloc_central: "al_nau_united" }; // id до слияния с картой
+  let mapCountries = {}, mapAlliances = {};
+  function setMap(countries, alliances) { mapCountries = countries || {}; mapAlliances = alliances || {}; }
+  const memberIds = b => String((b && b.members) || "").split(/[\s,;]+/).filter(Boolean);
+  // откуда страна в блоке: "map" — союз на карте, "list" — номер в блоке, "gm" — галочка ГМа
+  function blocLinks(rules, c, id) {
+    const T = (rules && rules.tables) || {}, out = {};
+    const has = new Set((T.bloc || []).map(b => String(b.id)));
+    const mc = id != null ? mapCountries[String(id)] : null;
+    if (mc && mc.alliance && has.has(String(mc.alliance))) out[mc.alliance] = "map";
+    for (const b of T.bloc || []) if (id != null && !out[b.id] && memberIds(b).includes(String(id))) out[b.id] = "list";
+    for (let b of (c && Array.isArray(c.blocs) ? c.blocs : []).map(String)) { b = OLD_BLOCS[b] || b; if (has.has(b) && !out[b]) out[b] = "gm"; }
+    return out;
+  }
+  const blocsOf = (rules, c, id) => Object.keys(blocLinks(rules, c, id));
+  // состав блока по карте и списку (галочки ГМа видны только в его данных): [{ id, how, leader }]
+  function blocMembers(rules, blocId, gmCountries) {
+    const T = (rules && rules.tables) || {}, b = (T.bloc || []).find(x => String(x.id) === String(blocId));
+    if (!b) return [];
+    const al = mapAlliances[b.id], out = [], seen = new Set();
+    const add = (id, how) => { id = String(id); if (seen.has(id) || !mapCountries[id]) return; seen.add(id); out.push({ id, how, leader: !!(al && String(al.leader) === id) }); };
+    for (const id in mapCountries) if (mapCountries[id].alliance === b.id) add(id, "map");
+    memberIds(b).forEach(id => add(id, "list"));
+    for (const id in gmCountries || {}) if (blocLinks(rules, gmCountries[id], id)[b.id] === "gm") add(id, "gm");
+    return out.sort((x, y) => (y.leader - x.leader) || 0);
+  }
+  function corpPresence(rules, c, id) {
     const K = rules.K, T = rules.tables;
     const own = (c && c.corp) || {};
-    const blocs = (c && Array.isArray(c.blocs) ? c.blocs : []).map(String);
+    const blocs = blocsOf(rules, c, id);
     const blocName = {}; (T.bloc || []).forEach(b => (blocName[b.id] = b.name));
     const deals = (T.cdeal || []).filter(d => blocs.includes(String(d.bloc)));
     const secById = {}; (T.csector || []).forEach(s => (secById[s.id] = s));
@@ -666,7 +696,8 @@
     return out;
   }
 
-  function compute(rules, country) {
+  // id — номер страны на карте (для союзов карты); без него считаются только галочки ГМа
+  function compute(rules, country, id) {
     rules = normalizeRules(rules);
     const K = rules.K, T = rules.tables;
     const c = country || {};
@@ -701,7 +732,8 @@
     r.mob_law_name = law.name;
 
     // корпорации: присутствие и отношения задаёт ГМ, из них получаются эффекты (как особые эффекты ГМа) и потеря суверенитета
-    const corps = corpPresence(rules, c);
+    const corps = corpPresence(rules, c, id);
+    r.blocs = blocsOf(rules, c, id);
     r.corp_rows = corps.rows; r.corp_mods = corps.mods;
     r.corp_infl = corps.infl; r.sovereignty = 100 - corps.infl; r.corp_share = corps.share;
     r.corp_sis_n = corps.rows.filter(x => x.sis && x.lead).length;
@@ -903,7 +935,7 @@
   // все страны сразу (для ГМа): { id: country } → { results, ctx }
   function computeAll(rules, countries) {
     const results = {}, ctx = {};
-    for (const id in countries) results[id] = compute(rules, countries[id]);
+    for (const id in countries) results[id] = compute(rules, countries[id], id);
     for (const id in countries) ctx[id] = worldCtx(results, id);
     for (const id in countries) applyWorld(rules, countries[id], results[id], ctx[id]);
     for (const id in countries) ctx[id].inms = Object.keys(results).filter(x => x !== id).map(x => results[x].inm);
@@ -989,6 +1021,6 @@
 
   window.KGMechModel = {
     K_GROUPS, K_META, TABLES, COUNT_TABLES, INPUTS, OUT, MOD_TARGETS, SAMPLES, CORP_CH, IDEO_FX, ideologyOf, ideoMods,
-    defaultRules, normalizeRules, compute, worldCtx, applyWorld, computeAll, emptyCountry, corpPresence, corpWorld, corpClass, parseImport, importCountry
+    defaultRules, normalizeRules, compute, worldCtx, applyWorld, computeAll, emptyCountry, corpPresence, setMap, blocLinks, blocsOf, blocMembers, OLD_BLOCS, corpWorld, corpClass, parseImport, importCountry
   };
 })();

@@ -593,7 +593,10 @@
   $("zoomOut").onclick = () => (viewMode === "globe" ? globeZoom(1 / 1.4) : zoomAt(1 / 1.4, viewport.clientWidth / 2, viewport.clientHeight / 2));
   $("zoomFit").onclick = () => (viewMode === "globe" ? globeZoom(0) : fit());
   window.addEventListener("resize", () => { const was = Math.abs(s - fitS) < 1e-6; const vw = viewport.clientWidth, vh = viewport.clientHeight; fitS = Math.min(vw / W, vh / H); if (was) fit(); else setView(s, tx, ty); });
-  window.addEventListener("tabchange", e => { if (e.detail === "map") requestAnimationFrame(fit); });
+  // страна из адреса #map/earth/flat/<номер>: после любой подгонки карты под окно снова приближаемся к ней
+  let focusId = null;
+  const refit = () => { fit(); if (focusId && state.countries[focusId] && viewMode !== "globe") focusCountry(focusId); };
+  window.addEventListener("tabchange", e => { if (e.detail === "map") requestAnimationFrame(refit); });
 
   // ---------- выбор и легенда ----------
   let sel = null;
@@ -702,9 +705,17 @@
       (big ? row("Крупнейший город", window.KG.lines.oneLine(big.name)) : "") +
       INFO.slice(1).map(([k, l]) => field(k, l)).join("") +
       `</dl>` +
+      loreLink(id) +
       (gm ? `<div class="legend-label">Описание</div><textarea class="sc-in sc-desc" data-k="desc" rows="3" maxlength="2000" placeholder="История, особенности, армия, экономика…">${esc(desc)}</textarea>`
         : desc ? `<div class="sc-desc-view">${esc(desc)}</div>` : "");
     stateCard.classList.remove("hidden");
+  }
+  // ссылка на статью летописи о стране (Вики → Лор → Государства)
+  let loreIdx = null;
+  window.KG.lore().then(L => { loreIdx = L.byMap; if (sel && sel.col === "countries") renderStateCard(); });
+  function loreLink(id) {
+    const a = loreIdx && loreIdx[id];
+    return a ? `<a class="sc-lore" href="#wiki/lore/states/${esc(encodeURIComponent(a.id))}" title="Статья «${esc(a.title)}» в Вики">📖 Статья в лоре: ${esc(a.title)}</a>` : "";
   }
   // строка «Союз» в карточке: ГМ выбирает из списка, остальные видят название (лидер помечен)
   function allyField(c) {
@@ -1766,7 +1777,7 @@
     document.body.classList.toggle("solar-mode", on);
     if (on) { $("solarPick").classList.add("hidden"); drawSolar(); }
   }
-  async function showBody(b, p) {
+  async function showBody(b, p, noFit) {
     if (!BODIES[b]) {
       body = null;
       if (window.KGMoon && window.KGMoon.active) window.KGMoon.close();
@@ -1779,7 +1790,7 @@
     if (b === "moon") { await openMoon(p === "globe"); return; }
     if (window.KGMoon && window.KGMoon.active) window.KGMoon.close();
     await setView3(p);
-    if (p === "flat") requestAnimationFrame(fit);
+    if (p === "flat" && !noFit) requestAnimationFrame(refit);
   }
   document.querySelectorAll("#viewSwitch [data-proj]").forEach(b => b.addEventListener("click", () => window.KG.go("map/" + (body || "earth") + "/" + b.dataset.proj, true)));
   document.querySelector('#viewSwitch [data-view="solar"]').addEventListener("click", () => window.KG.go("map"));
@@ -1836,10 +1847,14 @@
   let mapReadyResolve, stateReadyResolve; const mapReady = new Promise(r => (mapReadyResolve = r)), stateReady = new Promise(r => (stateReadyResolve = r));
   window.addEventListener("routechange", async e => {
     if (e.detail.tab !== "map") return;
-    const [, b, p] = e.detail.parts;
+    const [, b, p, cid] = e.detail.parts;
     if (!BODIES[b]) { showBody(null); return; }
     await mapReady;
-    showBody(b, p);
+    // #map/earth/flat/<номер страны> — выбрать страну и приблизить (сразу, без отложенной подгонки карты под окно)
+    const focus = b === "earth" && cid && state.countries[cid];
+    focusId = focus ? cid : null;
+    await showBody(b, p, focus);
+    if (focus) { if (proj === "flat") fit(); stateCardClosed = null; focusCountry(cid); }
   });
 
   // панель спутников
@@ -2319,7 +2334,7 @@
       setGm(!!saved && saved === config.gm.hash);
       updUndo();
       $("mapLoading").classList.add("hidden");
-      requestAnimationFrame(fit);
+      requestAnimationFrame(refit);
       mapReadyResolve();
       // провинции — уже после показа карты
       const t1 = performance.now();
@@ -2339,5 +2354,5 @@
   setTool("pan");
   requestAnimationFrame(fit);
   load();
-  window.KGMap = { get state() { return state; }, ready: () => mapReady, stateReady: () => stateReady, login, logout, select, setTool, fit, T, setView3, measures, get globe() { return globe; }, get view() { return { s, tx, ty }; }, get gm() { return gm; }, get fonts() { return currentFonts(); }, get fontScale() { return fontScales(); }, get sat() { return satUi; } };
+  window.KGMap = { get state() { return state; }, ready: () => mapReady, stateReady: () => stateReady, login, logout, select, focusCountry, setTool, fit, T, setView3, measures, get globe() { return globe; }, get view() { return { s, tx, ty }; }, get gm() { return gm; }, get fonts() { return currentFonts(); }, get fontScale() { return fontScales(); }, get sat() { return satUi; } };
 })();

@@ -173,6 +173,20 @@
 .bloc-list { display: flex; flex-wrap: wrap; gap: 6px 14px; }
 .bloc { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--line-dim); border-radius: 3px; cursor: pointer; }
 .bloc small { color: var(--muted); font-size: 11px; }
+.bloc.on { border-color: var(--line); }
+.bloc input:disabled { opacity: .7; }
+/* Механики → Союзы */
+.bloc-filter { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 12px; }
+.bloc-filter .small-btn { margin: 0; }
+.bloc-filter .small-btn.active { border-color: var(--line); color: var(--line); }
+.bloc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.bloc-card { border: 1px solid var(--line-dim); border-radius: 3px; padding: 12px 14px; background: rgba(9, 14, 36, .55); min-width: 0; }
+.bloc-card h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 4px; }
+.bloc-sw { width: 12px; height: 12px; border-radius: 2px; flex-shrink: 0; }
+.bloc-kind { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+.bloc-members { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.bloc-members small { color: var(--muted); }
+.bloc-desc { font-size: 13px; line-height: 1.5; color: #c7d7ec; margin: 6px 0 0; }
 .bloc-view { margin: 4px 0; padding-left: 18px; color: #c7d7ec; font-size: 13.5px; display: flex; flex-direction: column; gap: 3px; }
 .corp-fx { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; color: #c7d7ec; }
 .corp-fx li.neg { color: #ffc2cc; }
