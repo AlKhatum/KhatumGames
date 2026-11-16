@@ -380,7 +380,7 @@
           h("button", { class: "ideo-chip", style: "--c:" + byId[a.a].color, onclick: () => go(a.a) }, icon(byId[a.a], "ideo-chip-ico"), nameOf(a.a), h("small", { text: a.a_note })),
           h("span", { class: "vs", text: "↔" }),
           h("button", { class: "ideo-chip", style: "--c:" + byId[a.b].color, onclick: () => go(a.b) }, icon(byId[a.b], "ideo-chip-ico"), nameOf(a.b), h("small", { text: a.b_note }))))),
-      h("p", { class: "mech-note", text: "Каждый гибрид противостоит вершине напротив. Цвета смешиваются так же, как идеи: красный и жёлтый дают оранжевое Покорение, жёлтый и бирюзовый — зелёную Алчность, бирюзовый и красный — пурпурную Духовность." }));
+      h("p", { class: "mech-note", text: "Каждый гибрид противостоит вершине напротив. Цвета смешиваются так же, как идеи: красный и жёлтый дают оранжевое Господство, жёлтый и бирюзовый — зелёную Ненасытность, бирюзовый и красный — пурпурную Духовность." }));
     el.append(h("div", { class: "ideo-top" }, h("div", { class: "ideo-tri-wrap" }, svg), axes));
 
     // карточки

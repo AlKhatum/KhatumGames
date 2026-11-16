@@ -369,9 +369,9 @@
   await test("Идеологии: 7 штук, у образцов распознаны", () => {
     assert(rulesM.tables.ideo.length === 7, "идеологий " + rulesM.tables.ideo.length);
     const names = [0, 1, 2, 3, 4].map(i => all.results["s" + i].ideology).join("|");
-    assert(names === "Верховенство|Гармония|Чистота|Духовность|Равновесие", names);
+    assert(names === "Превосходство|Гармония|Чистота|Духовность|Равновесие", names);
   });
-  await test("Идеология: модификаторы как в Excel (Верховенство +20% к технологиям, −1 стабильности)", () => {
+  await test("Идеология: модификаторы как в Excel (Превосходство +20% к технологиям, −1 стабильности)", () => {
     const ra = MM.compute(rulesM, MM.SAMPLES[0].make());
     const step = f => ra.applied.find(x => x.id === "ideo:supremacy:" + f) || assert(false, "нет шага " + f);
     const t = step("e_tech"), s = step("e_stab"), m = step("e_morale"), p = step("e_pm");
@@ -512,10 +512,10 @@
 
   group("Корпорации");
   const corpOf = (r, id) => r.corp_rows.find(x => x.id === id);
-  await test("Справочник корпораций: ARC и Militech в его составе, отрасли существуют", () => {
+  await test("Справочник корпораций: ARC и Bulwark Armaments в его составе, отрасли существуют", () => {
     const T = rulesM.tables, sec = new Set(T.csector.map(s => s.id)), ids = new Set(T.corp.map(x => x.id));
     const mt = T.corp.find(x => x.id === "militech");
-    assert(mt && mt.parent === "arc" && ids.has("arc"), "Militech не в ARC");
+    assert(mt && mt.parent === "arc" && ids.has("arc"), "Bulwark Armaments не в ARC");
     const bad = T.corp.filter(x => !sec.has(x.sector) || (x.parent && !ids.has(x.parent)) || !(+x.scale > 0));
     assert(!bad.length, "ошибки: " + bad.map(x => x.name).join(", "));
     return T.corp.length + " корпораций, " + T.csector.length + " отраслей";
@@ -526,7 +526,7 @@
     for (const k of ["gdp", "budget", "d_stab", "total_power", "security", "ovp"]) near(b[k], a[k], 1e-9, k);
     assert(b.sovereignty === 100 && b.corp_status === "Суверенное государство", b.corp_status);
   });
-  await test("Militech при отношениях +100: ОВП растёт на 3% за единицу веса, бюджет теряет на налогах", () => {
+  await test("Bulwark Armaments при отношениях +100: ОВП растёт на 3% за единицу веса, бюджет теряет на налогах", () => {
     const c = MM.SAMPLES[0].make(); c.corp = { militech: { pres: 6, rel: 100 } };
     const a = MM.compute(rulesM, MM.SAMPLES[0].make()), b = MM.compute(rulesM, c), W = 6 * 1.6;
     near(b.ovp / a.ovp, 1 + 3 * W / 100, 1e-9, "ОВП");
@@ -574,7 +574,7 @@
     a.corp = { militech: { pres: 5, rel: 40 } }; b.corp = { militech: { pres: 3, rel: -20 }, arc_int: { pres: 2, rel: 0 } };
     const all2 = MM.computeAll(rulesM, { a, b }), cw = MM.corpWorld(rulesM, all2.results);
     near(cw.militech.rev, corpOf(all2.results.a, "militech").rev + corpOf(all2.results.b, "militech").rev, 1e-9, "выручка");
-    assert(cw.militech.n === 2 && cw.militech.hostile.length === 1 && cw.militech.rank === 1, "Militech");
+    assert(cw.militech.n === 2 && cw.militech.hostile.length === 1 && cw.militech.rank === 1, "Bulwark Armaments");
     near(cw.arc.grp, cw.arc.rev + cw.militech.rev + cw.arc_int.rev + cw.arc_rec.rev, 1e-9, "группа ARC");
   });
 
