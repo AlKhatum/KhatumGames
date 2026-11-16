@@ -268,3 +268,26 @@
   .ideo-top { grid-template-columns: 1fr; }
   .ideo-cards { grid-template-columns: 1fr; }
 }
+
+/* статья механик: «В мире 2200» и «В расчётах», карточки типов с шапками 1280×720, словарь показателей */
+.mech-article .m-world { border-left: 2px solid var(--pink-soft); padding: 2px 0 2px 12px; color: #d6e4f5; font-style: italic; }
+.mech-article .m-world b { font-style: normal; color: var(--pink-soft); font-weight: 600; }
+.mech-article .m-label { margin: 10px 0 4px; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--line); }
+.mech-article .m-banner { margin: 6px 0 12px; }
+.unit-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; margin: 10px 0 14px; }
+.unit-card { border: 1px solid var(--line-dim); border-radius: 3px; background: rgba(9, 14, 36, .55); padding: 10px 12px 12px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.unit-card .img-slot { margin: -10px -12px 4px; width: calc(100% + 24px); border-radius: 3px 3px 0 0; }
+.unit-card h4 { margin: 0; font-size: 14.5px; color: var(--text); }
+.unit-stats { font-size: 12px; color: var(--line); }
+.unit-desc { margin: 0; font-size: 13px; line-height: 1.5; color: #c7d7ec; }
+.wonder-owner { font-size: 12px; color: #7dff6a; }
+.wonder-owner.none { color: var(--muted); }
+.param-list { display: flex; flex-direction: column; margin: 8px 0 14px; }
+.param-row { display: grid; grid-template-columns: minmax(150px, 230px) minmax(0, 1fr); gap: 4px 18px; padding: 9px 0; border-bottom: 1px solid rgba(24, 217, 245, .15); }
+.param-row .pt { font-weight: 600; color: var(--text); }
+.param-row .pt small { display: block; font-weight: 400; font-size: 11.5px; color: var(--muted); }
+.param-row .pd { color: #c7d7ec; font-size: 13.5px; line-height: 1.55; }
+.param-row .pd small { display: block; margin-top: 3px; font-size: 11.5px; color: var(--muted); }
+.law-desc { color: var(--muted); }
+.mrow .l.lored, td.lored { text-decoration: underline dotted rgba(24, 217, 245, .5); text-underline-offset: 3px; cursor: help; }
+@media (max-width: 640px) { .param-row { grid-template-columns: minmax(0, 1fr); } }

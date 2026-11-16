@@ -135,7 +135,56 @@
     const short = (v, f) => fmt(v, f).replace(/,0+(%?)$/, "$1");
     if (law) { law.innerHTML = ""; rules.tables.law.forEach((l, i) => law.append(h("li", null, h("b", { text: (i + 1) + ". " + l.name }), " — к призыву " + short(+l.share, "pct") + " МОП" + (+l.stab ? ", −" + String(l.stab).replace(".", ",") + " стабильности за ход" : "")))); }
     if (tier) { tier.innerHTML = ""; rules.tables.tier.slice().sort((a, b) => a.min - b.min).forEach(t => tier.append(h("li", null, h("b", { text: t.name }), " — от " + short(+t.min, "d1") + ". " + (t.desc || "")))); }
+    if (law) law.querySelectorAll("li").forEach((li, i) => { const d = (rules.tables.law[i] || {}).desc; if (d) li.append(h("small", { class: "law-desc", text: " " + d })); });
+    const slot = (key, label) => (window.KGSite && window.KGSite.imgSlot ? window.KGSite.imgSlot(key, label) : h("div", { class: "img-slot", "data-edit-img": key }));
+    // шапки разделов статьи 1280×720
+    document.querySelectorAll('[data-mech-list="banner"]').forEach(el => { el.innerHTML = ""; el.append(slot("mech.banner." + el.dataset.key, el.dataset.label || el.dataset.key)); });
+    // карточки типов: шапка 1280×720, характеристики из справочника, описание
+    document.querySelectorAll('[data-mech-list="units"]').forEach(el => {
+      const tb = el.dataset.table, rows = rules.tables[tb] || [], st = UNIT_STATS[tb] || (() => "");
+      el.innerHTML = "";
+      for (const r of rows) el.append(h("article", { class: "unit-card", "data-unit": tb + ":" + r.id },
+        slot("mech.unit." + tb + "." + r.id, r.name), h("h4", { text: r.name }), st(r) ? h("div", { class: "unit-stats", text: st(r) }) : null,
+        h("p", { class: "unit-desc", text: r.desc || "" })));
+    });
+    // чудеса: владелец, эффекты, описание
+    const wl = document.querySelector('[data-mech-list="wonder"]');
+    if (wl) {
+      wl.innerHTML = "";
+      const tName = k => (M.MOD_TARGETS.find(x => x[0] === k) || [, k])[1];
+      const fx = (k, v) => k && +v ? tName(k) + " " + (+v > 0 ? "+" : "−") + String(Math.abs(+v)).replace(".", ",") + (M.wonderMode(k) === "add" ? " за ход" : "%") : "";
+      for (const w of rules.tables.wonder) wl.append(h("article", { class: "unit-card wonder-card", "data-wonder": w.id },
+        slot("mech.wonder." + w.id, w.name), h("h4", { text: w.name }),
+        h("div", { class: "unit-stats", text: [fx(w.t1, w.v1), fx(w.t2, w.v2)].filter(Boolean).join(" · ") }),
+        h("div", { class: "wonder-owner" + (w.owner ? "" : " none"), text: w.owner ? "Построено: " + countryName(w.owner) : "Ещё не построено" }),
+        h("p", { class: "unit-desc", text: w.desc || "" })));
+    }
+    // словарь показателей: запись летописи → строки калькулятора
+    const pl = document.querySelector('[data-mech-list="params"]'), L = window.KGMechLore;
+    if (pl && L) {
+      pl.innerHTML = "";
+      const groups = new Map();
+      for (const k in L.params) { const x = L.params[k], g = x.name || (M.INPUTS[k] || M.OUT[k] || [k])[0]; if (!groups.has(g)) groups.set(g, { text: x.text, keys: [] }); groups.get(g).keys.push(k); }
+      for (const [g, x] of groups) pl.append(h("div", { class: "param-row", "data-param": x.keys[0] },
+        h("div", { class: "pt", text: g }), h("div", { class: "pd" }, x.text, h("small", { text: "В калькуляторе: " + x.keys.map(k => (M.INPUTS[k] || M.OUT[k])[0]).join(", ") }))));
+    }
+    // справочные записи мода (в расчётах пока не участвуют)
+    document.querySelectorAll('[data-mech-list="ref"]').forEach(el => {
+      el.innerHTML = "";
+      const names = String(el.dataset.names || "").split("|");
+      for (const n of names) { const x = L && L.reference[n]; if (x) el.append(h("div", { class: "param-row", "data-ref": n }, h("div", { class: "pt" }, n, h("small", { text: x.unit })), h("div", { class: "pd", text: x.text }))); }
+    });
   }
+  // строка характеристик карточки типа (числа — из действующего справочника)
+  const n2 = v => fmt(+v, Math.abs(+v) < 1 && +v !== 0 ? "d3" : "d2").replace(/,?0+$/, "");
+  const UNIT_STATS = {
+    div: r => "Л/с " + n2(r.pers) + " тыс. · мощь " + n2(r.power) + " · содержание " + n2(r.upkeep) + " млрд/ход · постройка " + n2(r.cost) + " ОВП",
+    ac: r => "Мощь " + n2(r.power) + " · содержание " + n2(r.upkeep) + " млрд/ход · постройка " + n2(r.cost) + " ОВП" + (+r.wh ? " · боеголовок " + n2(r.wh) : ""),
+    ship: r => "Экипаж " + n2(r.pers) + " тыс. · мощь " + n2(r.power) + " · " + n2(r.ton) + " тыс. т · постройка " + n2(r.cost) + " ОВП" + (+r.wh ? " · боеголовок " + n2(r.wh) : ""),
+    sat: r => "Запуск " + n2(r.cost) + " млрд кр. · содержание " + n2(r.upkeep) + " млрд/ход",
+    energy: () => "", food: r => String(r.weather) === "1" ? "Зависит от климата и радиации" : "Не зависит от погоды",
+    industry: r => (M.TABLES.industry.fields[1][3].find(o => o[0] === r.role) || [, ""])[1]
+  };
 
   // ---------- справочник ----------
   // варианты выбора: список или функция от правил (отрасли, корпорации, союзы)
@@ -144,13 +193,13 @@
   function rulesView(editable, onChange, rerender) {
     const root = h("div", { class: "rules" });
     const changed = () => { fillArticleLists(); if (onChange) onChange(); };
-    const order = ["div", "ac", "ship", "sat", "industry", "energy", "food", "law", "tier", "ideo", "csector", "corp", "bloc", "cdeal"];
+    const order = ["div", "ac", "ship", "sat", "industry", "energy", "food", "law", "tier", "wonder", "ideo", "csector", "corp", "bloc", "cdeal"];
     for (const t of order) {
       const meta = M.TABLES[t], rows = rules.tables[t];
       if (!editable && !rows.length) continue;
       const restruct = () => { if (rerender && STRUCT_TABLES.includes(t)) rerender(); };
       const sec = h("section", { class: "mblock" + (t === "csector" ? " corp-first" : "") }, t === "csector" ? h("h2", { text: "Корпорации и союзы" }) : null, h("h3", { text: meta.title }), meta.note ? h("p", { class: "mech-note", text: meta.note }) : null);
-      const tbl = h("table", { class: "mt rules-t" + (t === "corp" || t === "bloc" ? " wide-text" : "") });
+      const tbl = h("table", { class: "mt rules-t" + (t === "corp" || t === "bloc" || M.TABLES[t].fields.some(([f]) => f === "desc") ? " wide-text" : "") });
       const head = h("tr", null, t === "law" ? h("th", { text: "Ур." }) : null, meta.fields.map(([, label]) => h("th", { text: label })), editable ? h("th") : null);
       tbl.append(h("thead", null, head));
       const body = h("tbody");
@@ -449,7 +498,7 @@
   const LAYOUT = [
     { id: "overview", title: "Обзор" },
     { id: "state", title: "Государство", blocks: [
-      ["Общие сведения", ["in:capital", "in:gov", "in:ideology", "in:position", "in:megapolis"]],
+      ["Общие сведения", ["in:capital", "in:gov", "in:ideology", "out:wonders", "in:position", "in:megapolis"]],
       ["Территория и среда", ["in:territory", "in:habitable", "out:habitable_area", "in:flooded", "in:radiation", "in:waste_threat", "in:climate"]],
       ["Население", ["in:pop_meg", "in:pop_waste", "out:pop_total", "out:urban", "out:pop_per_meg", "in:working_share", "in:mob_share", "in:education", "in:healthcare", "out:health", "out:labor"]],
       ["Политика и общество", ["in:stability", "in:support", "in:corruption", "out:corruption_eff", "in:mob_law", "out:mob_law_name", "in:tech", "out:tech_mult", "in:infra", "out:infra_mult", "out:stab_mult", "out:hdi", "out:inm", "out:rank"]]] },
@@ -571,12 +620,14 @@
     function row(item) {
       const [kind, key] = item.split(":");
       if (kind === "tab") return tableBlock(key);
+      // описание показателя из летописи — подсказка при наведении на название строки
+      const lore = M.paramLore(key), lab = text => h("span", { class: "l" + (lore ? " lored" : ""), text, title: lore ? lore.text : null, "data-lore": lore ? key : null });
       if (kind === "in") {
         const [label, unit, , , , hint] = M.INPUTS[key];
-        return h("div", { class: "mrow in" + (opts.editable ? " edit" : "") }, h("span", { class: "l", text: label }), h("span", { class: "c" }, inField(key)), h("span", { class: "u", text: unit === "%" ? "" : unit }), h("span", { class: "hint", text: hint || "" }));
+        return h("div", { class: "mrow in" + (opts.editable ? " edit" : "") }, lab(label), h("span", { class: "c" }, inField(key)), h("span", { class: "u", text: unit === "%" ? "" : unit }), h("span", { class: "hint", text: hint || "" }));
       }
       const [label, unit, , okind, hint] = M.OUT[key];
-      return h("div", { class: "mrow out" + (okind === "res" ? " is-res" : "") }, h("span", { class: "l", text: label }), h("span", { class: "c" }, outVal(key)), h("span", { class: "u", text: unit === "%" ? "" : unit }), h("span", { class: "hint", text: hint || "" }));
+      return h("div", { class: "mrow out" + (okind === "res" ? " is-res" : "") }, lab(label), h("span", { class: "c" }, outVal(key)), h("span", { class: "u", text: unit === "%" ? "" : unit }), h("span", { class: "hint", text: hint || "" }));
     }
     function tableBlock(t) {
       const meta = M.TABLES[t], info = TAB_INFO[t] || [];
@@ -592,7 +643,7 @@
           inp.addEventListener("input", () => { if (inp.value === "" || !isFinite(+inp.value)) return; c.cnt[t][rowT.id] = Math.max(0, +inp.value); changed(); });
           cell = h("td", { class: "num" }, inp);
         } else cell = h("td", { class: "num" }, h("span", { class: "v", text: fmt(cur, ["energy", "food"].includes(t) ? "d1" : "int") }));
-        const tr = h("tr", { class: cur ? "" : "zero" }, h("td", { text: rowT.name }), cell,
+        const tr = h("tr", { class: cur ? "" : "zero" }, h("td", { text: rowT.name, title: rowT.desc || null, class: rowT.desc ? "lored" : null }), cell,
           info.map(([f, , ff]) => h("td", { class: "num" }, live(e => { const n = +(c.cnt[t][rowT.id] || 0); e.textContent = n ? fmt(n * (+rowT[f] || 0), ff) : "·"; tr.classList.toggle("zero", !n); }))));
         if (t === "industry") tr.append(h("td", { class: "tag", text: (M.TABLES.industry.fields[1][3].find(o => o[0] === rowT.role) || [, ""])[1] }));
         if (t === "food") tr.append(h("td", { class: "tag", text: String(rowT.weather) === "1" ? "зависит" : "нет" }));
@@ -1377,6 +1428,7 @@
     open: () => { window.KG.go("wiki/mech"); init(); },
     ready: () => init(),
     refreshArticle: () => fillArticleLists(),
+    countryView: o => countryView(o), // для автотестов: карточка страны без входа
     get turn() { return mech ? { turn: mech.turn, year: mech.year } : null; },
     get rules() { return rules; },
     corpLabel: id => groupName(id),

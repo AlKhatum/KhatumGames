@@ -148,15 +148,15 @@
   const EFFECT_SAT = [["sci", "Научный"], ["nav", "Навигационный"], ["comm", "Связи"], ["mil", "Военный"], ["rod", "«Стержни Бога»"], ["asat", "Противоспутниковый"], ["none", "Без эффекта"]];
   const YESNO = [["0", "Нет"], ["1", "Да"]];
   const TABLES = {
-    energy: { title: "Источники энергии", unit: "ГВт", fields: [["name", "Название", "text"]],
+    energy: { title: "Источники энергии", unit: "ГВт", fields: [["name", "Название", "text"], ["desc", "Описание", "text"]],
       rows: [["fusion", "Термоядерная и атомная генерация"], ["renew", "Возобновляемая (ГЭС, ветер, солнце, приливы)"], ["fossil", "Ископаемая и резервная"]] },
-    industry: { title: "Отрасли промышленности", unit: "пром. ед.", fields: [["name", "Название", "text"], ["role", "Роль", "sel", ROLE_IND]],
+    industry: { title: "Отрасли промышленности", unit: "пром. ед.", fields: [["name", "Название", "text"], ["role", "Роль", "sel", ROLE_IND], ["desc", "Описание", "text"]],
       rows: [["heavy", "Тяжёлая промышленность и металлургия", "civil"], ["light", "Лёгкая и пищевая", "civil"], ["chem", "Химия и топливопереработка", "civil"],
         ["hitech", "Высокие технологии (электроника, ИИ, роботы)", "civil"], ["vpk", "Военно-промышленный комплекс", "vpk"], ["ship", "Судостроительные верфи", "ship"], ["aero", "Авиакосмическая промышленность", "aero"]] },
-    food: { title: "Источники продовольствия", unit: "млн т", fields: [["name", "Название", "text"], ["weather", "Зависит от климата и радиации", "sel", YESNO]],
+    food: { title: "Источники продовольствия", unit: "млн т", fields: [["name", "Название", "text"], ["weather", "Зависит от климата и радиации", "sel", YESNO], ["desc", "Описание", "text"]],
       rows: [["hydro", "Гидропонные фермы мегаполисов", "0"], ["aqua", "Морская аквакультура и рыболовство", "0"], ["field", "Полевое земледелие (потенциал)", "1"]] },
     div: { title: "Типы дивизий", unit: "дивизий",
-      fields: [["name", "Тип", "text"], ["pers", "Л/с, тыс.", "num"], ["power", "Мощь", "num"], ["upkeep", "Содержание, млрд/ход", "num"], ["tank", "Танки (штат)", "num"], ["ifv", "БМП/БТР (штат)", "num"], ["art", "Артиллерия (штат)", "num"], ["garr", "Зачёт в гарнизон", "num"], ["cost", "Постройка, ОВП", "num"]],
+      fields: [["name", "Тип", "text"], ["pers", "Л/с, тыс.", "num"], ["power", "Мощь", "num"], ["upkeep", "Содержание, млрд/ход", "num"], ["tank", "Танки (штат)", "num"], ["ifv", "БМП/БТР (штат)", "num"], ["art", "Артиллерия (штат)", "num"], ["garr", "Зачёт в гарнизон", "num"], ["cost", "Постройка, ОВП", "num"], ["desc", "Описание", "text"]],
       rows: [["motor", "Мотострелковая", 12, 10, 0.6, 90, 300, 72, 0, 10], ["tank", "Танковая", 10, 14, 0.9, 320, 150, 54, 0, 14],
         ["airborne", "Воздушно-десантная / горная", 7, 9, 0.6, 0, 120, 36, 0, 9], ["marine", "Морской пехоты", 8, 9, 0.65, 40, 150, 36, 0, 10],
         ["art", "Артиллерийская", 6, 11, 0.7, 0, 30, 300, 0, 10], ["garrison", "Гарнизонная (стены мегаполиса)", 10, 5, 0.3, 20, 60, 48, 1, 5],
@@ -172,12 +172,12 @@
         ["police", "Полицейская (общественная безопасность)", 8, 7, 0.5, 0, 200, 24, 1, 7],
         ["merc", "Наёмная группа", 3, 4, 0.5, 0, 20, 6, 0.3, 4]] },
     ac: { title: "Типы летательных аппаратов", unit: "ед.",
-      fields: [["name", "Тип", "text"], ["pers", "Персонал на 1 ЛА, тыс.", "num"], ["power", "Мощь", "num"], ["upkeep", "Содержание, млрд/ход", "num"], ["wh", "Ядерные боеголовки (носитель)", "num"], ["cost", "Постройка, ОВП", "num"]],
+      fields: [["name", "Тип", "text"], ["pers", "Персонал на 1 ЛА, тыс.", "num"], ["power", "Мощь", "num"], ["upkeep", "Содержание, млрд/ход", "num"], ["wh", "Ядерные боеголовки (носитель)", "num"], ["cost", "Постройка, ОВП", "num"], ["desc", "Описание", "text"]],
       rows: [["fighter", "Истребители", 0.025, 0.5, 0.012, 0, 0.6], ["attack", "Многоцелевые / штурмовики", 0.02, 0.4, 0.008, 0, 0.45],
         ["bomber", "Стратегические бомбардировщики", 0.06, 2, 0.05, 4, 3], ["awacs", "ДРЛО и разведчики", 0.04, 0.3, 0.03, 0, 1.5],
         ["transport", "Военно-транспортные", 0.03, 0.1, 0.01, 0, 0.4], ["drone", "Ударные БПЛА", 0.005, 0.15, 0.002, 0, 0.1], ["heli", "Вертолёты", 0.015, 0.2, 0.004, 0, 0.25]] },
     ship: { title: "Классы кораблей", unit: "кораблей",
-      fields: [["name", "Класс", "text"], ["pers", "Экипаж, тыс.", "num"], ["power", "Мощь", "num"], ["upkeep", "Содержание, млрд/ход", "num"], ["ton", "Водоизмещение, тыс. т", "num"], ["air", "Авиагруппа, ЛА", "num"], ["wh", "Ядерные боеголовки (носитель)", "num"], ["kind", "Вид", "sel", KIND_SHIP], ["cost", "Постройка, ОВП", "num"]],
+      fields: [["name", "Класс", "text"], ["pers", "Экипаж, тыс.", "num"], ["power", "Мощь", "num"], ["upkeep", "Содержание, млрд/ход", "num"], ["ton", "Водоизмещение, тыс. т", "num"], ["air", "Авиагруппа, ЛА", "num"], ["wh", "Ядерные боеголовки (носитель)", "num"], ["kind", "Вид", "sel", KIND_SHIP], ["cost", "Постройка, ОВП", "num"], ["desc", "Описание", "text"]],
       rows: [["carrier", "Авианосцы", 3, 60, 1.2, 90, 60, 0, "combat", 120], ["lhd", "Универсальные десантные (УДК)", 1.2, 20, 0.4, 35, 20, 0, "combat", 45],
         ["battleship", "Линкоры / арсенальные корабли", 1.5, 35, 0.6, 40, 0, 0, "combat", 70], ["cruiser", "Крейсеры", 0.8, 18, 0.3, 12, 0, 0, "combat", 35],
         ["destroyer", "Эсминцы", 0.3, 10, 0.15, 9, 0, 0, "combat", 18], ["frigate", "Фрегаты", 0.2, 6, 0.08, 5, 0, 0, "combat", 10],
@@ -186,10 +186,10 @@
         ["landing", "Десантные корабли", 0.15, 3, 0.05, 8, 0, 0, "combat", 8], ["patrol", "Патрульные катера / речные мониторы", 0.03, 1, 0.01, 0.5, 0, 0, "patrol", 1],
         ["ekranoplan", "Экранопланы", 0.04, 4, 0.06, 0.5, 0, 0, "combat", 4], ["aux", "Вспомогательные суда снабжения", 0.1, 0.5, 0.03, 20, 0, 0, "aux", 6]] },
     sat: { title: "Типы спутников", unit: "шт.",
-      fields: [["name", "Тип", "text"], ["upkeep", "Содержание, млрд/ход", "num"], ["cost", "Запуск, млрд кр.", "num"], ["pers", "Персонал, тыс.", "num"], ["effect", "Эффект", "sel", EFFECT_SAT]],
+      fields: [["name", "Тип", "text"], ["upkeep", "Содержание, млрд/ход", "num"], ["cost", "Запуск, млрд кр.", "num"], ["pers", "Персонал, тыс.", "num"], ["effect", "Эффект", "sel", EFFECT_SAT], ["desc", "Описание", "text"]],
       rows: [["sci", "Научные", 0.2, 1, 0.05, "sci"], ["nav", "Навигационные", 0.15, 0.8, 0.05, "nav"], ["comm", "Связи", 0.12, 0.6, 0.04, "comm"],
         ["mil", "Военные (разведка, СПРН)", 0.3, 1.5, 0.08, "mil"], ["rod", "Ударные «Стержни Бога»", 1.5, 6, 0.2, "rod"], ["asat", "Противоспутниковые (ПСО)", 0.2, 1, 0.06, "asat"]] },
-    law: { title: "Законы о мобилизации", fields: [["name", "Режим", "text"], ["share", "Доля МОП к призыву", "num"], ["stab", "Штраф стабильности за ход", "num"]],
+    law: { title: "Законы о мобилизации", fields: [["name", "Режим", "text"], ["share", "Доля МОП к призыву", "num"], ["stab", "Штраф стабильности за ход", "num"], ["desc", "Описание", "text"]],
       rows: [["l1", "Добровольческая армия", 0.1, 0], ["l2", "Ограниченный призыв", 0.2, 0], ["l3", "Всеобщая воинская обязанность", 0.35, 1],
         ["l4", "Частичная мобилизация", 0.6, 3], ["l5", "Тотальная мобилизация", 0.9, 6]] },
     tier: { title: "Уровни экономики", fields: [["min", "Порог ВВП на душу, тыс. кр.", "num"], ["name", "Уровень", "text"], ["desc", "Описание", "text"]],
@@ -391,6 +391,33 @@
       ["supremacy", "Превосходство", -1, 20, -5, 0, 0, 0, 5, 0, 0, 0, 0], ["mastery", "Господство", 0, 0, 0, 0, 0, 10, 0, 0, 0, 10, -5],
       ["balance", "Равновесие", 0, 0, -5, 10, 0, 0, 0, 0, 0, 0, 0]]
   };
+  // ---------- чудеса ----------
+  // Десять спецпроектов мода, каждое одно на весь мир. Построившая страна (владелец) получает до двух эффектов:
+  // % к показателю, у стабильности — пункты за ход. Владельца ставит ГМ в «Справочнике», таблица «Чудеса».
+  const wonderTargets = () => [["", "—"]].concat(MOD_TARGETS);
+  const wonderOwners = () => [["", "— не построено —"]].concat(Object.keys(mapCountries)
+    .map(id => [id, String(mapCountries[id].name || id).replace(/\n/g, " ")]).sort((a, b) => a[1].localeCompare(b[1], "ru")));
+  TABLES.wonder = {
+    title: "Чудеса", note: "Каждое чудо одно на весь мир. Владелец получает эффекты: % к показателю, у изменения стабильности — пункты за ход. Пока владельца нет, чудо не действует.",
+    fields: [["name", "Чудо", "text"], ["owner", "Владелец", "sel", wonderOwners], ["t1", "Эффект 1", "sel", wonderTargets], ["v1", "Величина 1", "num"],
+      ["t2", "Эффект 2", "sel", wonderTargets], ["v2", "Величина 2", "num"], ["desc", "Описание", "text"]],
+    rows: [["immortality", "Клиническое бессмертие", "", "health", 10, "d_pop", 15], ["markov", "Затмение Маркова", "", "ground_power", 10, "morale", 10],
+      ["starcode", "Звёздный кодекс", "", "launch_cap", 25, "d_tech", 5], ["freewill", "Машинная свобода воли", "", "d_tech", 25, "d_stab", -1],
+      ["virtual", "Виртуальный мир", "", "d_stab", 3, "", 0], ["weather", "Погодная парадигма", "", "food_prod", 10, "readiness", 10],
+      ["benthic", "Бентосный бур", "", "navy_power", 10, "access", 5], ["neuro", "Нейроусилитель", "", "security", 10, "d_tech", 5],
+      ["cloudbase", "Академия «Клаудбейс»", "", "air_power", 15, "", 0], ["translator", "Универсальный переводчик", "", "access", 15, "d_stab", 1]]
+  };
+  const wonderMode = target => (target === "d_stab" ? "add" : "pct");
+  // эффекты чудес, которыми владеет страна с номером карты id
+  function wonderMods(rules, id) {
+    if (id == null) return [];
+    const out = [];
+    for (const w of ((rules && rules.tables && rules.tables.wonder) || [])) {
+      if (!w.owner || String(w.owner) !== String(id)) continue;
+      for (const [tf, vf] of [["t1", "v1"], ["t2", "v2"]]) if (w[tf] && +w[vf]) out.push({ id: "wonder:" + w.id + ":" + tf, name: "Чудо: " + w.name, target: w[tf], mode: wonderMode(w[tf]), value: +w[vf] });
+    }
+    return out;
+  }
   // прежние названия идеологий (до переименования) — чтобы старые сохранения стран не теряли эффекты
   const IDEO_OLD_NAMES = { "верховенство": "supremacy", "алчность": "voracity", "покорение": "mastery" };
   // идеология страны: по названию (без учёта регистра), по id или по прежнему названию
@@ -415,12 +442,23 @@
   // таблицы, у которых у страны есть количество (counts)
   const COUNT_TABLES = ["energy", "industry", "food", "div", "ac", "ship", "sat"];
 
+  // описание строки справочника из летописи: юниты, энергия, еда, отрасли, законы — units; чудеса — wonders
+  const LORE = () => (typeof window !== "undefined" && window.KGMechLore) || { params: {}, units: {}, wonders: {} };
+  function loreDesc(t, id) {
+    const L = LORE(), x = t === "wonder" ? (L.wonders || {})[id] : ((L.units || {})[t] || {})[id];
+    return x ? x.text : "";
+  }
+  const paramLore = key => (LORE().params || {})[key] || null;
   function defaultRules() {
     const K = {}; for (const k in K_META) K[k] = K_META[k].v;
     const tables = {};
     for (const t in TABLES) {
-      const fl = TABLES[t].fields;
-      tables[t] = TABLES[t].rows.map(row => { const o = { id: row[0] }; fl.forEach(([f], i) => (o[f] = row[i + 1])); return o; });
+      const fl = TABLES[t].fields, hasDesc = fl.some(([f]) => f === "desc");
+      tables[t] = TABLES[t].rows.map(row => {
+        const o = { id: row[0] }; fl.forEach(([f], i) => (o[f] = row[i + 1]));
+        if (hasDesc && !o.desc) o.desc = loreDesc(t, o.id);
+        return o;
+      });
     }
     return { K, tables };
   }
@@ -433,6 +471,8 @@
     if (r.K && !("kessler_loss" in r.K) && r.K.debris_base === 0.25) K.debris_base = d.K.debris_base;
     const tables = {};
     for (const t in d.tables) tables[t] = Array.isArray(r.tables && r.tables[t]) ? r.tables[t] : d.tables[t];
+    // строки без описания (правила, сохранённые до описаний) получают текст летописи по id
+    for (const t in tables) if (TABLES[t].fields.some(([f]) => f === "desc")) for (const row of tables[t]) if (row && !row.desc && loreDesc(t, row.id)) row.desc = loreDesc(t, row.id);
     return { K, tables };
   }
 
@@ -484,7 +524,7 @@
     pop_per_meg: ["Среднее население мегаполиса", "млн чел.", "d2"], habitable_area: ["Пригодная территория", "тыс. км²", "int"],
     health: ["Коэффициент здоровья нации", "коэф.", "d2", "coef", "1 − радиация × K + медицина × K"],
     labor: ["Трудовые ресурсы (за вычетом армии)", "млн чел.", "d2", "", "Население × доля трудоспособных × здоровье − армия"],
-    mob_law_name: ["Режим мобилизации", "", "txt"],
+    mob_law_name: ["Режим мобилизации", "", "txt"], wonders: ["Чудеса страны", "", "txt"],
     tech_mult: ["Множитель технологий", "коэф.", "d2"], infra_mult: ["Множитель инфраструктуры", "коэф.", "d2"], stab_mult: ["Множитель стабильности", "коэф.", "d2"],
     hdi: ["Индекс развития", "0–1", "d2", "", "Образование, ВВП на душу, здоровье, стабильность"],
     en_supply: ["Выработка энергии", "ГВт", "d1"], en_demand: ["Потребность в энергии", "ГВт", "d1", "", "Население × K + базовая ПМ × K"],
@@ -747,6 +787,10 @@
     const ideo = ideologyOf(rules, (c.in || {}).ideology);
     r.ideology = ideo ? ideo.name : "";
     mods = mods.concat(ideoMods(ideo));
+    // чудеса, построенные страной
+    const wm = wonderMods(rules, id);
+    r.wonders = [...new Set(wm.map(m => m.name.replace(/^Чудо: /, "")))].join(", ") || "—";
+    mods = mods.concat(wm);
     r.health = mod("health", r.health);
 
     // личный состав и юниты
@@ -1021,6 +1065,6 @@
 
   window.KGMechModel = {
     K_GROUPS, K_META, TABLES, COUNT_TABLES, INPUTS, OUT, MOD_TARGETS, SAMPLES, CORP_CH, IDEO_FX, ideologyOf, ideoMods,
-    defaultRules, normalizeRules, compute, worldCtx, applyWorld, computeAll, emptyCountry, corpPresence, setMap, blocLinks, blocsOf, blocMembers, OLD_BLOCS, corpWorld, corpClass, parseImport, importCountry
+    defaultRules, normalizeRules, compute, worldCtx, applyWorld, computeAll, emptyCountry, corpPresence, setMap, wonderMods, wonderMode, paramLore, loreDesc, blocLinks, blocsOf, blocMembers, OLD_BLOCS, corpWorld, corpClass, parseImport, importCountry
   };
 })();

@@ -849,7 +849,17 @@ body.moon-mode #stateCard, body.moon-mode #sizeBar { display: none; }
 .rich img { max-width: 100%; height: auto; border-radius: 3px; }
 .rich a { color: var(--line); }
 .rich:empty::before { content: attr(data-placeholder); color: var(--muted); font-style: italic; }
-body:not(.site-edit) .lore-text.special:empty { display: none; } /* у разделов с наполнением из данных пустое вступление видно только в правке */
+body:not(.site-edit) .lore-text.special:empty { display: none; }
+/* шапки 1280×720 (внешний вид войск, флота и т.д.): у посетителя — только загруженные */
+.img-slot { position: relative; display: none; width: 100%; aspect-ratio: 16 / 9; border-radius: 3px; overflow: hidden; background: rgba(255, 255, 255, .03) center / cover no-repeat; }
+.img-slot.has-img { display: block; }
+.site-edit .img-slot { display: block; border: 1px dashed var(--line-dim); cursor: pointer; }
+.site-edit .img-slot.has-img { cursor: default; }
+.img-slot-ph { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 8px; text-align: center; color: var(--muted); font-size: 12px; }
+.img-slot-ph b { font-weight: 600; letter-spacing: .06em; }
+.img-slot.has-img .img-slot-ph { display: none; }
+.img-slot-tools { position: absolute; top: 6px; right: 6px; display: flex; gap: 4px; }
+.img-slot-tools .small-btn { margin: 0; padding: 3px 8px; font-size: 11px; background: rgba(7, 11, 29, .8); } /* у разделов с наполнением из данных пустое вступление видно только в правке */
 
 /* Галерея */
 .gal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-top: 16px; }

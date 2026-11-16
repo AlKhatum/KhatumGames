@@ -123,7 +123,43 @@
       }
     });
     if (mechTouched && window.KGMech && window.KGMech.refreshArticle) window.KGMech.refreshArticle();
+    (root || document).querySelectorAll("[data-edit-img]").forEach(paintSlot);
     refreshEditable();
+  }
+
+  // ---------- шапки 1280×720: внешний вид войск, флота, техники ----------
+  // Картинка хранится в site.json → texts["img:<ключ>"]; при публикации сайта уходит файлом в assets/site/.
+  // Посетитель видит шапку, только если картинка загружена; ГМ в режиме правки видит пустую рамку 16:9 и кнопки.
+  const IMG_W = 1280, IMG_H = 720, imgKey = k => "img:" + k;
+  function paintSlot(el) {
+    const v = site.texts[imgKey(el.getAttribute("data-edit-img"))];
+    el.classList.toggle("has-img", !!v);
+    el.style.backgroundImage = v ? 'url("' + String(v).replace(/"/g, "%22") + '")' : "";
+  }
+  // картинка → ровно 1280×720 (обрезка по центру, как background-size: cover)
+  async function readCover(f) {
+    const img = new Image(); img.src = await readDataUrl(f);
+    await img.decode();
+    const cv = document.createElement("canvas"); cv.width = IMG_W; cv.height = IMG_H;
+    const k = Math.max(IMG_W / img.naturalWidth, IMG_H / img.naturalHeight), w = img.naturalWidth * k, hh = img.naturalHeight * k;
+    cv.getContext("2d").drawImage(img, (IMG_W - w) / 2, (IMG_H - hh) / 2, w, hh);
+    return cv.toDataURL("image/jpeg", 0.86);
+  }
+  async function uploadSlot(el) {
+    if (!editing) return;
+    const f = await pickFile("image/*"); if (!f) return;
+    try { setVal(imgKey(el.getAttribute("data-edit-img")), await readCover(f)); paintSlot(el); }
+    catch (e) { toast("Не удалось прочитать картинку: " + e.message); }
+  }
+  function imgSlot(key, label) {
+    const el = h("div", { class: "img-slot", "data-edit-img": key, role: "img", "aria-label": label, title: editing ? "Шапка 1280×720: " + label : null },
+      h("span", { class: "img-slot-ph" }, h("b", { text: "Шапка 1280 × 720" }), h("small", { text: label })),
+      h("span", { class: "img-slot-tools edit-only" },
+        h("button", { type: "button", class: "small-btn", text: "Картинка", title: "Загрузить картинку (обрежется до 1280×720)", onclick: e => { e.stopPropagation(); uploadSlot(el); } }),
+        h("button", { type: "button", class: "small-btn danger", text: "✕", title: "Убрать картинку", onclick: e => { e.stopPropagation(); setVal(imgKey(key), undefined); paintSlot(el); } })));
+    el.addEventListener("click", () => { if (editing && !el.classList.contains("has-img")) uploadSlot(el); });
+    paintSlot(el);
+    return el;
   }
 
   // ---------- режим правки ----------
@@ -668,5 +704,5 @@
   });
   load();
 
-  window.KGSite = { get data() { return site; }, applyTexts, sanitize, setEditing, get editing() { return editing; }, publish };
+  window.KGSite = { get data() { return site; }, applyTexts, sanitize, setEditing, get editing() { return editing; }, publish, imgSlot, IMG_W, IMG_H };
 })();

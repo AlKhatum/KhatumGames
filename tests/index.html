@@ -23,7 +23,8 @@
 <script src="../js/sats.js?v=20261115e"></script>
 <script src="../js/moon-names.js?v=20261115a"></script>
 <script src="../js/wrap.js?v=20261115a"></script>
-<script src="../js/mech-model.js?v=20261116l"></script>
+<script src="../js/mech-lore.js?v=20261117a"></script>
+<script src="../js/mech-model.js?v=20261117a"></script>
 <script src="../js/mech-crypto.js?v=20261115a"></script>
 <script>
 (async function () {
@@ -685,6 +686,61 @@
     assert(MC["8"].info.head === "Вадим Петрович Козлов" && MC["8"].info.capital === "Москва", "Москва → Козлов");
   });
 
+  group("Механики: описания из летописи и чудеса");
+  const ML = window.KGMechLore, DESC_T = ["div", "ac", "ship", "sat", "energy", "food", "industry", "law"];
+  await test("js/mech-lore.js: описание у каждого вводимого показателя, ключи существуют", () => {
+    assert(ML && ML.params && ML.units && ML.wonders && ML.reference, "нет window.KGMechLore");
+    const miss = Object.keys(MM.INPUTS).filter(k => !ML.params[k]);
+    assert(!miss.length, "без описания: " + miss.map(k => MM.INPUTS[k][0]).join(", "));
+    const unknown = Object.keys(ML.params).filter(k => !MM.INPUTS[k] && !MM.OUT[k]);
+    assert(!unknown.length, "нет в калькуляторе: " + unknown);
+    const SRC = new Set(["летопись", "летопись, адаптировано", "авторское"]);
+    const bad = Object.entries(ML.params).filter(([, x]) => !SRC.has(x.src) || String(x.text).length < 30);
+    assert(!bad.length, "пустые или без источника: " + bad.map(([k]) => k));
+    return Object.keys(ML.params).length + " показателей, из них из летописи " + Object.values(ML.params).filter(x => x.src === "летопись").length;
+  });
+  await test("Справочник: описание у каждого типа дивизий, ЛА, кораблей, спутников, энергии, еды, отраслей и законов", () => {
+    const D = MM.defaultRules(), errs = [];
+    for (const t of DESC_T) {
+      assert(MM.TABLES[t].fields.some(([f]) => f === "desc"), t + ": нет колонки «Описание»");
+      for (const R0 of [D, rulesLive]) for (const r of R0.tables[t]) if (!r.desc || r.desc.length < 30) errs.push(t + ":" + r.id);
+      const ids = MM.TABLES[t].rows.map(r => r[0]);
+      if (ids.some(id => !ML.units[t][id])) errs.push(t + ": нет текста летописи для " + ids.filter(id => !ML.units[t][id]));
+    }
+    assert(!errs.length, errs.join(", "));
+    return DESC_T.map(t => rulesLive.tables[t].length).reduce((a, b) => a + b) + " строк";
+  });
+  await test("Старые правила без описаний получают текст летописи по id, своё описание ГМа не трогается", () => {
+    const r = MM.normalizeRules({ K: {}, tables: { div: [{ id: "walker", name: "Шагоходы" }, { id: "x1", name: "Свой тип", desc: "Мой текст" }] } });
+    assert(r.tables.div[0].desc === ML.units.div.walker.text, r.tables.div[0].desc);
+    assert(r.tables.div[1].desc === "Мой текст", "описание ГМа");
+  });
+  await test("Чудеса: 10 из летописи, эффекты на существующие показатели", () => {
+    const W0 = rulesLive.tables.wonder, tg = new Set(MM.MOD_TARGETS.map(x => x[0]));
+    assert(W0.length === 10 && Object.keys(ML.wonders).length === 10, "чудес " + W0.length);
+    const bad = W0.filter(w => !w.name || !w.desc || w.desc !== ML.wonders[w.id].text || !tg.has(w.t1) || !+w.v1 || (w.t2 && !tg.has(w.t2)) || (w.owner && !MC[w.owner]));
+    assert(!bad.length, bad.map(w => w.name).join(", "));
+  });
+  await test("Чудо действует только на страну-владельца: «Клаудбейс» даёт +15% к мощи ВВС", () => {
+    const rl = JSON.parse(JSON.stringify(rulesLive)); rl.tables.wonder.find(w => w.id === "cloudbase").owner = "8";
+    const own = MM.compute(rl, MM.SAMPLES[0].make(), "8"), other = MM.compute(rl, MM.SAMPLES[0].make(), "36"), none = MM.compute(rulesLive, MM.SAMPLES[0].make(), "8");
+    near(own.air_power / none.air_power, 1.15, 1e-9, "ВВС владельца");
+    near(other.air_power, none.air_power, 1e-9, "ВВС чужой страны");
+    assert(own.wonders === "Академия «Клаудбейс»" && other.wonders === "—", own.wonders + " / " + other.wonders);
+    const all4 = MM.computeAll(rl, { "8": MM.SAMPLES[0].make(), "36": MM.SAMPLES[0].make() });
+    near(all4.results["8"].air_power / all4.results["36"].air_power, 1.15, 1e-9, "computeAll");
+  });
+  await test("Чудеса: стабильность — пункты за ход, остальное — проценты", () => {
+    const rl = JSON.parse(JSON.stringify(rulesLive));
+    rl.tables.wonder.find(w => w.id === "virtual").owner = "8"; rl.tables.wonder.find(w => w.id === "freewill").owner = "9";
+    const base = MM.compute(rulesLive, MM.SAMPLES[1].make(), "8");
+    const v = MM.compute(rl, MM.SAMPLES[1].make(), "8"), f = MM.compute(rl, MM.SAMPLES[1].make(), "9");
+    near(v.d_stab - base.d_stab, 3, 1e-9, "Виртуальный мир");
+    near(f.d_tech / base.d_tech, 1.25, 1e-9, "Машинная свобода воли: технологии");
+    near(f.d_stab - base.d_stab, -1, 1e-9, "Машинная свобода воли: стабильность");
+    assert(MM.wonderMods(rl, null).length === 0, "без номера страны чудес нет");
+  });
+
   group("Союзы и блоки в механиках");
   MM.setMap(MC, AL);
   const B = rulesLive.tables.bloc, Bid = new Set(B.map(b => b.id));
@@ -866,6 +922,101 @@
     D.querySelector('#mechBlocs [data-bloc="al_sco_nsa"] [data-country="15"]').click();
     await waitFor(() => /#map\/earth\/flat\/15$/.test(W.location.hash) && D.getElementById("stateCardBody").dataset.id === "15", "Гренландия на карте", 30000);
     assert(/Североморский Альянс/.test(text("#stateCardBody")), "союз в карточке Гренландии");
+  });
+  await test("Статья механик: оглавление ведёт на разделы, у каждого раздела «В мире 2200» и «В расчётах»", async () => {
+    await go("wiki/mech/article", () => visible(D.getElementById("mechArticle")) && D.querySelectorAll("#mechArticle .unit-card").length > 40, "статья", 30000);
+    const A = D.getElementById("mechArticle");
+    const toc = [...A.querySelectorAll(".mech-toc a")].map(a => a.getAttribute("href").slice(1));
+    const miss = toc.filter(id => !A.querySelector("#" + id));
+    assert(!miss.length, "оглавление без разделов: " + miss);
+    const h2 = [...A.querySelectorAll("h2")].map(x => x.id);
+    assert(h2.every(id => toc.includes(id)), "разделы без оглавления: " + h2.filter(id => !toc.includes(id)));
+    // раздел (h2) или подраздел (h3) с текстом «в мире» и «в расчётах» до следующего заголовка
+    const NO_WORLD = new Set(["m-chains", "m-params", "m-res", "m-laws", "Что корпорации дают", "Чем страна платит", "Союзы и договоры", "Ресурсы", "Здания"]);
+    const errs = [];
+    for (const hd of A.querySelectorAll("h2, h3")) {
+      const key = hd.id || hd.textContent.trim();
+      if (NO_WORLD.has(key) || NO_WORLD.has(hd.textContent.trim())) continue;
+      let world = false, calc = false;
+      for (let el = hd.nextElementSibling; el && !/^H[23]$/.test(el.tagName); el = el.nextElementSibling) {
+        if (el.classList.contains("m-world")) world = true;
+        if (el.classList.contains("m-label") || el.classList.contains("mech-note")) calc = true;
+      }
+      // у раздела с подразделами «В расчётах» стоит в подразделах
+      let sub = false; if (hd.tagName === "H2") for (let el = hd.nextElementSibling; el && el.tagName !== "H2"; el = el.nextElementSibling) if (el.tagName === "H3") sub = true;
+      if (sub) { if (!world && !["m-state", "m-army"].includes(hd.id)) errs.push(hd.textContent.trim() + ": нет «В мире 2200»"); continue; } // «Государство» и «Армия» описаны в подразделах
+      if (!world || (!calc && key !== "m-unity")) errs.push(hd.textContent.trim() + (world ? ": нет «В расчётах»" : ": нет «В мире 2200»"));
+    }
+    assert(!errs.length, errs.join("; "));
+    return A.querySelectorAll(".m-world").length + " описаний «В мире 2200»";
+  });
+  await test("Статья: карточка на каждый тип юнита, энергии, еды и отрасли — с шапкой 1280×720, характеристиками и описанием", () => {
+    const errs = [];
+    for (const t of ["div", "ac", "ship", "sat", "energy", "food", "industry"]) {
+      const cards = [...D.querySelectorAll('#mechArticle [data-mech-list="units"][data-table="' + t + '"] .unit-card')];
+      if (cards.length !== rulesLive.tables[t].length) errs.push(t + ": карточек " + cards.length + " ≠ " + rulesLive.tables[t].length);
+      for (const c of cards) {
+        const r = rulesLive.tables[t].find(x => t + ":" + x.id === c.dataset.unit);
+        if (!r) { errs.push("лишняя " + c.dataset.unit); continue; }
+        if (c.querySelector("h4").textContent !== r.name || c.querySelector(".unit-desc").textContent !== r.desc) errs.push(c.dataset.unit + ": текст");
+        if ((c.querySelector(".img-slot") || {}).getAttribute?.("data-edit-img") !== "mech.unit." + t + "." + r.id) errs.push(c.dataset.unit + ": нет шапки");
+        if (["div", "ac", "ship", "sat"].includes(t) && !/мощь|запуск/i.test(text('[data-unit="' + c.dataset.unit + '"] .unit-stats'))) errs.push(c.dataset.unit + ": нет характеристик");
+      }
+    }
+    const banners = [...D.querySelectorAll('#mechArticle [data-mech-list="banner"] .img-slot')].map(x => x.getAttribute("data-edit-img"));
+    for (const k of ["army", "air", "navy", "strat", "orbit", "wonders", "unity"]) if (!banners.includes("mech.banner." + k)) errs.push("нет шапки раздела " + k);
+    assert(!errs.length, errs.join("; "));
+    return D.querySelectorAll("#mechArticle .img-slot").length + " мест под картинки";
+  });
+  await test("Шапка 1280×720: у посетителя скрыта, пока картинки нет; с картинкой — 16:9", async () => {
+    assert(W.KGSite.IMG_W === 1280 && W.KGSite.IMG_H === 720, "размер шапки");
+    const el = D.querySelector('#mechArticle [data-edit-img="mech.unit.div.walker"]');
+    assert(!visible(el), "пустая шапка видна посетителю");
+    const key = "img:mech.unit.div.walker", T0 = W.KGSite.data.texts;
+    T0[key] = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    try {
+      W.KGSite.applyTexts(D.getElementById("mechArticle"));
+      assert(visible(el) && el.classList.contains("has-img") && /data:image/.test(el.style.backgroundImage), "картинка не показана");
+      const b = el.getBoundingClientRect();
+      near(b.width / b.height, 16 / 9, 0.03, "пропорции шапки");
+    } finally { delete T0[key]; W.KGSite.applyTexts(D.getElementById("mechArticle")); }
+    assert(!visible(el), "шапка не скрылась после удаления картинки");
+  });
+  await test("Статья: 10 чудес с эффектами, словарь показателей, ресурсы, здания и законы мода, «Единство» — только проект", () => {
+    const wc = [...D.querySelectorAll('#mechArticle [data-mech-list="wonder"] .wonder-card')];
+    assert(wc.length === 10 && wc.every(c => c.querySelector(".unit-stats").textContent.length > 5 && c.querySelector(".img-slot")), "чудеса: " + wc.length);
+    assert(wc.every(c => /Ещё не построено|Построено: /.test(c.querySelector(".wonder-owner").textContent)), "владелец");
+    const groups = new Set(Object.entries(ML.params).map(([k, x]) => x.name || (MM.INPUTS[k] || MM.OUT[k])[0]));
+    const pr = D.querySelectorAll('#mechArticle [data-mech-list="params"] .param-row');
+    assert(pr.length === groups.size, "словарь: " + pr.length + " ≠ " + groups.size);
+    const refs = [...D.querySelectorAll('#mechArticle [data-mech-list="ref"] [data-ref]')].map(x => x.dataset.ref);
+    assert(refs.length === Object.keys(ML.reference).length && refs.every(n => ML.reference[n]), "справочные записи: " + refs.length);
+    assert(/только проект/.test(text("#mechArticle")) && D.getElementById("m-unity"), "Единство");
+  });
+  await test("Справочник: колонка «Описание» и таблица «Чудеса» с владельцами", async () => {
+    await go("wiki/mech/ref", () => D.querySelectorAll("#mechRef table").length >= 12, "справочник");
+    const ths = [...D.querySelectorAll("#mechRef th")].filter(x => x.textContent === "Описание").length;
+    assert(ths >= DESC_T.length + 1, "колонок «Описание»: " + ths);
+    assert(/Чудеса/.test(text("#mechRef")) && /не построено/.test(text("#mechRef")), "таблица чудес");
+    assert(text("#mechRef").includes(rulesLive.tables.div.find(x => x.id === "walker").desc), "описание шагоходов в справочнике");
+  });
+  await test("Карточка страны: описание показателя и типа юнита в подсказке строки, строка «Чудеса страны»", () => {
+    const rl = W.KGMechModel;
+    const box = W.KGMech.countryView({ id: "8", c: rl.SAMPLES[0].make(), world: null, editable: false });
+    D.body.append(box);
+    try {
+      const lab = [...box.querySelectorAll(".mrow .l[data-lore]")];
+      const keys = new Set(lab.map(x => x.dataset.lore));
+      const miss = Object.keys(rl.INPUTS).filter(k => box.querySelector('[data-lore="' + k + '"]') === null && [...box.querySelectorAll(".mrow .l")].some(x => x.textContent === rl.INPUTS[k][0]));
+      assert(!miss.length, "строки без описания: " + miss);
+      assert(lab.every(x => x.title && x.title === ML.params[x.dataset.lore].text), "подсказка не из летописи");
+      const stab = box.querySelector('[data-lore="stability"]');
+      assert(stab && /спокойно спят мегаполисы/.test(stab.title), "стабильность");
+      const walker = [...box.querySelectorAll("table.units td.lored")].find(td => td.textContent === "Шагоходная");
+      assert(walker && walker.title === rulesLive.tables.div.find(x => x.id === "walker").desc, "подсказка у типа дивизии");
+      assert([...box.querySelectorAll(".mrow .l")].some(x => x.textContent === "Чудеса страны"), "строка «Чудеса страны»");
+      return keys.size + " строк с описанием";
+    } finally { box.remove(); }
   });
   await test("Ни одной ошибки JavaScript за весь прогон", () => {
     const e = errs.filter(x => !/youtube|ytimg|ERR_BLOCKED|Failed to load resource/i.test(x));
