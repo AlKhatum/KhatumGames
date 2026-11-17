@@ -53,8 +53,8 @@
       ["infra_growth", "Отдача инфраструктурных расходов", 0.025, "коэф. за ход", ""],
       ["stab_growth", "Влияние стабильности на рост", 0.0001, "за пункт за ход", ""],
       ["nav_growth", "Влияние навигационных спутников на рост", 0.025, "коэф. за ход", ""],
-      ["mop_safe", "Безопасная нагрузка на МОП", 0.5, "доля", ""],
-      ["mop_pen", "Штраф роста за перегрузку МОП", 0.025, "коэф. за ход", ""]
+      ["mop_safe", "Безопасная нагрузка на МОП", 0.1, "доля годных", "Нагрузка = (личный состав − рекруты других стран) / свои годные к службе; закон о мобилизации на неё не влияет"],
+      ["mop_pen", "Штраф роста за перегрузку МОП", 0.125, "коэф. за ход", ""]
     ]],
     ["Армия: гарнизоны, базы, дух", [
       ["garr_base", "Гарнизон на мегаполис: база", 1, "дивизий", ""],
@@ -129,6 +129,16 @@
       ["corp_host_gdp", "Саботаж: потеря ВВП за 1 ед. веса при отношениях −100", 1, "%", ""],
       ["enclave_garr", "Охрана дружественного анклава", 0.5, "дивизий", "Засчитывается в гарнизоны"],
       ["enclave_threat", "Угроза враждебного анклава", 1, "дивизий", "Добавляется к потребности в гарнизонах"]
+    ]],
+    ["Старый Свет (Европа)", [
+      ["ow_threshold", "Порог бесчестья", 10, "пунктов", "С этого значения союз — агрессор: против него вправе воевать все союзы Старого Света"],
+      ["ow_pow", "Рост бесчестья от силы союза", 0.4, "пунктов за ход", "× доля союза в военной мощи Старого Света"],
+      ["ow_size", "Рост бесчестья от размера союза", 0.05, "пунктов за ход", "За каждого члена сверх лидера"],
+      ["ow_inf_access", "Агрессор: доступ к рынкам", -15, "%", "Всем членам союза с бесчестьем не ниже порога"],
+      ["ow_inf_stab", "Агрессор: стабильность", -0.25, "пунктов за ход", ""],
+      ["ow_amend_stab", "Бернский договор изменён: стабильность Европы", -0.25, "пунктов за ход", "Всем странам Старого Света"],
+      ["ow_void_stab", "Бернский договор аннулирован: стабильность Европы", -0.5, "пунктов за ход", "Всем странам Старого Света"],
+      ["ow_viol_stab", "Нарушитель Бернского договора: стабильность", -1, "пунктов за ход", "Стране, которую ГМ отметил нарушителем"]
     ]],
     ["Индекс национальной мощи (сумма весов = 1)", [
       ["w_gdp", "Вес ВВП", 0.3, "доля", ""],
@@ -409,6 +419,57 @@
       ["cloudbase", "Академия «Клаудбейс»", "", "air_power", 15, "", 0], ["translator", "Универсальный переводчик", "", "access", 15, "d_stab", 0.25]]
   };
   const wonderMode = target => (target === "d_stab" ? "add" : "pct");
+
+  // ---------- Старый Свет (Европа) ----------
+  // Союзы Старого Света копят бесчестье — угрозу в глазах остальных европейских держав. За ход оно растёт от доли союза в военной
+  // мощи Европы и от числа членов, скачками — от прокси-войн и резолюций. С порога союз — агрессор: против него вправе воевать
+  // все союзы Европы, его члены теряют доступ к рынкам и стабильность. Бернский договор запрещает европейцам открыто воевать друг
+  // с другом; изменённый или аннулированный договор бьёт по стабильности всей Европы. Состояние хода — mech.ow (видно всем).
+  const owBlocOpts = R => ((R.tables.bloc || []).length ? R.tables.bloc.map(s => [s.id, s.name]) : [["", "— сначала создайте союз —"]]);
+  const owCountryOpts = () => [["", "—"]].concat(Object.keys(mapCountries)
+    .map(id => [id, String(mapCountries[id].name || id).replace(/\n/g, " ")]).sort((a, b) => a[1].localeCompare(b[1], "ru")));
+  TABLES.owbloc = {
+    title: "Старый Свет: союзы", note: "Союзы Европы, которые копят бесчестье. Бесчестье на старте — значение до первого хода ГМа; дальше его ведёт калькулятор (вкладка «Старый Свет»).",
+    fields: [["bloc", "Союз", "sel", owBlocOpts], ["start", "Бесчестье на старте", "num"], ["note", "Чем союз пугает Европу", "text"]],
+    rows: [["ow_slav", "al_sov_slavic_federation", 4, "Евразийская реформация превратила Россию в нечто зловещее; Балканы ушли в союз с изолированной Евразией."],
+      ["ow_med", "al_fra_mediterranean_bloc", 3, "Флот Франко-Иберии хозяйничает в Средиземном море от Лиссабона до Леванта."],
+      ["ow_nsa", "al_sco_nsa", 2, "Мания величия в Абердине и Бирмингеме и самый большой союз Европы."],
+      ["ow_integr", "al_ger_integr", 1, "Сила в договорах, а не в пушках; соседи пока больше смеются, чем боятся."]]
+  };
+  TABLES.owland = {
+    title: "Старый Свет: страны вне союзов", note: "Европейские государства, не входящие в союзы Старого Света. На них тоже действует Бернский договор.",
+    fields: [["country", "Страна", "sel", owCountryOpts]],
+    rows: [["owl_tur", "7"], ["owl_pad", "17"], ["owl_ita", "16"], ["owl_hun", "140"], ["owl_rom", "144"], ["owl_kar", "9"], ["owl_lat", "11"], ["owl_swe", "20"], ["owl_fin", "22"], ["owl_gre", "26"]]
+  };
+  TABLES.owres = {
+    title: "Старый Свет: резолюции союзов", note: "Внутренние и дипломатические резолюции. Принятую резолюцию ГМ отмечает во вкладке «Старый Свет»: бесчестье прибавляется сразу, эффекты действуют, пока резолюция в силе. «Эффект членам» — всем членам, кроме лидера; % к показателю, у стабильности — пункты за ход.",
+    fields: [["name", "Резолюция", "text"], ["bloc", "Союз", "sel", R => [["", "Любой союз Старого Света"]].concat(owBlocOpts(R))],
+      ["who", "Принимает", "sel", [["leader", "Только лидер союза"], ["any", "Любой член союза"]]], ["dis", "Бесчестье при принятии", "num"],
+      ["t1", "Эффект членам", "sel", wonderTargets], ["v1", "Величина членам", "num"], ["t2", "Эффект лидеру", "sel", wonderTargets], ["v2", "Величина лидеру", "num"],
+      ["desc", "Описание", "text"]],
+    rows: [
+      ["ow_integr_green", "Зелёные инвестиции", "al_ger_integr", "leader", 0, "pm_eff", 5, "budget", -3, "Германия вкладывает в «зелёную» промышленность союзников: их заводы растут, казна лидера платит."],
+      ["ow_integr_tech", "Технократический совет", "al_ger_integr", "any", 0, "d_tech", 5, "d_tech", 5, "Общие лаборатории и обмен специалистами вместо пушек."],
+      ["ow_integr_def", "Общая оборона", "al_ger_integr", "leader", 1, "readiness", 10, "budget", -2, "Армии, которые давно не воевали, учатся вместе. Соседи видят в этом угрозу."],
+      ["ow_integr_invite", "Приглашение в ИНТЕГР", "al_ger_integr", "leader", 1, "", 0, "", 0, "Союз зовёт соседа под свои знамёна. Согласие страны и вступление на карте оформляет ГМ."],
+      ["ow_nsa_fleet", "Общий флот Северного моря", "al_sco_nsa", "leader", 1, "navy_power", 10, "budget", -2, "Флот, порты и рыба стоят здесь дороже золота. Шотландия держит общий флот на свои деньги."],
+      ["ow_nsa_ports", "Портовый и рыбный пакт", "al_sco_nsa", "any", 0, "food_prod", 5, "access", 5, "Общие промыслы и открытые порты от Рейкьявика до Бергена."],
+      ["ow_nsa_influence", "Влияние Абердина", "al_sco_nsa", "leader", 0, "", 0, "", 0, "Шотландия продвигает своих людей в правительство союзника. Следующий шаг — интеграция; итог решает ГМ."],
+      ["ow_nsa_integration", "Интеграция союзника", "al_sco_nsa", "leader", 1, "", 0, "", 0, "Союзник, уже подпавший под влияние Абердина, становится частью шотландской системы. Оформляет ГМ."],
+      ["ow_nsa_enemy", "Враг моего врага", "al_sco_nsa", "leader", 2, "", 0, "", 0, "Альянс протягивает руку Финляндии против Евразии."],
+      ["ow_med_tariffs", "Низкие пошлины", "al_fra_mediterranean_bloc", "leader", 0, "export", 5, "budget", -2, "Из блока выгодно не уходить: Франко-Иберия снижает пошлины и теряет часть доходов."],
+      ["ow_med_navy", "Флот от Лиссабона до Леванта", "al_fra_mediterranean_bloc", "leader", 1, "navy_power", 10, "access", 5, "Средиземное море под охраной франко-иберийского флота."],
+      ["ow_med_balkan", "Балканский союз", "al_fra_mediterranean_bloc", "leader", 2, "", 0, "", 0, "Ставка на балканскую войну чужими руками. Прокси-войну ведёт ГМ."],
+      ["ow_med_hegemony", "Средиземноморская гегемония", "al_fra_mediterranean_bloc", "leader", 2, "", 0, "", 0, "Поход за южный берег моря. Войну ведёт ГМ: Бернский договор не защищает страны вне Европы."],
+      ["ow_slav_bread", "Хлеб младшим сёстрам", "al_sov_slavic_federation", "leader", 0, "food_prod", 10, "budget", -3, "Москва везёт союзникам хлеб, а консерваторы ворчат, что Федерация обходится дороже, чем приносит."],
+      ["ow_slav_meds", "Топливо и лекарства", "al_sov_slavic_federation", "leader", 0, "health", 5, "en_supply", -3, "Евразия делится топливом и лекарствами со «младшими» народами."],
+      ["ow_slav_finn", "Финская интервенция", "al_sov_slavic_federation", "leader", 2, "", 0, "", 0, "Вмешательство в дела Финляндии. Войну ведёт ГМ."],
+      ["ow_slav_fold", "Назад в лоно", "al_sov_slavic_federation", "leader", 4, "", 0, "", 0, "Москва силой возвращает отколовшихся. Войну ведёт ГМ."],
+      ["ow_slav_baltic", "Единый Балтийский союз", "al_sov_slavic_federation", "leader", 4, "", 0, "", 0, "Претензия на Балтийскую Федерацию. Войну ведёт ГМ."],
+      ["ow_bern_conf", "Бернская конференция", "", "leader", -1, "", 0, "", 0, "Редкий случай, когда бесчестье снижается: союз идёт на уступки соседям в Берне."],
+      ["ow_bern_amend", "Пересмотр Бернского договора", "", "leader", 2, "", 0, "", 0, "Союз добивается изменения договора. Если Европа согласится, ГМ ставит договору статус «Изменён»."]]
+  };
+  const OW_TREATY = [["active", "Действует"], ["amended", "Изменён"], ["void", "Аннулирован"]];
   // эффекты чудес, которыми владеет страна с номером карты id
   function wonderMods(rules, id) {
     if (id == null) return [];
@@ -657,7 +718,7 @@
     next_pop: ["Население в следующем ходу", "млн чел.", "d2", "res"], next_gdp: ["ВВП в следующем ходу (ориентир)", "млрд кр./год", "d1"],
     mop_total: ["МОП: годные к службе", "тыс. чел.", "int", "", "Население × доля годных × здоровье"],
     mop_share: ["Доля МОП, доступная к призыву", "%", "pct"], mop_avail: ["Доступный МОП", "тыс. чел.", "int", "res"],
-    active: ["Личный состав вооружённых сил", "тыс. чел.", "d1", "res"], mop_load: ["Нагрузка на МОП", "%", "pct", "load", "Выше 50% — экономика теряет рост"],
+    active: ["Личный состав вооружённых сил", "тыс. чел.", "d1", "res"], mop_load: ["Нагрузка на МОП", "%", "pct", "mop", "Доля своих годных к службе, которые уже в армии (рекруты других стран сюда не входят). Выше 10% экономика теряет рост; закон о мобилизации на нагрузку не влияет"],
     staffing: ["Укомплектованность войск", "коэф.", "d2", "coef"], reserve: ["Мобилизационный резерв", "тыс. чел.", "int"],
     div_total: ["Всего дивизий", "дивизий", "int", "res"], pers_ground: ["Личный состав СВ", "тыс. чел.", "d1"],
     need_tank: ["Танки по штату", "шт.", "int"], need_ifv: ["БМП / БТР по штату", "шт.", "int"], need_art: ["Артиллерия по штату", "шт.", "int"],
@@ -757,6 +818,92 @@
     memberIds(b).forEach(id => add(id, "list"));
     for (const id in gmCountries || {}) if (blocLinks(rules, gmCountries[id], id)[b.id] === "gm") add(id, "gm");
     return out.sort((x, y) => (y.leader - x.leader) || 0);
+  }
+
+  // ---------- Старый Свет: состояние, эффекты, бесчестье ----------
+  // ow (mech.ow, публичное): { treaty, dis: { союз: бесчестье }, res: { союз: [id резолюций] }, viol: [страны-нарушители],
+  //   log: [{ turn, bloc, d, why }], growth / share: снимок прироста и доли силы на момент публикации }
+  const owBlocs = R => ((R.tables.owbloc || []).filter(b => b && b.bloc && (R.tables.bloc || []).some(x => x.id === b.bloc)));
+  const owLand = R => (R.tables.owland || []).map(x => String((x && x.country) || "")).filter(Boolean);
+  const owLeader = blocId => (mapAlliances[blocId] && mapAlliances[blocId].leader != null ? String(mapAlliances[blocId].leader) : "");
+  function owState(rules, ow) {
+    const R = normalizeRules(rules), o = ow && typeof ow === "object" ? ow : {};
+    const dis = {}, src = o.dis && typeof o.dis === "object" ? o.dis : {};
+    for (const b of owBlocs(R)) dis[b.bloc] = src[b.bloc] != null && isFinite(+src[b.bloc]) ? +src[b.bloc] : num(b.start);
+    const res = {};
+    if (o.res && typeof o.res === "object") for (const k in o.res) if (Array.isArray(o.res[k])) res[k] = o.res[k].map(String);
+    return {
+      treaty: OW_TREATY.some(t => t[0] === o.treaty) ? o.treaty : "active", dis, res,
+      viol: Array.isArray(o.viol) ? o.viol.map(String) : [], log: Array.isArray(o.log) ? o.log.slice(-60) : [],
+      growth: o.growth && typeof o.growth === "object" ? o.growth : {}, share: o.share && typeof o.share === "object" ? o.share : {}
+    };
+  }
+  // эффекты Старого Света на страну id (как особые эффекты ГМа)
+  function owMods(rules, ow, c, id) {
+    const out = [];
+    if (id == null) return out;
+    const R = normalizeRules(rules), K = R.K, T = R.tables, S = owState(R, ow);
+    id = String(id);
+    const my = blocsOf(R, c, id), mine = owBlocs(R).filter(b => my.includes(b.bloc));
+    if (!mine.length && !owLand(R).includes(id)) return out;
+    const put = (key, name, note, target, value) => {
+      if (!target || !num(value)) return;
+      out.push({ id: "ow:" + key + ":" + target, ow: true, name, note, target, mode: wonderMode(target), value: num(value) });
+    };
+    const blocName = b => ((T.bloc || []).find(x => x.id === b) || { name: b }).name;
+    if (S.treaty === "amended") put("treaty", "Бернский договор изменён", "Европейцам всё легче воевать друг с другом, тревога растёт по всему континенту.", "d_stab", K.ow_amend_stab);
+    if (S.treaty === "void") put("treaty", "Бернский договор аннулирован", "Ничто больше не удерживает европейские державы от открытой войны.", "d_stab", K.ow_void_stab);
+    if (S.viol.includes(id)) put("viol", "Нарушитель Бернского договора", "Страна открыто воевала с европейцами вопреки договору.", "d_stab", K.ow_viol_stab);
+    for (const b of mine) {
+      const nm = blocName(b.bloc), lead = owLeader(b.bloc) === id;
+      if (S.dis[b.bloc] >= num(K.ow_threshold)) {
+        const why = "Бесчестье союза «" + nm + "» достигло порога: Европа видит в нём агрессора, против него вправе воевать все союзы Старого Света.";
+        put("inf:" + b.bloc, "Агрессор Старого Света", why, "access", K.ow_inf_access);
+        put("inf:" + b.bloc, "Агрессор Старого Света", why, "d_stab", K.ow_inf_stab);
+      }
+      for (const rid of S.res[b.bloc] || []) {
+        const x = (T.owres || []).find(r => r.id === rid);
+        if (!x) continue;
+        const note = "Резолюция союза «" + nm + "»." + (x.desc ? " " + x.desc : "");
+        if (lead) put("res:" + b.bloc + ":" + rid + ":l", "Резолюция: " + x.name, note, x.t2, x.v2);
+        else put("res:" + b.bloc + ":" + rid, "Резолюция: " + x.name, note, x.t1, x.v1);
+      }
+    }
+    return out;
+  }
+  // сводка по союзам Старого Света. results — расчёт стран (у ГМа); без него доля и прирост берутся из снимка публикации
+  function owReport(rules, ow, results, countries) {
+    const R = normalizeRules(rules), K = R.K, T = R.tables, S = owState(R, ow);
+    const land = new Set(owLand(R));
+    const blocs = owBlocs(R).map(b => ({ id: b.bloc, row: b, name: ((T.bloc || []).find(x => x.id === b.bloc) || { name: b.bloc }).name,
+      members: blocMembers(R, b.bloc, countries).map(x => x.id), leader: owLeader(b.bloc) }));
+    blocs.forEach(b => b.members.forEach(id => land.add(id)));
+    const pow = id => num(results && results[id] && results[id].total_power);
+    const total = [...land].reduce((s, id) => s + pow(id), 0);
+    for (const b of blocs) {
+      b.power = b.members.reduce((s, id) => s + pow(id), 0);
+      // без расчёта стран — снимок с последней публикации; до первой публикации null («—»)
+      b.share = results ? dv(b.power, total) : S.share[b.id] != null ? num(S.share[b.id]) : null;
+      b.growth = results ? num(K.ow_pow) * b.share + num(K.ow_size) * max(0, b.members.length - 1) : S.growth[b.id] != null ? num(S.growth[b.id]) : null;
+      b.dis = S.dis[b.id];
+      b.infamous = b.dis >= num(K.ow_threshold);
+      b.res = (S.res[b.id] || []).map(rid => (T.owres || []).find(r => r.id === rid)).filter(Boolean);
+    }
+    const alive = blocs.filter(b => b.members.length);
+    return { blocs, treaty: S.treaty, viol: S.viol, log: S.log, europe: [...land], threshold: num(K.ow_threshold),
+      united: alive.length === 1 ? alive[0] : null, infamous: blocs.filter(b => b.infamous) };
+  }
+  // ход: бесчестье каждого союза растёт на прирост от силы и размера (ow меняется на месте)
+  function owNextTurn(rules, ow, results, countries, turn) {
+    const S = owState(rules, ow), rep = owReport(rules, S, results, countries);
+    for (const b of rep.blocs) {
+      const d = +b.growth.toFixed(3);
+      S.dis[b.id] = +(S.dis[b.id] + d).toFixed(3);
+      if (d) S.log.push({ turn, bloc: b.id, d, why: "Рост за ход: сила и размер союза" });
+    }
+    S.log = S.log.slice(-60);
+    Object.assign(ow, S);
+    return ow;
   }
   function corpPresence(rules, c, id) {
     const K = rules.K, T = rules.tables;
@@ -895,6 +1042,9 @@
     // связи стран и обстоятельства (таблица ГМа)
     r.link_mods = (world && Array.isArray(world.links)) ? world.links : [];
     mods = mods.concat(r.link_mods);
+    // Старый Свет: бесчестье союза, Бернский договор, резолюции (готовые эффекты считает computeAll / публикация)
+    r.ow_mods = (world && Array.isArray(world.ow)) ? world.ow : [];
+    mods = mods.concat(r.ow_mods);
     r.health = mod("health", r.health);
 
     // личный состав и юниты
@@ -1003,7 +1153,15 @@
     r.mop_total = r.pop_total * I.mob_share * min(1, r.health) * 1000;
     r.mop_share = num(law.share);
     r.mop_avail = mod("mop_avail", r.mop_total * r.mop_share);
-    r.mop_load = dv(r.active, r.mop_avail, r.active > 0 ? 9.99 : 0);
+    // нагрузка — доля своих годных, взятая в армию: закон о мобилизации задаёт только потолок призыва, а не цену для экономики.
+    // Прибавки к доступному МОП (рекруты других стран) первыми закрывают армию; проценты (идеология, дань рекрутами) меняют пул годных;
+    // убыль в тыс. чел. уменьшает пул.
+    let mopPct = 1, mopAdd = 0;
+    for (const m of mods) if (m.target === "mop_avail" && !m.off) { if (m.mode === "add") mopAdd += num(m.value); else mopPct *= 1 + num(m.value) / 100; }
+    r.mop_ext = max(0, mopAdd);
+    r.mop_pool = max(0, r.mop_total * mopPct + min(0, mopAdd));
+    const ownSoldiers = max(0, r.active - r.mop_ext);
+    r.mop_load = dv(ownSoldiers, r.mop_pool, ownSoldiers > 0 ? 9.99 : 0);
     r.staffing = r.active > 0 ? min(1, r.mop_avail / r.active) : 1;
     r.reserve = max(0, r.mop_avail - r.active);
 
@@ -1083,18 +1241,20 @@
   // все страны сразу (для ГМа): { id: country } → { results, ctx }
   // links — таблица связей ГМа. Сначала страны считаются с обстоятельствами, по этим результатам — доли, взаимозависимость,
   // помощь и отзвук кризиса, затем всё считается ещё раз. ctx[id].links — итоговые эффекты страны (уходят игроку с публикацией).
-  function computeAll(rules, countries, links) {
-    const results = {}, ctx = {};
+  // ow — состояние Старого Света (mech.ow); его эффекты от расчёта стран не зависят и идут в оба прохода
+  function computeAll(rules, countries, links, ow) {
+    const results = {}, ctx = {}, om = {};
+    for (const id in countries) om[id] = owMods(rules, ow, countries[id], id);
     const L = Array.isArray(links) ? links.filter(x => x && !x.off) : [];
     let lm = {};
     if (L.length) {
       const fixed = linkMods(L, countries, null, ["fixed"]);
-      for (const id in countries) results[id] = compute(rules, countries[id], id, { links: fixed[id] || [] });
+      for (const id in countries) results[id] = compute(rules, countries[id], id, { links: fixed[id] || [], ow: om[id] });
       const live = linkMods(L, countries, results, ["share", "sync", "aid", "echo"]);
       for (const id in countries) lm[id] = (fixed[id] || []).concat(live[id] || []);
     }
-    for (const id in countries) results[id] = compute(rules, countries[id], id, { links: lm[id] || [] });
-    for (const id in countries) { ctx[id] = worldCtx(results, id); ctx[id].links = lm[id] || []; }
+    for (const id in countries) results[id] = compute(rules, countries[id], id, { links: lm[id] || [], ow: om[id] });
+    for (const id in countries) { ctx[id] = worldCtx(results, id); ctx[id].links = lm[id] || []; ctx[id].ow = om[id]; }
     for (const id in countries) applyWorld(rules, countries[id], results[id], ctx[id]);
     for (const id in countries) ctx[id].inms = Object.keys(results).filter(x => x !== id).map(x => results[x].inm);
     for (const id in countries) results[id].rank = 1 + ctx[id].inms.filter(x => x > results[id].inm + 1e-9).length;
@@ -1191,6 +1351,7 @@
   window.KGMechModel = {
     K_GROUPS, K_META, TABLES, COUNT_TABLES, INPUTS, OUT, MOD_TARGETS, SAMPLES, CORP_CH, IDEO_FX, ideologyOf, ideoMods,
     defaultRules, normalizeRules, compute, worldCtx, applyWorld, computeAll, emptyCountry, corpPresence, setMap, wonderMods, wonderMode, LINK_KINDS, linkMods, linkIds, normLinks, paramLore, loreDesc, blocLinks, blocsOf, blocMembers, OLD_BLOCS, corpWorld, corpClass, parseImport, importCountry,
-    TURN_MONTHS, TURNS_YEAR, turnYear, firstYear, turnMonths, turnLabel, isOldTurn, quarterRules, quarterMods, quarterLinks
+    TURN_MONTHS, TURNS_YEAR, turnYear, firstYear, turnMonths, turnLabel, isOldTurn, quarterRules, quarterMods, quarterLinks,
+    OW_TREATY, owState, owMods, owReport, owNextTurn
   };
 })();

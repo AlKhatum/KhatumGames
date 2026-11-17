@@ -115,9 +115,12 @@ main { position: relative; z-index: 5; height: calc(100% - var(--topbar-h)); }
   position: absolute; inset: 0; z-index: 9; display: flex; align-items: center; justify-content: center;
   font-family: var(--font-wide); font-weight: 300; letter-spacing: .2em; color: var(--line); background: rgba(4, 18, 40, .85);
 }
-.viewport { position: absolute; inset: 0; overflow: hidden; cursor: default; touch-action: none; }
+/* ЛКМ по карте не должна выделять текст и тащить картинки: браузер тогда шлёт pointercancel и мазок обрывается */
+.viewport { position: absolute; inset: 0; overflow: hidden; cursor: default; touch-action: none; -webkit-user-select: none; user-select: none; }
+.viewport * { -webkit-user-drag: none; }
 .viewport.panning { cursor: grabbing; }
 .viewport.tool-brush, .viewport.tool-pencil, .viewport.tool-eraser { cursor: none; }
+.viewport.tool-eraser.erase-prov { cursor: crosshair; }
 .viewport.tool-fill, .viewport.tool-picker, .viewport.tool-city, .viewport.tool-label, .viewport.tool-marker { cursor: crosshair; }
 .viewport.tool-erase { cursor: not-allowed; }
 .world { position: absolute; left: 0; top: 0; width: 4087px; height: 3554px; transform-origin: 0 0; }

@@ -248,16 +248,16 @@
   // ---------- справочник ----------
   // варианты выбора: список или функция от правил (отрасли, корпорации, союзы)
   const optsOf = o => (typeof o === "function" ? o(rules) : o) || [];
-  const STRUCT_TABLES = ["csector", "corp", "bloc"]; // на них ссылаются другие таблицы
+  const STRUCT_TABLES = ["csector", "corp", "bloc", "owbloc"]; // на них ссылаются другие таблицы
   function rulesView(editable, onChange, rerender) {
     const root = h("div", { class: "rules" });
     const changed = () => { fillArticleLists(); if (onChange) onChange(); };
-    const order = ["div", "ac", "ship", "sat", "industry", "energy", "food", "law", "tier", "wonder", "ideo", "csector", "corp", "bloc", "cdeal"];
+    const order = ["div", "ac", "ship", "sat", "industry", "energy", "food", "law", "tier", "wonder", "ideo", "csector", "corp", "bloc", "cdeal", "owbloc", "owland", "owres"];
     for (const t of order) {
       const meta = M.TABLES[t], rows = rules.tables[t];
       if (!editable && !rows.length) continue;
       const restruct = () => { if (rerender && STRUCT_TABLES.includes(t)) rerender(); };
-      const sec = h("section", { class: "mblock" + (t === "csector" ? " corp-first" : "") }, t === "csector" ? h("h2", { text: "Корпорации и союзы" }) : null, h("h3", { text: meta.title }), meta.note ? h("p", { class: "mech-note", text: meta.note }) : null);
+      const sec = h("section", { class: "mblock" + (t === "csector" ? " corp-first" : "") }, t === "csector" ? h("h2", { text: "Корпорации и союзы" }) : t === "owbloc" ? h("h2", { text: "Старый Свет" }) : null, h("h3", { text: meta.title }), meta.note ? h("p", { class: "mech-note", text: meta.note }) : null);
       const tbl = h("table", { class: "mt rules-t" + (t === "corp" || t === "bloc" || M.TABLES[t].fields.some(([f]) => f === "desc") ? " wide-text" : "") });
       const head = h("tr", null, t === "law" ? h("th", { text: "Ур." }) : null, meta.fields.map(([, label]) => h("th", { text: label })), editable ? h("th") : null);
       tbl.append(h("thead", null, head));
@@ -295,7 +295,7 @@
       sec.append(h("div", { class: "mt-scroll" }, tbl));
       if (editable) sec.append(h("button", { class: "small-btn", text: "+ Добавить строку", onclick: () => {
         const row = { id: uid(t + "_") };
-        for (const [f, , type, opts] of meta.fields) row[f] = type === "num" ? 0 : type === "sel" ? ((optsOf(opts)[0] || [""])[0]) : (f === "name" ? (t === "corp" ? "Новая корпорация" : t === "bloc" ? "Новый союз" : t === "ideo" ? "Новая идеология" : "Новый тип") : "");
+        for (const [f, , type, opts] of meta.fields) row[f] = type === "num" ? 0 : type === "sel" ? ((optsOf(opts)[0] || [""])[0]) : (f === "name" ? (t === "corp" ? "Новая корпорация" : t === "bloc" ? "Новый союз" : t === "ideo" ? "Новая идеология" : t === "owres" ? "Новая резолюция" : "Новый тип") : "");
         if (t === "corp") row.scale = 1;
         if (t === "csector") row.infl = 1;
         rows.push(row); draw(); changed(); restruct();
@@ -358,6 +358,9 @@
     box.append(h("p", { class: "mech-note", text: "Политические, экономические и военные союзы мира. Состав союзов берётся с карты: страна в союзе, если он указан в её карточке на карте. " +
       "Договор корпорации с союзом даёт ей присутствие во всех странах-членах. История союзов — в «Лор → Государства»." }));
     if (!blocs.length) { box.append(h("p", { class: "empty", text: "Союзов пока нет." })); return; }
+    const owRep = owReportNow();
+    box.append(oldWorldView(owRep));
+    const owOf = id => owRep.blocs.find(b => b.id === id);
     const grid = h("div", { class: "bloc-grid" });
     const filt = h("div", { class: "bloc-filter" }, [["", "Все"]].concat(kinds).map(([k, t]) => h("button", { class: "small-btn" + (k ? "" : " active"), "data-kind": k, text: t, onclick: e => {
       filt.querySelectorAll("button").forEach(x => x.classList.toggle("active", x === e.currentTarget));
@@ -368,6 +371,8 @@
       grid.append(h("section", { class: "bloc-card", id: "bloc-" + b.id, "data-kind": b.kind, "data-bloc": b.id },
         h("h3", null, h("span", { class: "bloc-sw", style: "background:" + ((colors[b.id] || {}).color || "transparent") }), b.name),
         h("div", { class: "bloc-kind", text: kindName(b.kind) + " · " + mem.length + " " + plural(mem.length, "страна", "страны", "стран") }),
+        owOf(b.id) ? h("div", { class: "bloc-ow" + (owOf(b.id).infamous ? " bad" : "") }, h("button", { class: "linkish", text: "Старый Свет", onclick: () => owScroll("ow") }),
+          " · бесчестье " + fmt(owOf(b.id).dis, "d1").replace(/,0$/, "") + " из " + fmt(owRep.threshold, "d1").replace(/,0$/, "") + (owOf(b.id).infamous ? " · агрессор" : "")) : null,
         mem.length ? h("ul", { class: "bloc-members" }, mem.map(x => h("li", null,
           h("button", { class: "linkish", title: "Показать на карте", "data-country": x.id, onclick: () => window.KG.showOnMap(x.id) }, flagEl(x.id), " ", countryName(x.id)),
           x.leader ? h("small", { text: " · лидер" }) : x.how === "gm" ? h("small", { text: " · отмечено ГМом" }) : null)))
@@ -378,8 +383,73 @@
     box.append(filt, grid);
   }
 
+  // ---------- Старый Свет (Механики → Союзы, вверху) ----------
+  // у ГМа с расшифрованными данными — живой расчёт, у остальных — снимок доли силы и прироста с последней публикации
+  function owReportNow() {
+    const live = isGm() && mk && Object.keys(gmData).length;
+    return M.owReport(rules, owS(), live ? M.computeAll(rules, gmData, gmLinks, owS()).results : null, live ? gmData : null);
+  }
+  const OW_LORE = [
+    "До Великой ошибки казалось, что Европа стоит на пороге объединения. Мечты разрушил внезапный коллапс экономики и международных отношений. Европейский союз отступил на запад, Россия заняла обширные земли Восточной Европы. Годы сложились в десятилетия, но память о почти объединённой Европе так и не угасла.",
+    "Консолидация Франко-Иберии и подъём движения ИНТЕГР стали прелюдией, итальянская интервенция и Североморский альянс — началом новой эры. Швейцарский плебисцит 2107 года стал первой крупной вспышкой между великими державами после Великой ошибки. За ним последовали Паданское движение и неожиданный союз Балканской Федерации с изолированной Евразией. Евразийская реформация, превратившая российское государство во что-то зловещее, лишь подлила масла в огонь.",
+    "Европа пала низко, но её падение ещё не завершено. Чтобы справиться с растущей нестабильностью, каждый союз стремится объединить континент по своему образу — дипломатией или силой оружия."
+  ];
+  const stripZero = s => s.replace(/,0+$/, "");
+  const owScroll = id => { const t = document.getElementById(id); if (t) t.scrollIntoView({ behavior: "smooth", block: "start" }); };
+  function oldWorldView(rep, inGm) {
+    const K = rules.K, tName = k => (M.MOD_TARGETS.find(t => t[0] === k) || [, k])[1];
+    const sec = h("section", { class: "ow", id: inGm ? null : "ow" }, h("h2", { text: inGm ? "Как это видят все" : "Старый Свет" }));
+    sec.append(h("details", { class: "ow-lore" }, h("summary", { text: "История: почему Европа так и не объединилась" }), OW_LORE.map(p => h("p", { text: p }))));
+    const treaty = (M.OW_TREATY.find(t => t[0] === rep.treaty) || M.OW_TREATY[0])[1];
+    const tNote = { active: "запрещает европейцам открыто воевать друг с другом ради того, что осталось от прежнего мира.",
+      amended: "изменён: открытые войны в Европе стали возможны, тревога бьёт по стабильности всех европейских стран (" + stripZero(fmt(K.ow_amend_stab, "d2")) + " за ход).",
+      void: "аннулирован: ничто не удерживает Европу от войны (" + stripZero(fmt(K.ow_void_stab, "d2")) + " стабильности за ход всем европейцам)." }[rep.treaty];
+    const thr = stripZero(fmt(rep.threshold, "d1"));
+    sec.append(h("p", { class: "mech-note", text: "У каждого крупного союза Европы есть бесчестье — мера угрозы в глазах остальных европейских держав. Оно растёт каждый ход вместе с силой и размером союза, скачками — от прокси-войн в Европе и резолюций, а снижается лишь в редких случаях. С " + thr +
+      " союз становится агрессором: против него вправе воевать все союзы Старого Света, а его члены теряют " + stripZero(fmt(Math.abs(K.ow_inf_access), "d1")) + "% доступа к рынкам и " + stripZero(fmt(Math.abs(K.ow_inf_stab), "d2")) + " стабильности за ход. Объединённая Европа возможна, только когда уцелеет один союз." }),
+      h("div", { class: "ow-status" },
+        h("div", { class: "ow-st" + (rep.treaty === "active" ? "" : " bad") }, h("b", { text: "Бернский договор: " + treaty.toLowerCase() }), h("span", { text: " — " + tNote })),
+        rep.infamous.length ? h("div", { class: "ow-st bad" }, h("b", { text: "Агрессор: " + rep.infamous.map(b => b.name).join(", ") }), h("span", { text: " — все союзы Старого Света вправе объявить ему войну." })) : null,
+        h("div", { class: "ow-st" }, h("b", { text: rep.united ? "Европа может объединиться" : "Объединённой Европы нет" }),
+          h("span", { text: rep.united ? " — уцелел один союз: «" + rep.united.name + "»." : " — союзов в Европе: " + rep.blocs.filter(b => b.members.length).length + "." })),
+        rep.viol.length ? h("div", { class: "ow-st bad" }, h("b", { text: "Нарушители договора: " }), h("span", { text: rep.viol.map(countryName).join(", ") + " (" + stripZero(fmt(K.ow_viol_stab, "d2")) + " стабильности за ход)." })) : null));
+    const tbl = h("table", { class: "mt ow-t" }, h("thead", null, h("tr", null, ["Союз", "Бесчестье", "За ход", "Доля силы Европы", "Принятые резолюции"].map(t => h("th", { text: t })))));
+    const body = h("tbody");
+    for (const b of rep.blocs.slice().sort((x, y) => y.dis - x.dis)) {
+      body.append(h("tr", { class: b.infamous ? "bad" : "" },
+        h("td", null, b.leader ? flagEl(b.leader) : null, " ", h("button", { class: "linkish", text: b.name, onclick: () => owScroll("bloc-" + b.id) })),
+        h("td", { class: "num" }, h("span", { class: "bar" }, h("i", { style: "width:" + Math.max(2, Math.min(100, b.dis / (rep.threshold || 1) * 100)) + "%" })), stripZero(fmt(b.dis, "d2")) + " / " + thr),
+        h("td", { class: "num", text: b.growth == null ? "—" : "+" + fmt(b.growth, "d2") }),
+        h("td", { class: "num", text: b.share == null ? "—" : fmt(b.share, "pct") }),
+        h("td", { text: b.res.length ? b.res.map(x => x.name).join(", ") : "—" })));
+    }
+    tbl.append(body);
+    sec.append(h("div", { class: "mt-scroll" }, tbl));
+    // резолюции союзов
+    const fx = x => [x.t1 && +x.v1 ? "членам " + linkVal({ value: x.v1, mode: x.t1 === "d_stab" ? "add" : "pct", target: x.t1 }) + " " + tName(x.t1).toLowerCase() : "",
+      x.t2 && +x.v2 ? "лидеру " + linkVal({ value: x.v2, mode: x.t2 === "d_stab" ? "add" : "pct", target: x.t2 }) + " " + tName(x.t2).toLowerCase() : ""].filter(Boolean).join(", ");
+    const resBox = h("details", { class: "ow-res" }, h("summary", { text: "Резолюции союзов" }));
+    for (const b of rep.blocs.concat([{ id: "", name: "Любой союз Старого Света", res: [] }])) {
+      const list = rules.tables.owres.filter(x => (x.bloc || "") === b.id);
+      if (!list.length) continue;
+      resBox.append(h("h4", { text: b.name }), h("ul", null, list.map(x => h("li", { class: b.res && b.res.includes(x) ? "on" : "" },
+        h("b", { text: x.name }), h("small", { text: " · " + (x.who === "any" ? "любой член союза" : "только лидер") + (+x.dis ? " · бесчестье " + (+x.dis > 0 ? "+" : "−") + stripZero(fmt(Math.abs(+x.dis), "d1")) : "") + (fx(x) ? " · " + fx(x) : "") + (b.res && b.res.includes(x) ? " · принята" : "") }),
+        x.desc ? h("div", { class: "hint", text: x.desc }) : null))));
+    }
+    sec.append(resBox);
+    if (rep.log.length) {
+      const bn = id => (rep.blocs.find(b => b.id === id) || { name: id }).name;
+      sec.append(h("details", { class: "ow-log" }, h("summary", { text: "Журнал бесчестья" }), h("ul", null, rep.log.slice(-12).reverse().map(e =>
+        h("li", null, h("small", { text: "Ход " + e.turn + " · " }), (e.bloc ? bn(e.bloc) + (+e.d ? ": " + (+e.d > 0 ? "+" : "−") + stripZero(fmt(Math.abs(+e.d), "d2")) : "") + " — " : "") + (e.why || ""))))));
+    }
+    return sec;
+  }
+
   // правила из опубликованного mech.json (опубликованные при ходе длиной в год переводятся на квартал)
   const pubRules = m => M.normalizeRules(M.isOldTurn(m) ? M.quarterRules(m.rules) : m.rules);
+  // Старый Свет: состояние хода (бесчестье, договор, резолюции) — открытое поле mech.ow, правит ГМ
+  // (нормализуется на месте: ссылки на mech.ow остаются живыми между вызовами)
+  const owS = () => { const n = M.owState(rules, mech.ow); if (!mech.ow || typeof mech.ow !== "object") mech.ow = {}; return Object.assign(mech.ow, n); };
 
   // ---------- рейтинг ----------
   function renderRating() {
@@ -606,8 +676,8 @@
     if (r.water_coef < 0.999) w.push("Не хватает пресной воды (" + fmt(r.water_coef, "pct") + ").");
     if (r.b_other < -1e-9) w.push("Перерасход бюджета: статьи в сумме превышают 100%.");
     if (r.readiness < 0.999) w.push("Военный бюджет не покрывает содержание: боеготовность " + fmt(r.readiness, "pct") + ".");
-    if (r.staffing < 0.999) w.push("Армия больше доступного МОП: укомплектованность " + fmt(r.staffing, "pct") + ". Смягчите закон о мобилизации или сократите войска.");
-    else if (r.mop_load > 0.5) w.push("Нагрузка на МОП " + fmt(r.mop_load, "pct") + " — экономика теряет рост.");
+    if (r.staffing < 0.999) w.push("Армия больше доступного МОП: укомплектованность " + fmt(r.staffing, "pct") + ". Ужесточите закон о мобилизации или сократите войска.");
+    if (r.mop_load > +rules.K.mop_safe) w.push("Нагрузка на МОП " + fmt(r.mop_load, "pct") + " годных к службе — экономика теряет рост.");
     if (r.security < 0.999) w.push("Не хватает гарнизонов: безопасность " + fmt(r.security, "pct") + ". Страдают пустоши и стабильность.");
     if (r.equip < 0.9) w.push("Дивизиям не хватает техники: оснащённость " + fmt(r.equip, "pct") + ".");
     if (r.ac_base_coef < 0.999) w.push("Аэродромов не хватает на всю авиацию.");
@@ -647,7 +717,8 @@
         const v = r[key];
         e.textContent = fmt(v, f);
         e.className = "v" + (kind === "res" ? " res" : "") +
-          ((kind === "coef" && v < 0.995) || (kind === "neg" && v < -1e-9) || (kind === "load" && v >= 1) ? " bad" : "") + (kind === "load" && v >= 0.5 && v < 1 ? " warn" : "");
+          ((kind === "coef" && v < 0.995) || (kind === "neg" && v < -1e-9) || (kind === "load" && v >= 1) ? " bad" : "") + (kind === "load" && v >= 0.5 && v < 1 ? " warn" : "") +
+          (kind === "mop" && v > +rules.K.mop_safe ? " warn" : "");
         if (base && f !== "txt" && isFinite(base[key]) && isFinite(v)) {
           const d = v - base[key];
           if (Math.abs(d) > Math.max(1e-6, Math.abs(base[key]) * 1e-6)) e.append(h("small", { class: "delta " + (d > 0 ? "up" : "down"), text: (d > 0 ? "▲ " : "▼ ") + fmt(Math.abs(d), f) }));
@@ -786,6 +857,17 @@
           h("span", { class: "mod-v", text: ms.map(m => linkVal(m) + " · " + targetName(m.target)).join(" · ") }), ms[0].note ? h("span", { class: "hint", text: ms[0].note }) : null));
         box.append(h("h3", { text: "Связи и обстоятельства" }),
           h("p", { class: "mech-note", text: "Следствия союзов, долгов и событий мира. Сила связей меняется вместе с положением стран-партнёров" + (opts.gm ? "; правятся во вкладке «Связи»." : ".") }), ll);
+      }
+      // Старый Свет: бесчестье союза, Бернский договор, резолюции
+      const ow = (opts.world && opts.world.ow) || [];
+      if (ow.length) {
+        const by = new Map();
+        for (const m of ow) { const k = m.name + "|" + m.note; if (!by.has(k)) by.set(k, []); by.get(k).push(m); }
+        const ol = h("div", { class: "links-list" });
+        for (const ms of by.values()) ol.append(h("div", { class: "mod link" }, h("b", { text: ms[0].name }),
+          h("span", { class: "mod-v", text: ms.map(m => linkVal(m) + " · " + targetName(m.target)).join(" · ") }), ms[0].note ? h("span", { class: "hint", text: ms[0].note }) : null));
+        box.append(h("h3", { text: "Старый Свет" }),
+          h("p", { class: "mech-note", text: "Европейские дела: бесчестье союза, Бернский договор и резолюции. Положение всех союзов — в Вики → Механики → Союзы" + (opts.gm ? "; правится во вкладке «Старый Свет»." : ".") }), ol);
       }
       if (opts.gm && c.dossier != null) {
         // справка из импорта: источники и что смоделировано. Игроку на странице не показывается
@@ -1034,7 +1116,7 @@
   }
   function snapshotBase() {
     gmBase = {};
-    try { gmBase = M.computeAll(rules, gmData, gmLinks).results; } catch (e) { console.error(e); }
+    try { gmBase = M.computeAll(rules, gmData, gmLinks, owS()).results; } catch (e) { console.error(e); }
   }
   async function unlockGm() {
     if (!isGm()) return false;
@@ -1126,12 +1208,15 @@
     if (!(await ensureToken())) return;
     const btn = $("mechPublish"); if (btn) btn.disabled = true;
     try {
-      const { results, ctx } = M.computeAll(rules, gmData, gmLinks);
+      const { results, ctx } = M.computeAll(rules, gmData, gmLinks, owS());
       const out = clone(mech);
       out.rules = rules;
       out.turn_months = M.TURN_MONTHS;
       out.updated = new Date().toISOString();
       if (gmLinks.length || out.links) out.links = await C.encJSON(mk, gmLinks);
+      // Старый Свет открыт всем: снимок доли силы и прироста бесчестья для страницы «Союзы» (там данных стран нет)
+      out.ow = M.owState(rules, out.ow); out.ow.growth = {}; out.ow.share = {};
+      for (const b of M.owReport(rules, out.ow, results, gmData).blocs) { out.ow.growth[b.id] = +b.growth.toFixed(3); out.ow.share[b.id] = +b.share.toFixed(4); }
       for (const id in out.countries) {
         if (!gmData[id] || !dks[id]) continue;
         out.countries[id].data = await C.encJSON(dks[id], { c: gmData[id], world: ctx[id], turn: out.turn, year: out.year, turn_months: M.TURN_MONTHS, at: out.updated });
@@ -1304,14 +1389,14 @@
   async function nextTurn() {
     const ids = Object.keys(gmData);
     if (!ids.length) return;
-    const { results } = M.computeAll(rules, gmData, gmLinks);
+    const { results } = M.computeAll(rules, gmData, gmLinks, owS());
     const losses = ids.filter(id => results[id].sat_loss > 0).map(id => countryName(id) + ": " + results[id].sat_loss);
     // мусор: ожидаемые потери дробные — ГМ решает, кого задело (≥ 0,5 — скорее да)
     const debris = ids.filter(id => results[id].debris_loss >= 0.3).map(id => countryName(id) + " ≈ " + fmt(results[id].debris_loss, "d1"));
     if (debris.length) losses.push("от мусора: " + debris.join(", "));
     const y0 = M.firstYear(mech.turn, mech.year);
     const ok = await ask("Перейти к ходу " + (mech.turn + 1) + " (" + M.turnMonths(mech.turn + 1) + " " + M.turnYear(mech.turn + 1, y0) + ")?", "", { confirm: true,
-      note: "У всех стран технологии, стабильность и население примут прогнозные значения." + (losses.length ? " Не забудьте убрать спутники, сошедшие с орбиты (" + losses.join("; ") + ")." : "") });
+      note: "У всех стран технологии, стабильность и население примут прогнозные значения, бесчестье союзов Старого Света вырастет на прирост за ход." + (losses.length ? " Не забудьте убрать спутники, сошедшие с орбиты (" + losses.join("; ") + ")." : "") });
     if (!ok) return;
     for (const id of ids) {
       const c = gmData[id], r = results[id];
@@ -1320,8 +1405,9 @@
       c.in.pop_meg = +((+c.in.pop_meg || 0) * (1 + r.d_pop)).toFixed(3);
       c.in.pop_waste = +((+c.in.pop_waste || 0) * (1 + r.d_pop)).toFixed(3);
     }
+    M.owNextTurn(rules, owS(), results, gmData, mech.turn);
     mech.turn++; mech.year = M.turnYear(mech.turn, y0);
-    markDirty(); renderGm();
+    markDirty(); renderGm(); renderBlocs();
     toast(M.turnLabel(mech.turn, mech.year) + ". Опубликуйте, чтобы игроки увидели.");
   }
   async function editTurn() {
@@ -1347,7 +1433,7 @@
       aid: "Страны «Откуда» платят цену, страны «Кому» получают значение × состояние доноров (полностью при стабильности 60 и выше, ноль при 20 и ниже).",
       echo: "Если показатель стран «Откуда» за ход падает, страны «Кому» получают значение × это падение. Для стабильности 2 значит: кризис отзывается вдвое громче."
     };
-    const { ctx } = M.computeAll(rules, gmData, gmLinks);
+    const { ctx } = M.computeAll(rules, gmData, gmLinks, owS());
     const effOf = L => Object.keys(ctx).flatMap(id => (ctx[id].links || []).filter(m => m.link === L.id).map(m => countryName(id) + ": " + linkVal(m) + " " + tName(m.target)));
     const ids = Object.keys(gmData).sort((a, b) => countryName(a).localeCompare(countryName(b), "ru"));
     const changed = () => { markDirty(); renderGm(); };
@@ -1395,6 +1481,59 @@
     return wrap;
   }
 
+  // ГМ: Старый Свет — бесчестье союзов, прокси-войны, резолюции, Бернский договор (всё публикуется открыто)
+  function gmOldWorld() {
+    const wrap = h("div", { class: "gm-ow" }), S = owS(), rep = owReportNow();
+    const changed = () => { markDirty(); renderGm(); renderBlocs(); };
+    const logIt = (bloc, d, why) => { S.log.push({ turn: mech.turn, bloc, d: +(+d).toFixed(3), why }); S.log = S.log.slice(-60); };
+    const addDis = (bloc, d, why) => { S.dis[bloc] = +(Math.max(0, (S.dis[bloc] || 0) + d)).toFixed(3); logIt(bloc, d, why); };
+    wrap.append(h("p", { class: "mech-note", text: "Видно всем на странице «Союзы». Бесчестье растёт само кнопкой «Следующий ход» (сила и размер союза); прокси-войны, снижения и резолюции вносит ГМ здесь. " +
+      "При бесчестье от порога союз — агрессор: его члены получают штрафы, остальные союзы Европы вправе объявить ему войну. Когда кто-то объявит войну агрессору, договор обычно аннулируют." }));
+    const tSel = h("select", { onchange: () => { S.treaty = tSel.value; logIt("", 0, "Бернский договор: " + (M.OW_TREATY.find(t => t[0] === tSel.value) || [, ""])[1].toLowerCase()); changed(); } },
+      M.OW_TREATY.map(([v, l]) => h("option", { value: v, text: l })));
+    tSel.value = S.treaty;
+    wrap.append(h("div", { class: "ow-gm-row" }, h("label", null, h("b", { text: "Бернский договор: " }), tSel)));
+    for (const b of rep.blocs) {
+      const disIn = h("input", { type: "number", step: "any", min: 0, class: "num", value: S.dis[b.id], onchange: () => {
+        const v = Math.max(0, +disIn.value || 0), d = v - (S.dis[b.id] || 0);
+        if (Math.abs(d) > 1e-9) { S.dis[b.id] = v; logIt(b.id, d, "Правка ГМа"); changed(); }
+      } });
+      const proxy = n => h("button", { class: "small-btn", text: "+" + n, title: "Прокси-война или иной скачок бесчестья", onclick: async () => {
+        const why = await ask("Бесчестье «" + b.name + "» +" + n, "Прокси-война", { note: "Причина попадёт в открытый журнал бесчестья." });
+        if (why == null) return; addDis(b.id, n, why || "Прокси-война"); changed();
+      } });
+      const avail = rules.tables.owres.filter(x => (x.bloc || "") === b.id || !x.bloc);
+      const resList = h("ul", { class: "ow-gm-res" }, avail.map(x => {
+        const on = (S.res[b.id] || []).includes(x.id);
+        const cb = h("input", { type: "checkbox", onchange: () => {
+          const cur = S.res[b.id] = (S.res[b.id] || []).filter(id => id !== x.id);
+          if (cb.checked) { cur.push(x.id); if (+x.dis) addDis(b.id, +x.dis, "Резолюция: " + x.name); else logIt(b.id, 0, "Резолюция: " + x.name); }
+          else logIt(b.id, 0, "Резолюция отменена: " + x.name);
+          changed();
+        } });
+        cb.checked = on;
+        return h("li", null, h("label", null, cb, " ", h("b", { text: x.name }), h("small", { text: " · " + (x.who === "any" ? "любой член" : "лидер") + (+x.dis ? " · бесчестье " + (+x.dis > 0 ? "+" : "") + x.dis : "") })));
+      }));
+      wrap.append(h("section", { class: "ow-gm-card" + (b.infamous ? " bad" : "") },
+        h("h3", null, b.leader ? flagEl(b.leader) : null, " ", b.name, b.infamous ? h("small", { text: " · агрессор" }) : null),
+        h("div", { class: "ow-gm-row" }, h("label", null, "Бесчестье ", disIn), " из " + stripZero(fmt(rep.threshold, "d1")) +
+          (b.growth == null ? "" : " · за ход +" + fmt(b.growth, "d2") + " (доля силы Европы " + fmt(b.share, "pct") + ")") + " · членов " + b.members.length),
+        h("div", { class: "ow-gm-row" }, "Прокси-война / скачок: ", proxy(1), proxy(2), proxy(4)),
+        h("details", null, h("summary", { text: "Резолюции (" + (S.res[b.id] || []).length + " в силе)" }), h("p", { class: "mech-note", text: "Галочка — резолюция принята: бесчестье прибавляется сразу, эффекты действуют, пока галочка стоит. Снятие галочки бесчестье не возвращает." }), resList)));
+    }
+    // нарушители договора
+    const eu = rep.europe.slice().sort((a, b) => countryName(a).localeCompare(countryName(b), "ru"));
+    const vBox = h("div", { class: "chips" });
+    for (const id of S.viol) vBox.append(h("span", { class: "chip" }, countryName(id), h("button", { type: "button", text: "✕", title: "Убрать", onclick: () => { S.viol = S.viol.filter(x => x !== id); changed(); } })));
+    const vAdd = h("select", { onchange: () => { if (vAdd.value && !S.viol.includes(vAdd.value)) { S.viol.push(vAdd.value); logIt("", 0, "Нарушитель Бернского договора: " + countryName(vAdd.value)); changed(); } } },
+      h("option", { value: "", text: "+ страна" }), eu.filter(id => !S.viol.includes(id)).map(id => h("option", { value: id, text: countryName(id) })));
+    vBox.append(vAdd);
+    wrap.append(h("section", { class: "ow-gm-card" }, h("h3", { text: "Нарушители Бернского договора" }),
+      h("p", { class: "mech-note", text: "Страна открыто воевала с европейцами, пока договор в силе: " + stripZero(fmt(rules.K.ow_viol_stab, "d2")) + " стабильности за ход, пока отметка стоит." }), vBox));
+    wrap.append(oldWorldView(rep, true));
+    return wrap;
+  }
+
   // ГМ: корпорации по всем странам
   let gmCorpSel = null;
   function gmCorps() {
@@ -1404,10 +1543,10 @@
     if (!corps.length) { wrap.append(h("p", { class: "empty", text: "Корпораций нет. Добавьте их в «Правилах»." })); return wrap; }
     if (!gmCorpSel || !corpById(gmCorpSel)) gmCorpSel = corps[0].id;
     const ids = Object.keys(gmData).sort((a, b) => countryName(a).localeCompare(countryName(b), "ru"));
-    let all = M.computeAll(rules, gmData, gmLinks), cw = M.corpWorld(rules, all.results);
+    let all = M.computeAll(rules, gmData, gmLinks, owS()), cw = M.corpWorld(rules, all.results);
     const lives = [];
     const live = (fn, tag, cls) => { const e = h(tag || "span", { class: cls || "" }); lives.push({ e, fn }); fn(e); return e; };
-    const refresh = () => { all = M.computeAll(rules, gmData, gmLinks); cw = M.corpWorld(rules, all.results); lives.forEach(L => L.fn(L.e)); };
+    const refresh = () => { all = M.computeAll(rules, gmData, gmLinks, owS()); cw = M.corpWorld(rules, all.results); lives.forEach(L => L.fn(L.e)); };
     const isChild = x => x.parent && corpById(x.parent) && x.parent !== x.id;
 
     const list = h("aside", { class: "gm-list corp-list" });
@@ -1512,6 +1651,7 @@
       h("button", { class: gmView === "countries" ? "active" : "", text: "Страны", onclick: () => { gmView = "countries"; renderGm(); } }),
       h("button", { class: gmView === "corps" ? "active" : "", text: "Корпорации", onclick: () => { gmView = "corps"; renderGm(); } }),
       h("button", { class: gmView === "links" ? "active" : "", text: "Связи", title: "Связи стран и обстоятельства — видит только ГМ", onclick: () => { gmView = "links"; renderGm(); } }),
+      h("button", { class: gmView === "ow" ? "active" : "", text: "Старый Свет", title: "Бесчестье союзов Европы, Бернский договор, резолюции — видно всем", onclick: () => { gmView = "ow"; renderGm(); } }),
       h("button", { class: gmView === "rules" ? "active" : "", text: "Правила", onclick: () => { gmView = "rules"; renderGm(); } }),
       h("span", { class: "sp" }),
       h("button", { text: "+ Страна", onclick: addCountry }),
@@ -1528,10 +1668,11 @@
     }
     if (gmView === "corps") { box.append(gmCorps()); return; }
     if (gmView === "links") { box.append(gmLinksView()); return; }
+    if (gmView === "ow") { box.append(gmOldWorld()); return; }
     const ids = Object.keys(gmData).sort((a, b) => countryName(a).localeCompare(countryName(b), "ru"));
     if (gmSel && !gmData[gmSel]) gmSel = null;
     if (!gmSel && ids.length) gmSel = ids[0];
-    const { results, ctx } = M.computeAll(rules, gmData, gmLinks);
+    const { results, ctx } = M.computeAll(rules, gmData, gmLinks, owS());
     const list = h("aside", { class: "gm-list" });
     if (!ids.length) list.append(h("p", { class: "empty", text: "Нет стран. Нажмите «+ Страна»." }));
     for (const id of ids) {

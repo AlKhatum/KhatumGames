@@ -314,3 +314,29 @@
 .chip button { background: none; border: 0; color: var(--muted); cursor: pointer; padding: 0 4px; }
 .chips select { max-width: 160px; font-size: 12px; }
 .mod.link { border-color: rgba(255, 63, 208, .35); }
+/* Старый Свет (Механики → Союзы и вкладка ГМа) */
+.ow { border: 1px solid var(--line-dim); border-radius: 3px; padding: 12px 14px 14px; margin: 4px 0 18px; background: rgba(9, 14, 36, .55); }
+.ow h2 { margin: 0 0 6px; }
+.ow-lore summary, .ow-res summary, .ow-log summary { cursor: pointer; color: var(--line); font-size: 13px; margin: 6px 0; }
+.ow-lore p { font-size: 13.5px; line-height: 1.55; color: #c7d7ec; margin: 6px 0; }
+.ow-status { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
+.ow-st { font-size: 13px; line-height: 1.45; padding: 6px 10px; border-left: 3px solid var(--line-dim); background: rgba(24, 217, 245, .04); }
+.ow-st.bad, .bloc-ow.bad { border-color: var(--danger); }
+.ow-st.bad b, .bloc-ow.bad, .ow-t tr.bad td:first-child { color: var(--danger); }
+.ow-t .bar { display: inline-block; width: 90px; height: 6px; margin-right: 8px; background: rgba(24, 217, 245, .12); border-radius: 3px; vertical-align: middle; overflow: hidden; }
+.ow-t .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--line), var(--pink)); }
+.ow-t tr.bad .bar i { background: var(--danger); }
+.ow-res h4 { margin: 10px 0 4px; font-size: 13px; color: var(--text); }
+.ow-res ul, .ow-log ul, .ow-gm-res { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; font-size: 13px; }
+.ow-res li small, .ow-log li small, .ow-gm-res small { color: var(--muted); }
+.ow-res li.on b { color: var(--line); }
+.ow-res .hint { color: var(--muted); font-size: 12px; }
+.bloc-ow { font-size: 12px; color: var(--muted); margin: -4px 0 8px; }
+.gm-ow { display: flex; flex-direction: column; gap: 10px; }
+.ow-gm-card { border: 1px solid var(--line-dim); border-radius: 3px; padding: 10px 12px; }
+.ow-gm-card.bad { border-color: var(--danger); }
+.ow-gm-card h3 { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; }
+.ow-gm-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; margin: 4px 0; }
+.ow-gm-row input.num { width: 80px; }
+.ow-gm-row input, .ow-gm-row select { background: rgba(0, 0, 0, .35); border: 1px solid var(--line-dim); border-radius: 3px; color: var(--text); font: inherit; font-size: 13px; padding: 4px 6px; }
+.ow-gm-row .small-btn { margin: 0; }

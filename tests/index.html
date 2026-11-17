@@ -19,12 +19,12 @@
 <div id="summary">Выполняется…</div>
 <div id="out"></div>
 <script src="../js/geo.js?v=20261115a"></script>
-<script src="../js/territory.js?v=20261115a"></script>
+<script src="../js/territory.js?v=20261117v"></script>
 <script src="../js/sats.js?v=20261115e"></script>
 <script src="../js/moon-names.js?v=20261115a"></script>
 <script src="../js/wrap.js?v=20261115a"></script>
 <script src="../js/mech-lore.js?v=20261117q"></script>
-<script src="../js/mech-model.js?v=20261117q"></script>
+<script src="../js/mech-model.js?v=20261117u"></script>
 <script src="../js/mech-crypto.js?v=20261115a"></script>
 <script>
 (async function () {
@@ -347,7 +347,7 @@
     air_power: [366.1241, 201.9091, 162.8447, 186.9668, 87.2473], navy_power: [158.5755, 823.2059, 170.7591, 38.553, 147.7206], ad_power: [259.1363, 139.8179, 90.2762, 132.5497, 52.5544],
     strat_power: [381.6, 32, 0, 154.2436, 0], readiness: [1, 1, 1, 0.9797, 0.7663], total_power: [1990.518, 1988.6047, 908.4682, 856.8181, 569.1068], hdi: [0.7318, 0.879, 0.6576, 0.7149, 0.5947],
     inm: [92.9552, 76.0434, 50.8624, 47.7702, 46.8185], rank: [1, 2, 3, 4, 5], kessler: [0.7725, 0.7725, 0.7725, 0.7725, 0.7725], debris_loss: [4.326, 4.4805, 1.9313, 2.3175, 2.163],
-    launch_cost: [0.7725, 0.7725, 0.7725, 0.7725, 0.7725]
+    launch_cost: [0.7725, 0.7725, 0.7725, 0.7725, 0.7725], mop_load: [0.071421, 0.098948, 0.095968, 0.084207, 0.069543]
   };
   // Excel считает ход длиной в год; на сайте ход = 3 месяца, поэтому всё «за ход» в 4 раза меньше эталона
   for (const k of ["d_tech", "d_stab", "d_gdp", "debris_loss"]) XL[k] = XL[k].map(v => v / MM.TURNS_YEAR);
@@ -359,6 +359,26 @@
       XL[key].forEach((v, i) => near(all.results["s" + i][key], v, Math.max(0.0006, Math.abs(v) * 1e-4), MM.SAMPLES[i].name));
     });
   }
+  await test("Нагрузка на МОП не зависит от закона о мобилизации", () => {
+    // армия ×5: жёсткий закон закрывает нехватку людей, но не снимает штраф к росту
+    const R = [1, 2, 3, 4, 5].map(law => {
+      const c = MM.SAMPLES[0].make(); c.in.mob_law = law;
+      for (const t in c.cnt) for (const k in c.cnt[t]) c.cnt[t][k] *= 5;
+      return MM.compute(rulesM, c, "x");
+    });
+    R.forEach((r, i) => { near(r.mop_load, R[0].mop_load, 1e-12, "нагрузка, закон " + (i + 1)); near(r.d_gdp, R[0].d_gdp, 1e-12, "рост ВВП, закон " + (i + 1)); });
+    near(R[0].mop_load, R[0].active / R[0].mop_total, 1e-12, "личный состав / все годные");
+    assert(R[0].staffing < 0.5 && R[4].staffing === 1, "закон задаёт потолок призыва");
+    // рекруты других стран (прибавка к доступному МОП) первыми закрывают армию, проценты меняют пул своих годных
+    const ext = MM.SAMPLES[0].make(), a0 = MM.compute(rulesM, ext, "x");
+    ext.mods = [{ id: "t1", name: "Рекруты", target: "mop_avail", mode: "add", value: a0.active - 100 }, { id: "t2", name: "Идеология", target: "mop_avail", mode: "pct", value: 10 }];
+    const a1 = MM.compute(rulesM, ext, "x");
+    near(a1.mop_ext, a0.active - 100, 1e-9, "рекруты извне"); near(a1.mop_pool, a0.mop_total * 1.1, 1e-9, "пул годных × 1,1");
+    near(a1.mop_load, 100 / (a0.mop_total * 1.1), 1e-12, "нагрузку дают только свои солдаты");
+    const pen = Math.max(0, R[0].mop_load - rulesM.K.mop_safe) * rulesM.K.mop_pen;
+    assert(pen > 0, "штраф к росту есть");
+    return "нагрузка " + (R[0].mop_load * 100).toFixed(1) + "%, штраф роста " + (pen * 100).toFixed(2) + "% за ход при любом законе";
+  });
   await test("Уровень экономики по ВВП на душу", () => {
     const lv = [0, 1, 2, 3, 4].map(i => all.results["s" + i].econ_level);
     assert(lv.join("|") === "Индустриальная|Развитая|Развивающаяся|Развивающаяся|Развивающаяся", lv.join(", "));
@@ -837,11 +857,11 @@
   group("Союзы и блоки в механиках");
   MM.setMap(MC, AL);
   const B = rulesLive.tables.bloc, Bid = new Set(B.map(b => b.id));
-  await test("Таблица «Союзы и блоки» = все союзы карты + блоки КНР и ИСР", () => {
+  await test("Таблица «Союзы и блоки» = все союзы карты, без лишних блоков", () => {
     const miss = Object.keys(AL).filter(a => !Bid.has(a));
     assert(!miss.length, "нет в механиках: " + miss.map(a => AL[a].name));
     const extra = B.filter(b => !AL[b.id]).map(b => b.id).sort().join(",");
-    assert(extra === "bloc_isr,bloc_prc", "лишние блоки: " + extra);
+    assert(!extra, "лишние блоки: " + extra);
     const kinds = new Set(MM.TABLES.bloc.fields[1][3].map(k => k[0]));
     const bad = B.filter(b => !kinds.has(b.kind) || !b.name || !b.desc || (AL[b.id] && low(AL[b.id].name) !== low(b.name)));
     assert(!bad.length, "ошибки: " + bad.map(b => b.name));
@@ -857,14 +877,12 @@
       if (AL[b.id] && !mem.some(x => x.leader && x.id === String(AL[b.id].leader))) errs.push(b.name + ": не найден лидер");
     }
     assert(!errs.length, errs.join("; "));
-    const prc = MM.blocMembers(rulesLive, "bloc_prc").map(x => x.id).sort().join(","), isr = MM.blocMembers(rulesLive, "bloc_isr").map(x => x.id).sort().join(",");
-    assert(prc === "14,31,84,85" && isr === "16,45", "КНР " + prc + ", ИСР " + isr);
   });
   await test("Членство с карты без данных ГМа: каждая страна союза в своём блоке", () => {
     const bad = Object.keys(MC).filter(id => MC[id].alliance && !MM.blocsOf(rulesLive, MM.emptyCountry(), id).includes(MC[id].alliance));
     assert(!bad.length, bad.map(nm).join(", "));
     const kor = MM.blocLinks(rulesLive, MM.emptyCountry(), "84");
-    assert(kor.al_chin_strategic_cooperation_organization_faction === "map" && kor.bloc_prc === "list", JSON.stringify(kor));
+    assert(kor.al_chin_strategic_cooperation_organization_faction === "map" && Object.keys(kor).length === 1, JSON.stringify(kor));
     assert(!MM.blocsOf(rulesLive, MM.emptyCountry(), "36").length, "Боливар в блоке");
     assert(!MM.blocsOf(rulesLive, MM.emptyCountry()).length, "без номера страны союзов карты нет");
   });
@@ -994,6 +1012,62 @@
     await go("wiki/mech/rating", () => visible(D.getElementById("mechRating")) && D.querySelector("#mechRating table"), "рейтинг");
     await go("wiki/mech/blocs", () => D.querySelectorAll("#mechBlocs .bloc-card").length === B.length, "союзы");
     await go("wiki/mech/my", () => visible(D.getElementById("mechMy")) && D.querySelector("#mechMy .login-box, #mechMy .cv-head"), "моя страна");
+  });
+  group("Старый Свет");
+  const OWB = rulesLive.tables.owbloc.map(b => b.bloc);
+  await test("Союзы Старого Света — 4 союза Европы, страны вне союзов есть на карте и ни в одном из них", () => {
+    assert(OWB.slice().sort().join() === ["al_fra_mediterranean_bloc", "al_ger_integr", "al_sco_nsa", "al_sov_slavic_federation"].sort().join(), OWB.join());
+    assert(OWB.every(b => Bid.has(b)), "союз не из таблицы «Союзы и блоки»");
+    const land = rulesLive.tables.owland.map(x => String(x.country));
+    const bad = land.filter(id => !MC[id] || OWB.includes(MC[id].alliance));
+    assert(!bad.length && new Set(land).size === land.length, "страны: " + bad.map(nm).join(", "));
+    const res = rulesLive.tables.owres;
+    assert(res.every(x => !x.bloc || OWB.includes(x.bloc)) && OWB.every(b => res.some(x => x.bloc === b)), "у каждого союза свои резолюции");
+    const tg = new Set(MM.MOD_TARGETS.map(t => t[0]));
+    assert(res.every(x => (!x.t1 || tg.has(x.t1)) && (!x.t2 || tg.has(x.t2))), "показатели резолюций");
+    return OWB.length + " союза, " + land.length + " стран вне союзов, " + res.length + " резолюций";
+  });
+  await test("Бесчестье: старт по лору, рост за ход = 0,4 × доля силы Европы + 0,05 × (членов − 1)", () => {
+    const S = MM.owState(rulesLive, null);
+    assert(S.dis.al_sov_slavic_federation === 4 && S.dis.al_fra_mediterranean_bloc === 3 && S.dis.al_sco_nsa === 2 && S.dis.al_ger_integr === 1 && S.treaty === "active", JSON.stringify(S));
+    const eu = MM.owReport(rulesLive, null, null).europe, res = {};
+    eu.forEach((id, i) => (res[id] = { total_power: 100 + i }));
+    const rep = MM.owReport(rulesLive, null, res), tot = eu.reduce((s, id) => s + res[id].total_power, 0);
+    for (const b of rep.blocs) {
+      const share = b.members.reduce((s, id) => s + res[id].total_power, 0) / tot;
+      near(b.share, share, 1e-12, b.name + ": доля"); near(b.growth, 0.4 * share + 0.05 * (b.members.length - 1), 1e-12, b.name + ": рост");
+    }
+    const ow = {}; MM.owNextTurn(rulesLive, ow, res, null, 7);
+    const nsa = rep.blocs.find(b => b.id === "al_sco_nsa");
+    near(ow.dis.al_sco_nsa, 2 + +nsa.growth.toFixed(3), 1e-9, "накопление");
+    assert(ow.log.length === 4 && ow.log.every(e => e.turn === 7), "журнал хода");
+    return "Североморский альянс: +" + nsa.growth.toFixed(3) + " за ход";
+  });
+  await test("Эффекты: агрессор, Бернский договор, нарушитель, резолюции членам и лидеру", () => {
+    const e = MM.emptyCountry(), ids = t => (x => x.map(m => m.target + ":" + m.value).sort().join())(t);
+    const scoLead = String(AL.al_sco_nsa.leader), scoMem = Object.keys(MC).find(id => MC[id].alliance === "al_sco_nsa" && id !== scoLead);
+    const tur = String(rulesLive.tables.owland[0].country), far = Object.keys(MC).find(id => !MC[id].alliance && !rulesLive.tables.owland.some(x => String(x.country) === id));
+    assert(!MM.owMods(rulesLive, null, e, scoMem).length, "без событий эффектов нет");
+    const ow = { treaty: "void", dis: { al_sco_nsa: 10 }, viol: [tur], res: { al_sco_nsa: ["ow_nsa_fleet"] } };
+    assert(ids(MM.owMods(rulesLive, ow, e, scoMem)) === "access:-15,d_stab:-0.25,d_stab:-0.5,navy_power:10", ids(MM.owMods(rulesLive, ow, e, scoMem)));
+    assert(ids(MM.owMods(rulesLive, ow, e, scoLead)) === "access:-15,budget:-2,d_stab:-0.25,d_stab:-0.5", "лидер: " + ids(MM.owMods(rulesLive, ow, e, scoLead)));
+    assert(ids(MM.owMods(rulesLive, ow, e, tur)) === "d_stab:-0.5,d_stab:-1", "нарушитель вне союзов");
+    assert(!MM.owMods(rulesLive, ow, e, far).length, "страна вне Европы: " + nm(far));
+    assert(ids(MM.owMods(rulesLive, { treaty: "amended", dis: { al_sco_nsa: 9.99 } }, e, scoMem)) === "d_stab:-0.25", "ниже порога — не агрессор");
+    // через расчёт: доступ к рынкам агрессора −15%
+    const cs = { [scoMem]: MM.SAMPLES[1].make() };
+    const a0 = MM.computeAll(rulesLive, cs, [], null).results[scoMem], a1 = MM.computeAll(rulesLive, cs, [], ow);
+    near(a1.results[scoMem].access, a0.access * 0.85, 1e-9, "доступ к рынкам");
+    assert(a1.ctx[scoMem].ow.length === 4, "эффекты уходят игроку в world.ow");
+  });
+  await test("Механики → Союзы: блок «Старый Свет» с бесчестьем всех союзов Европы", async () => {
+    await go("wiki/mech/blocs", () => D.querySelector("#mechBlocs #ow .ow-t tbody tr"), "Старый Свет");
+    const rows = [...D.querySelectorAll("#mechBlocs #ow .ow-t tbody tr")];
+    assert(rows.length === OWB.length, "строк: " + rows.length);
+    assert(/Бернский договор/.test(D.querySelector("#mechBlocs #ow .ow-status").textContent), "статус договора");
+    const marks = OWB.filter(b => D.querySelector('#mechBlocs [data-bloc="' + b + '"] .bloc-ow'));
+    assert(marks.length === OWB.length, "бесчестье на карточках: " + marks.length);
+    assert(!/(^|[^а-яё])мод(а|е|ом|у)?([^а-яё]|$)|Beyond/i.test(D.querySelector("#mechBlocs #ow").textContent), "без упоминаний мода");
   });
   await test("Механики → Союзы: состав каждого блока как на карте, лидер помечен, фильтр по виду", async () => {
     await go("wiki/mech/blocs", () => D.querySelectorAll("#mechBlocs .bloc-card").length === B.length, "союзы");

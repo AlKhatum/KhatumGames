@@ -1107,7 +1107,7 @@
     pan: "Правая кнопка мыши — двигать карту, колесо — масштаб. Клик по стране — карточка государства. Двойной клик — переименовать (по городу — карточка города). Города и подписи тащите левой кнопкой; у выбранной подписи — кнопки размера шрифта.",
     brush: "Кисть: рисуйте территорию выбранной страны. [ и ] — размер, Alt+клик — взять страну с карты, правая кнопка — двигать карту.",
     pencil: "Карандаш: точная правка границы (1–4 px). Alt+клик — взять страну с карты, правая кнопка — двигать карту.",
-    eraser: "Ластик: убирает территорию (суша становится ничьей).",
+    eraser: "Ластик: убирает территорию (суша становится ничьей). С галочкой «Не трогать соседей» стирает только страну, с которой начали мазок.",
     fill: "Заливка: клик заливает связную область выбранной страной (пустую — только по суше).",
     picker: "Пипетка: кликните по стране, чтобы рисовать ей.",
     city: "Кликните по карте, чтобы добавить город.",
@@ -1116,6 +1116,7 @@
     ruler: "Линейка: кликайте по точкам маршрута — расстояние считается по поверхности Земли. Двойной клик или Enter — закончить, Esc — отменить.",
     compass: "Циркуль: нажмите в центре и тяните — окружность заданного радиуса на поверхности Земли. Esc — отменить."
   };
+  const HINT_ERASE_PROV = "Ластик по провинциям: клик стирает провинцию под курсором целиком, протяжка — все провинции на пути (одним шагом Ctrl+Z). С галочкой «Не трогать соседей» стирается только страна, с которой начали, без неё — вся территория в провинции. В режиме «Провинции» земля снимается с провинции. Правая кнопка — двигать карту.";
   const PAINT = ["brush", "pencil", "eraser", "fill", "picker"];
   const MEASURE = ["ruler", "compass"];
   function setTool(t) {
@@ -1134,9 +1135,23 @@
     if (t === "pencil") { sz.max = 4; sz.value = pencilSize; } else { sz.max = 120; sz.value = brushSize; }
     $("bbSizeVal").textContent = sz.value;
     $("bbCountry").disabled = t === "eraser";
-    cursorEl.style.display = gm && ["brush", "pencil", "eraser"].includes(t) ? "" : "none";
+    syncEraseMode();
+  }
+  // ластик: кругом кисти или провинциями целиком (режим запоминается)
+  const eraseProv = () => tool === "eraser" && $("bbErase").value === "prov";
+  if (ui.eraseMode === "prov") $("bbErase").value = "prov";
+  function syncEraseMode() {
+    const er = tool === "eraser", ep = eraseProv();
+    $("bbErase").classList.toggle("hidden", !er);
+    $("bbSizeBox").classList.toggle("hidden", ep);
+    viewport.classList.toggle("erase-prov", ep);
+    cursorEl.style.display = gm && ["brush", "pencil", "eraser"].includes(tool) && !ep ? "" : "none";
+    if (er && gm && viewMode !== "globe") $("hint").textContent = ep ? HINT_ERASE_PROV : HINTS.eraser;
+    // стирать по провинциям вслепую неудобно — показываем их границы
+    if (ep) { const l = flat.find(x => x.id === "provBorders"); if (l && !isVisible(l)) { ui.vis.provBorders = true; applyLayer(l); buildLayerList(); saveUi(); } }
     updateCursorSize();
   }
+  $("bbErase").addEventListener("change", e => { ui.eraseMode = e.target.value; saveUi(); syncEraseMode(); });
   frame.querySelectorAll("[data-tool]").forEach(b => b.addEventListener("click", () => setTool(tool === b.dataset.tool && MEASURE.includes(tool) ? "pan" : b.dataset.tool)));
   $("undoBtn").onclick = undo; $("redoBtn").onclick = redo;
   let brushSize = 24;
@@ -1259,15 +1274,52 @@
   function startStroke(p) {
     const v = paintValue(); if (v == null) return false;
     const E = eng();
+    if (eraseProv()) {
+      if (!provReady) { toast("Провинции ещё загружаются, подождите пару секунд"); return false; }
+      // «Не трогать соседей» (режим «Страны»): стираем только страну, с которой начали;
+      // 0 — начали с ничьей земли, тогда страну берём первую, на которую попадёт курсор
+      const only = E === T && paintOpts().keep ? T.at(p[0], p[1]) : null;
+      stroke = { E, ch: E.beginStroke(), v: 0, prov: true, done: new Set(), only, hadBox: true };
+      lastPt = p;
+      eraseProvAt(p);
+      return true;
+    }
     const hadBox = v && !!E.bbox[v];
-    stroke = { E, ch: E.beginStroke(), v, r: Math.max(0.5, curSize() / 2), opts: paintOpts(), hadBox };
+    const opts = paintOpts();
+    // ластик с «Не трогать соседей»: стирает только метку, с которой начали мазок
+    // (обычное правило keep защищает всё непустое и ластик не стёр бы ничего)
+    if (v === 0 && opts.keep) { opts.keep = false; opts.only = E.at(p[0], p[1]); }
+    stroke = { E, ch: E.beginStroke(), v, r: Math.max(0.5, curSize() / 2), opts, hadBox };
     lastPt = p;
     E.stamp(p[0], p[1], stroke.r, v, stroke.opts, stroke.ch);
     paintPreview(E, p[0] - stroke.r - 1, p[1] - stroke.r - 1, p[0] + stroke.r + 1, p[1] + stroke.r + 1);
     return true;
   }
+  // ластик по провинциям: провинция под точкой p стирается целиком (раз за мазок)
+  function eraseProvAt(p) {
+    const st = stroke, E = st.E, pid = P.at(p[0], p[1]);
+    if (!pid || st.done.has(pid)) return;
+    if (st.only === 0) { st.only = T.at(p[0], p[1]); if (!st.only) return; }
+    st.done.add(pid);
+    const b = P.bbox[pid]; if (!b) return;
+    const ids = E.ids, pids = P.ids, only = st.only;
+    for (let y = b[1]; y < b[3]; y++) for (let x = b[0], i = y * W + b[0]; x < b[2]; x++, i++) {
+      if (pids[i] !== pid || !ids[i]) continue;
+      if (only != null && ids[i] !== only) continue;
+      E._set(i, 0, st.ch);
+    }
+    paintPreview(E, b[0], b[1], b[2], b[3]);
+  }
   function moveStroke(p) {
     const E = stroke.E;
+    if (stroke.prov) {
+      // идём по отрезку с шагом в пиксель карты, чтобы не перескочить узкую провинцию
+      const n = Math.max(1, Math.ceil(Math.hypot(p[0] - lastPt[0], p[1] - lastPt[1])));
+      for (let k = 1; k <= n; k++) eraseProvAt([lastPt[0] + (p[0] - lastPt[0]) * k / n, lastPt[1] + (p[1] - lastPt[1]) * k / n]);
+      lastPt = p;
+      return;
+    }
+    if (stroke.opts.only === 0) stroke.opts.only = E.at(p[0], p[1]); // начали с пустого места — берём первую задетую метку
     E.line(lastPt[0], lastPt[1], p[0], p[1], stroke.r, stroke.v, stroke.opts, stroke.ch);
     const r = stroke.r + 1;
     paintPreview(E, Math.min(lastPt[0], p[0]) - r, Math.min(lastPt[1], p[1]) - r, Math.max(lastPt[0], p[0]) + r, Math.max(lastPt[1], p[1]) + r);
@@ -1393,7 +1445,12 @@
     return el ? { col: el.dataset.col, id: el.dataset.id, part: el.dataset.part || null } : null;
   };
   viewport.addEventListener("contextmenu", e => e.preventDefault());
+  // ЛКМ не должна запускать перетаскивание браузера (выделенного текста или картинки): тогда браузер
+  // шлёт pointercancel, мазок кисти/ластика обрывается, а за курсором тянется «призрак» картинки
+  viewport.addEventListener("dragstart", e => e.preventDefault());
+  viewport.addEventListener("selectstart", e => e.preventDefault());
   viewport.addEventListener("pointerdown", e => {
+    if (e.button === 0) { const sl = window.getSelection(); if (sl && sl.rangeCount && !sl.isCollapsed) sl.removeAllRanges(); }
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     viewport.setPointerCapture(e.pointerId);
     if (pointers.size === 2) {

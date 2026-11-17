@@ -270,6 +270,7 @@
           const i = y * W + x;
           if (opt.land && !land[i]) continue;
           if (opt.keep && ids[i] !== 0 && ids[i] !== v) continue;
+          if (opt.only != null && ids[i] !== opt.only) continue; // ластик «не трогать соседей»: только эта метка
           if (ids[i] !== v) { T._set(i, v, ch); if (onPixel) onPixel(x, y, v); }
         }
       }
