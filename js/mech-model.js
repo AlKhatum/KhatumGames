@@ -392,10 +392,11 @@
       ["balance", "Равновесие", 0, 0, -5, 10, 0, 0, 0, 0, 0, 0, 0]]
   };
   // ---------- чудеса ----------
-  // Десять великих проектов, каждое одно на весь мир. Построившая страна (владелец) получает до двух эффектов:
-  // % к показателю, у стабильности — пункты за ход. Владельца ставит ГМ в «Справочнике», таблица «Чудеса».
+  // Десять великих проектов, каждое одно на весь мир. Чудо не строят: ГМ выдаёт его игроку за сюжетные действия.
+  // Страна-владелец получает до двух эффектов: % к показателю, у стабильности — пункты за ход. Владельца ставит ГМ
+  // в «Справочнике», таблица «Чудеса». Пока чудо не выдано, игроки видят вместо эффектов и описания «Данные недоступны».
   const wonderTargets = () => [["", "—"]].concat(MOD_TARGETS);
-  const wonderOwners = () => [["", "— не построено —"]].concat(Object.keys(mapCountries)
+  const wonderOwners = () => [["", "— не выдано —"]].concat(Object.keys(mapCountries)
     .map(id => [id, String(mapCountries[id].name || id).replace(/\n/g, " ")]).sort((a, b) => a[1].localeCompare(b[1], "ru")));
   TABLES.wonder = {
     title: "Чудеса", note: "Каждое чудо одно на весь мир. Владелец получает эффекты: % к показателю, у изменения стабильности — пункты за ход. Пока владельца нет, чудо не действует.",
@@ -417,6 +418,66 @@
       for (const [tf, vf] of [["t1", "v1"], ["t2", "v2"]]) if (w[tf] && +w[vf]) out.push({ id: "wonder:" + w.id + ":" + tf, name: "Чудо: " + w.name, target: w[tf], mode: wonderMode(w[tf]), value: +w[vf] });
     }
     return out;
+  }
+
+  // ---------- связи стран и обстоятельства ----------
+  // Таблица ГМа (хранится в data/mech.json зашифрованной ключом ГМа, игроку не видна). Строка:
+  //   { id, name, kind, from: [номера стран], to: [номера стран], target, value, cost_t, cost_v, note, off }
+  // Виды:
+  //   fixed — обстоятельство: страны «to» (или «from») получают эффект value на target (как особый эффект ГМа);
+  //   share — доля (дань): каждая страна «from» теряет value% показателя, страны «to» делят его между собой;
+  //   sync  — взаимозависимость: у каждого участника target меняется на value × зависимость × состояние партнёров
+  //           (зависимость = ВВП партнёров / (свой ВВП + ВВП партнёров); состояние = (стабильность − 35) / 35, от −1 до 1);
+  //   aid   — помощь: «from» платят cost_v на cost_t, «to» получают value × состояние доноров ((стабильность − 20) / 40, от 0 до 1);
+  //   echo  — отзвук кризиса: если target у «from» за ход падает, «to» получают value × это падение (прибавкой).
+  // Режим, как у чудес: изменение стабильности — пункты за ход, остальное — проценты (у доли и отзвука — прибавка в единицах).
+  const LINK_KINDS = [["fixed", "Обстоятельство"], ["share", "Доля (дань)"], ["sync", "Взаимозависимость"], ["aid", "Помощь"], ["echo", "Отзвук кризиса"]];
+  const linkIds = x => (Array.isArray(x) ? x : String(x || "").split(/[\s,;]+/)).map(String).filter(Boolean);
+  const stabIn = c => +(((c || {}).in || {}).stability) || 0;
+  const syncState = s => Math.max(-1, Math.min(1, (s - 35) / 35));
+  const aidState = s => Math.max(0, Math.min(1, (s - 20) / 40));
+  // эффекты связей для всех стран: { id: [mods] }. R — результаты расчёта стран (для доли, взаимозависимости и отзвука)
+  function linkMods(links, countries, R, kinds) {
+    const out = {}, has = id => countries[id] && (!R || R[id]);
+    const put = (L, id, target, mode, value, tag) => {
+      if (!has(id) || !target || !isFinite(value) || Math.abs(value) < 0.0005) return;
+      (out[id] = out[id] || []).push({ id: "link:" + L.id + ":" + target + (tag || ""), link: L.id, kind: L.kind, name: String(L.name || "Связь"), note: String(L.note || ""), target, mode, value: +value.toFixed(3) });
+    };
+    const gdpOf = id => Math.max(0, +((R && R[id] && R[id].gdp) || 0));
+    for (const L of Array.isArray(links) ? links : []) {
+      if (!L || L.off || (kinds && !kinds.includes(L.kind))) continue;
+      const from = linkIds(L.from).filter(has), to = linkIds(L.to).filter(has), v = +L.value || 0, t = L.target, mode = wonderMode(t);
+      if (L.kind === "fixed") (to.length ? to : from).forEach(id => put(L, id, t, mode, v));
+      else if (L.kind === "share" && to.length) {
+        let tot = 0;
+        for (const s of from) if (!to.includes(s)) { tot += (+((R[s] || {})[t]) || 0) * v / 100; put(L, s, t, "pct", -v); }
+        to.forEach(id => put(L, id, t, "add", tot / to.length, ":in"));
+      } else if (L.kind === "sync") {
+        const mem = [...new Set(from.concat(to))];
+        for (const m of mem) {
+          const P = mem.filter(p => p !== m), W = P.reduce((s, p) => s + gdpOf(p), 0);
+          if (!W) continue;
+          const dep = W / (W + gdpOf(m)), st = P.reduce((s, p) => s + gdpOf(p) * syncState(stabIn(countries[p])), 0) / W;
+          put(L, m, t, mode, v * dep * st);
+        }
+      } else if (L.kind === "aid") {
+        const st = from.length ? from.reduce((s, d) => s + aidState(stabIn(countries[d])), 0) / from.length : 0;
+        if (L.cost_t && +L.cost_v) from.forEach(d => put(L, d, L.cost_t, wonderMode(L.cost_t), -Math.abs(+L.cost_v), ":cost"));
+        to.forEach(id => put(L, id, t, mode, v * st));
+      } else if (L.kind === "echo") {
+        const fall = from.length ? from.reduce((s, d) => s + Math.min(0, +((R[d] || {})[t]) || 0), 0) / from.length : 0;
+        if (fall < 0) to.forEach(id => put(L, id, t, "add", v * fall));
+      }
+    }
+    return out;
+  }
+  // строки таблицы связей из файла или черновика: только известные виды и показатели
+  function normLinks(list) {
+    const kinds = new Set(LINK_KINDS.map(k => k[0])), tg = new Set(MOD_TARGETS.map(t => t[0]));
+    return (Array.isArray(list) ? list : []).filter(L => L && kinds.has(L.kind) && tg.has(L.target)).map((L, i) => ({
+      id: String(L.id || "").replace(/[^\w-]/g, "").slice(0, 40) || "link" + i, name: String(L.name || "Связь").slice(0, 120), kind: L.kind,
+      from: linkIds(L.from).slice(0, 80), to: linkIds(L.to).slice(0, 80), target: L.target, value: +L.value || 0,
+      cost_t: tg.has(L.cost_t) ? L.cost_t : "", cost_v: +L.cost_v || 0, note: String(L.note || "").slice(0, 500), off: !!L.off }));
   }
   // прежние названия идеологий (до переименования) — чтобы старые сохранения стран не теряли эффекты
   const IDEO_OLD_NAMES = { "верховенство": "supremacy", "алчность": "voracity", "покорение": "mastery" };
@@ -737,7 +798,8 @@
   }
 
   // id — номер страны на карте (для союзов карты); без него считаются только галочки ГМа
-  function compute(rules, country, id) {
+  // world.links — эффекты связей и обстоятельств для этой страны (считает computeAll, игрок получает их с публикацией)
+  function compute(rules, country, id, world) {
     rules = normalizeRules(rules);
     const K = rules.K, T = rules.tables;
     const c = country || {};
@@ -791,6 +853,9 @@
     const wm = wonderMods(rules, id);
     r.wonders = [...new Set(wm.map(m => m.name.replace(/^Чудо: /, "")))].join(", ") || "—";
     mods = mods.concat(wm);
+    // связи стран и обстоятельства (таблица ГМа)
+    r.link_mods = (world && Array.isArray(world.links)) ? world.links : [];
+    mods = mods.concat(r.link_mods);
     r.health = mod("health", r.health);
 
     // личный состав и юниты
@@ -977,10 +1042,20 @@
     return r;
   }
   // все страны сразу (для ГМа): { id: country } → { results, ctx }
-  function computeAll(rules, countries) {
+  // links — таблица связей ГМа. Сначала страны считаются с обстоятельствами, по этим результатам — доли, взаимозависимость,
+  // помощь и отзвук кризиса, затем всё считается ещё раз. ctx[id].links — итоговые эффекты страны (уходят игроку с публикацией).
+  function computeAll(rules, countries, links) {
     const results = {}, ctx = {};
-    for (const id in countries) results[id] = compute(rules, countries[id], id);
-    for (const id in countries) ctx[id] = worldCtx(results, id);
+    const L = Array.isArray(links) ? links.filter(x => x && !x.off) : [];
+    let lm = {};
+    if (L.length) {
+      const fixed = linkMods(L, countries, null, ["fixed"]);
+      for (const id in countries) results[id] = compute(rules, countries[id], id, { links: fixed[id] || [] });
+      const live = linkMods(L, countries, results, ["share", "sync", "aid", "echo"]);
+      for (const id in countries) lm[id] = (fixed[id] || []).concat(live[id] || []);
+    }
+    for (const id in countries) results[id] = compute(rules, countries[id], id, { links: lm[id] || [] });
+    for (const id in countries) { ctx[id] = worldCtx(results, id); ctx[id].links = lm[id] || []; }
     for (const id in countries) applyWorld(rules, countries[id], results[id], ctx[id]);
     for (const id in countries) ctx[id].inms = Object.keys(results).filter(x => x !== id).map(x => results[x].inm);
     for (const id in countries) results[id].rank = 1 + ctx[id].inms.filter(x => x > results[id].inm + 1e-9).length;
@@ -1028,7 +1103,7 @@
   // формат: { format: "khatum-countries", v: 1, blocs: [{id, name, kind, desc}], countries: { idСтраныКарты: { name, tier, blocs: [id], in, cnt, mods, notes, corp: { idКорпорации: { pres, rel, enc } } } } }
   function parseImport(data) {
     if (!data || data.format !== "khatum-countries" || !data.countries || typeof data.countries !== "object") throw new Error("это не файл стран KhatumGames");
-    return { blocs: Array.isArray(data.blocs) ? data.blocs.filter(b => b && b.id && b.name) : [], countries: data.countries };
+    return { blocs: Array.isArray(data.blocs) ? data.blocs.filter(b => b && b.id && b.name) : [], countries: data.countries, links: Array.isArray(data.links) ? normLinks(data.links) : null };
   }
   // запись файла → данные страны калькулятора: только известные поля, числа в допустимых пределах, юниты — только существующих типов
   function importCountry(rules, rec) {
@@ -1072,6 +1147,6 @@
 
   window.KGMechModel = {
     K_GROUPS, K_META, TABLES, COUNT_TABLES, INPUTS, OUT, MOD_TARGETS, SAMPLES, CORP_CH, IDEO_FX, ideologyOf, ideoMods,
-    defaultRules, normalizeRules, compute, worldCtx, applyWorld, computeAll, emptyCountry, corpPresence, setMap, wonderMods, wonderMode, paramLore, loreDesc, blocLinks, blocsOf, blocMembers, OLD_BLOCS, corpWorld, corpClass, parseImport, importCountry
+    defaultRules, normalizeRules, compute, worldCtx, applyWorld, computeAll, emptyCountry, corpPresence, setMap, wonderMods, wonderMode, LINK_KINDS, linkMods, linkIds, normLinks, paramLore, loreDesc, blocLinks, blocsOf, blocMembers, OLD_BLOCS, corpWorld, corpClass, parseImport, importCountry
   };
 })();

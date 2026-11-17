@@ -133,9 +133,15 @@
   // Картинка хранится в site.json → texts["img:<ключ>"]; при публикации сайта уходит файлом в assets/site/.
   // Посетитель видит шапку, только если картинка загружена; ГМ в режиме правки видит пустую рамку 16:9 и кнопки.
   const IMG_W = 1280, IMG_H = 720, imgKey = k => "img:" + k;
+  // Картинка по умолчанию (assets/mech/*.svg, список — assets/mech/art.js) видна, пока ГМ не загрузил свою.
+  // «✕» у картинки по умолчанию прячет её (значение "none"), «↺» возвращает.
+  const ART = window.KGMechArt || { files: {} }, artFiles = ART.files || {};
+  const defaultImg = key => (artFiles[key] ? artFiles[key] + "?v=" + ART.v : "");
   function paintSlot(el) {
-    const v = site.texts[imgKey(el.getAttribute("data-edit-img"))];
+    const key = el.getAttribute("data-edit-img"), own = site.texts[imgKey(key)], v = own === "none" ? "" : own || defaultImg(key);
     el.classList.toggle("has-img", !!v);
+    el.classList.toggle("img-default", !!v && !own);
+    el.classList.toggle("img-reset", !!own && !!defaultImg(key));
     el.style.backgroundImage = v ? 'url("' + String(v).replace(/"/g, "%22") + '")' : "";
   }
   // картинка → ровно 1280×720 (обрезка по центру, как background-size: cover)
@@ -158,7 +164,8 @@
       h("span", { class: "img-slot-ph" }, h("b", { text: "Шапка 1280 × 720" }), h("small", { text: label })),
       h("span", { class: "img-slot-tools edit-only" },
         h("button", { type: "button", class: "small-btn", text: "Картинка", title: "Загрузить картинку (обрежется до 1280×720)", onclick: e => { e.stopPropagation(); uploadSlot(el); } }),
-        h("button", { type: "button", class: "small-btn danger", text: "✕", title: "Убрать картинку", onclick: e => { e.stopPropagation(); setVal(imgKey(key), undefined); paintSlot(el); } })));
+        h("button", { type: "button", class: "small-btn img-back", text: "↺", title: "Вернуть рисунок по умолчанию", onclick: e => { e.stopPropagation(); setVal(imgKey(key), undefined); paintSlot(el); } }),
+        h("button", { type: "button", class: "small-btn danger", text: "✕", title: "Убрать картинку", onclick: e => { e.stopPropagation(); setVal(imgKey(key), defaultImg(key) ? "none" : undefined); paintSlot(el); } })));
     el.addEventListener("click", () => { if (editing && !el.classList.contains("has-img")) uploadSlot(el); });
     paintSlot(el);
     return el;

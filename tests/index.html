@@ -24,7 +24,7 @@
 <script src="../js/moon-names.js?v=20261115a"></script>
 <script src="../js/wrap.js?v=20261115a"></script>
 <script src="../js/mech-lore.js?v=20261117b"></script>
-<script src="../js/mech-model.js?v=20261117b"></script>
+<script src="../js/mech-model.js?v=20261117d"></script>
 <script src="../js/mech-crypto.js?v=20261115a"></script>
 <script>
 (async function () {
@@ -715,10 +715,10 @@
     assert(r.tables.div[0].desc === ML.units.div.walker.text, r.tables.div[0].desc);
     assert(r.tables.div[1].desc === "Мой текст", "описание ГМа");
   });
-  await test("Чудеса: 10 из летописи, эффекты на существующие показатели", () => {
+  await test("Чудеса: 10 из летописи, описания закрыты, эффекты на существующие показатели", () => {
     const W0 = rulesLive.tables.wonder, tg = new Set(MM.MOD_TARGETS.map(x => x[0]));
     assert(W0.length === 10 && Object.keys(ML.wonders).length === 10, "чудес " + W0.length);
-    const bad = W0.filter(w => !w.name || !w.desc || w.desc !== ML.wonders[w.id].text || !tg.has(w.t1) || !+w.v1 || (w.t2 && !tg.has(w.t2)) || (w.owner && !MC[w.owner]));
+    const bad = W0.filter(w => !w.name || w.desc || ML.wonders[w.id].text || !tg.has(w.t1) || !+w.v1 || (w.t2 && !tg.has(w.t2)) || (w.owner && !MC[w.owner]));
     assert(!bad.length, bad.map(w => w.name).join(", "));
   });
   await test("Чудо действует только на страну-владельца: «Клаудбейс» даёт +15% к мощи ВВС", () => {
@@ -739,6 +739,49 @@
     near(f.d_tech / base.d_tech, 1.25, 1e-9, "Машинная свобода воли: технологии");
     near(f.d_stab - base.d_stab, -1, 1e-9, "Машинная свобода воли: стабильность");
     assert(MM.wonderMods(rl, null).length === 0, "без номера страны чудес нет");
+  });
+
+  group("Связи стран и обстоятельства");
+  const mkC = (i, stab) => { const c = MM.SAMPLES[i].make(); c.in.stability = stab; return c; };
+  await test("Обстоятельство: эффект только у стран «Кому», стабильность — пункты за ход", () => {
+    const cs = { "8": mkC(0, 50), "9": mkC(0, 50) };
+    const L = [{ id: "a", name: "Кризис", kind: "fixed", from: [], to: ["8"], target: "d_stab", value: -2 }, { id: "b", name: "Рынок", kind: "fixed", to: ["8"], target: "gdp", value: 10 }];
+    const { results: R, ctx } = MM.computeAll(rulesLive, cs, L), R0 = MM.computeAll(rulesLive, cs).results;
+    near(R["8"].d_stab - R0["8"].d_stab, -2, 1e-9, "стабильность");
+    near(R["8"].gdp / R0["8"].gdp, 1.1, 1e-6, "ВВП");
+    near(R["9"].gdp, R0["9"].gdp, 1e-9, "чужая страна");
+    assert(ctx["8"].links.length === 2 && !ctx["9"].links.length, "эффекты в мире страны");
+    // игрок считает свою страну сам: эффекты связей приходят с публикацией в world.links
+    const solo = MM.compute(rulesLive, cs["8"], "8", ctx["8"]);
+    near(solo.gdp, R["8"].gdp, 1e-6, "расчёт игрока совпадает с расчётом ГМа");
+  });
+  await test("Доля (дань): дистрикт теряет 15% ВВП, Централ получает их прибавкой", () => {
+    const cs = { "116": mkC(0, 50), "117": mkC(1, 50), "118": mkC(2, 50) };
+    const R0 = MM.computeAll(rulesLive, cs).results;
+    const { results: R } = MM.computeAll(rulesLive, cs, [{ id: "t", name: "Дань", kind: "share", from: ["117", "118"], to: ["116"], target: "gdp", value: 15 }]);
+    near(R["117"].gdp / R0["117"].gdp, 0.85, 1e-6, "дистрикт 1");
+    near(R["116"].gdp - R0["116"].gdp, 0.15 * (R0["117"].gdp + R0["118"].gdp), 0.01, "Централ");
+  });
+  await test("Взаимозависимость: малая страна зависит от большой сильнее, кризис партнёра даёт минус", () => {
+    const big = mkC(0, 70), small = mkC(4, 70);
+    const L = [{ id: "s", name: "Рынок", kind: "sync", from: ["1", "2"], target: "gdp", value: 10 }];
+    small.in.pop_meg /= 4; small.in.pop_waste /= 4;
+    const all = MM.computeAll(rulesLive, { "1": big, "2": small }, L), ok = all.ctx;
+    assert(all.results["2"].gdp < all.results["1"].gdp, "малая страна не меньше большой");
+    const vb = ok["1"].links[0].value, vs = ok["2"].links[0].value;
+    assert(vs > vb && vs > 0 && vs <= 10, "малой: " + vs + ", большой: " + vb);
+    const bad = MM.computeAll(rulesLive, { "1": mkC(0, 10), "2": small }, L).ctx;
+    assert(bad["2"].links[0].value < 0, "кризис партнёра: " + bad["2"].links[0].value);
+  });
+  await test("Помощь: донор платит цену, получатель получает по состоянию донора; отзвук кризиса", () => {
+    const L = [{ id: "h", name: "Хлеб", kind: "aid", from: ["8"], to: ["10"], target: "food_prod", value: 10, cost_t: "budget", cost_v: 3 }];
+    const good = MM.computeAll(rulesLive, { "8": mkC(0, 70), "10": mkC(1, 50) }, L).ctx, poor = MM.computeAll(rulesLive, { "8": mkC(0, 20), "10": mkC(1, 50) }, L).ctx;
+    near(good["10"].links[0].value, 10, 1e-9, "полная помощь");
+    assert(!poor["10"].links.length && poor["8"].links[0].value === -3, "донор в кризисе не помогает, но платит");
+    const E = [{ id: "e", name: "Отзвук", kind: "echo", from: ["84"], to: ["85"], target: "d_stab", value: 2 }, { id: "c", name: "Кризис", kind: "fixed", to: ["84"], target: "d_stab", value: -30 }];
+    const r = MM.computeAll(rulesLive, { "84": mkC(0, 50), "85": mkC(1, 50) }, E);
+    near(r.ctx["85"].links[0].value, 2 * MM.computeAll(rulesLive, { "84": mkC(0, 50) }, [E[1]]).results["84"].d_stab, 1e-3, "вдвое громче");
+    assert(MM.normLinks([{ kind: "bad", target: "gdp" }, { kind: "fixed", target: "nope" }, { kind: "fixed", target: "gdp", to: "8, 9" }]).map(x => x.to.join()).join("|") === "8,9", "фильтр строк");
   });
 
   group("Союзы и блоки в механиках");
@@ -968,10 +1011,12 @@
     assert(!errs.length, errs.join("; "));
     return D.querySelectorAll("#mechArticle .img-slot").length + " мест под картинки";
   });
-  await test("Шапка 1280×720: у посетителя скрыта, пока картинки нет; с картинкой — 16:9", async () => {
+  await test("Шапка 1280×720: рисунок по умолчанию, своя картинка ГМа важнее, «✕» прячет; 16:9", async () => {
     assert(W.KGSite.IMG_W === 1280 && W.KGSite.IMG_H === 720, "размер шапки");
     const el = D.querySelector('#mechArticle [data-edit-img="mech.unit.div.walker"]');
-    assert(!visible(el), "пустая шапка видна посетителю");
+    assert(visible(el) && el.classList.contains("img-default") && /assets\/mech\/div\/walker\.svg/.test(el.style.backgroundImage), "нет рисунка по умолчанию");
+    const art = W.KGMechArt.keys, slots = [...D.querySelectorAll("#mechArticle [data-edit-img]")].map(x => x.getAttribute("data-edit-img"));
+    assert(slots.every(k => art.includes(k)), "без рисунка: " + slots.filter(k => !art.includes(k)).join(", "));
     const key = "img:mech.unit.div.walker", T0 = W.KGSite.data.texts;
     T0[key] = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
     try {
@@ -979,13 +1024,17 @@
       assert(visible(el) && el.classList.contains("has-img") && /data:image/.test(el.style.backgroundImage), "картинка не показана");
       const b = el.getBoundingClientRect();
       near(b.width / b.height, 16 / 9, 0.03, "пропорции шапки");
+      T0[key] = "none"; W.KGSite.applyTexts(D.getElementById("mechArticle"));
+      assert(!visible(el), "шапка не скрылась после «✕»");
     } finally { delete T0[key]; W.KGSite.applyTexts(D.getElementById("mechArticle")); }
-    assert(!visible(el), "шапка не скрылась после удаления картинки");
+    assert(visible(el) && el.classList.contains("img-default"), "рисунок по умолчанию не вернулся");
   });
-  await test("Статья: 10 чудес с эффектами, словарь показателей, ресурсы, здания и законы, «Единство» — только проект", () => {
+  await test("Статья: 10 чудес (невыданные — «Данные недоступны»), словарь показателей, ресурсы, здания и законы, «Единство» — только проект", () => {
     const wc = [...D.querySelectorAll('#mechArticle [data-mech-list="wonder"] .wonder-card')];
     assert(wc.length === 10 && wc.every(c => c.querySelector(".unit-stats").textContent.length > 5 && c.querySelector(".img-slot")), "чудеса: " + wc.length);
-    assert(wc.every(c => /Ещё не построено|Построено: /.test(c.querySelector(".wonder-owner").textContent)), "владелец");
+    assert(wc.every(c => /^(Не выдано|Владелец: .+)$/.test(c.querySelector(".wonder-owner").textContent)), "владелец");
+    const shut = wc.filter(c => c.classList.contains("locked"));
+    assert(shut.every(c => /данные недоступны/i.test(c.querySelector(".unit-stats").textContent) && !c.querySelector(".unit-desc").textContent), "закрытые чудеса показывают эффекты");
     const groups = new Set(Object.entries(ML.params).map(([k, x]) => x.name || (MM.INPUTS[k] || MM.OUT[k])[0]));
     const pr = D.querySelectorAll('#mechArticle [data-mech-list="params"] .param-row');
     assert(pr.length === groups.size, "словарь: " + pr.length + " ≠ " + groups.size);
@@ -997,7 +1046,7 @@
     await go("wiki/mech/ref", () => D.querySelectorAll("#mechRef table").length >= 12, "справочник");
     const ths = [...D.querySelectorAll("#mechRef th")].filter(x => x.textContent === "Описание").length;
     assert(ths >= DESC_T.length + 1, "колонок «Описание»: " + ths);
-    assert(/Чудеса/.test(text("#mechRef")) && /не построено/.test(text("#mechRef")), "таблица чудес");
+    assert(/Чудеса/.test(text("#mechRef")) && /не выдано/.test(text("#mechRef")) && /Данные недоступны/.test(text("#mechRef")), "таблица чудес");
     assert(text("#mechRef").includes(rulesLive.tables.div.find(x => x.id === "walker").desc), "описание шагоходов в справочнике");
   });
   await test("Карточка страны: описание показателя и типа юнита в подсказке строки, строка «Чудеса страны»", () => {

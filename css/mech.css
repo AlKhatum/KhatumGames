@@ -284,6 +284,9 @@
 .site-edit [data-rule-desc]:empty::before, .site-edit .param-row [data-edit-text]:empty::before { content: attr(data-placeholder); font-style: italic; opacity: .6; }
 .wonder-owner { font-size: 12px; color: #7dff6a; }
 .wonder-owner.none { color: var(--muted); }
+/* чудо не выдано: сведения закрыты */
+.wonder-card .unit-stats.na, .rules-t td.na { color: var(--muted); font-style: italic; }
+.wonder-card .unit-desc:empty::before { content: attr(data-placeholder); color: var(--muted); font-style: italic; }
 .param-list { display: flex; flex-direction: column; margin: 8px 0 14px; }
 .param-row { display: grid; grid-template-columns: minmax(150px, 230px) minmax(0, 1fr); gap: 4px 18px; padding: 9px 0; border-bottom: 1px solid rgba(24, 217, 245, .15); }
 .param-row .pt { font-weight: 600; color: var(--text); }
@@ -293,3 +296,21 @@
 .law-desc { color: var(--muted); }
 .mrow .l.lored, td.lored { text-decoration: underline dotted rgba(24, 217, 245, .5); text-underline-offset: 3px; cursor: help; }
 @media (max-width: 640px) { .param-row { grid-template-columns: minmax(0, 1fr); } }
+
+/* связи стран и обстоятельства (вкладка ГМа «Связи») */
+.gm-links-top { display: flex; gap: 8px; align-items: center; margin: 8px 0 12px; }
+.gm-links-top input[type=search] { flex: 1; min-width: 0; }
+.link-card { border: 1px solid var(--line-dim); border-radius: 3px; padding: 10px 12px; margin-bottom: 10px; background: rgba(9, 14, 36, .5); }
+.link-card.off { opacity: .5; }
+.lc-head { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.lc-head .ln-name { flex: 1 1 240px; font-weight: 600; }
+.lc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px 12px; margin: 8px 0; }
+.lc-grid label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
+.link-card textarea { width: 100%; box-sizing: border-box; }
+.lc-eff { font-size: 12px; color: var(--line); margin-top: 6px; }
+.lc-eff.empty { color: var(--muted); }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.chip { display: inline-flex; align-items: center; gap: 2px; padding: 1px 2px 1px 8px; border: 1px solid var(--line-dim); border-radius: 12px; font-size: 12px; color: var(--text); }
+.chip button { background: none; border: 0; color: var(--muted); cursor: pointer; padding: 0 4px; }
+.chips select { max-width: 160px; font-size: 12px; }
+.mod.link { border-color: rgba(255, 63, 208, .35); }

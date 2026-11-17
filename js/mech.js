@@ -12,7 +12,7 @@
   let config = null, mech = null, mechPub = null, mapCountries = {};
   let rules = M.defaultRules();
   // ГМ
-  let mk = null, gmPw = null, dks = {}, gmData = {}, gmSel = null, gmView = "countries", gmDirty = false, gmBase = {};
+  let mk = null, gmPw = null, dks = {}, gmData = {}, gmSel = null, gmView = "countries", gmDirty = false, gmBase = {}, gmLinks = [];
   // игрок
   let player = null, sandbox = false;
 
@@ -147,17 +147,21 @@
         slot("mech.unit." + tb + "." + r.id, r.name), h("h4", { text: r.name }), st(r) ? h("div", { class: "unit-stats", text: st(r) }) : null,
         h("p", { class: "unit-desc", "data-rule-desc": tb + ":" + r.id, "data-placeholder": "Описание…", text: r.desc || "" })));
     });
-    // чудеса: владелец, эффекты, описание
+    // чудеса: владелец, эффекты, описание. Чудо выдаёт ГМ за сюжет; пока не выдано, игрок видит «Данные недоступны»
     const wl = document.querySelector('[data-mech-list="wonder"]');
     if (wl) {
       wl.innerHTML = "";
       const tName = k => (M.MOD_TARGETS.find(x => x[0] === k) || [, k])[1];
       const fx = (k, v) => k && +v ? tName(k) + " " + (+v > 0 ? "+" : "−") + String(Math.abs(+v)).replace(".", ",") + (M.wonderMode(k) === "add" ? " за ход" : "%") : "";
-      for (const w of rules.tables.wonder) wl.append(h("article", { class: "unit-card wonder-card", "data-wonder": w.id },
-        slot("mech.wonder." + w.id, w.name), h("h4", { text: w.name }),
-        h("div", { class: "unit-stats", text: [fx(w.t1, w.v1), fx(w.t2, w.v2)].filter(Boolean).join(" · ") }),
-        h("div", { class: "wonder-owner" + (w.owner ? "" : " none"), text: w.owner ? "Построено: " + countryName(w.owner) : "Ещё не построено" }),
-        h("p", { class: "unit-desc", "data-rule-desc": "wonder:" + w.id, "data-placeholder": "Описание…", text: w.desc || "" })));
+      for (const w of rules.tables.wonder) {
+        const open = !!w.owner || isGm(), eff = [fx(w.t1, w.v1), fx(w.t2, w.v2)].filter(Boolean).join(" · ");
+        wl.append(h("article", { class: "unit-card wonder-card" + (w.owner ? "" : " locked"), "data-wonder": w.id },
+          slot("mech.wonder." + w.id, w.name), h("h4", { text: w.name }),
+          h("div", { class: "unit-stats" + (open ? "" : " na"), text: open ? eff || "Эффектов нет" : "Эффекты: данные недоступны",
+            title: open && !w.owner ? "Чудо не выдано: эффекты видит только ГМ" : null }),
+          h("div", { class: "wonder-owner" + (w.owner ? "" : " none"), text: w.owner ? "Владелец: " + countryName(w.owner) : "Не выдано" }),
+          h("p", { class: "unit-desc", "data-rule-desc": "wonder:" + w.id, "data-placeholder": "Данные недоступны", text: w.desc || "" })));
+      }
     }
     // словарь показателей: запись летописи → строки калькулятора
     const pl = document.querySelector('[data-mech-list="params"]'), L = window.KGMechLore;
@@ -264,7 +268,9 @@
           const tr = h("tr", null, t === "law" ? h("td", { class: "num", text: String(i + 1) }) : null);
           for (const [f, , type, opts] of meta.fields) {
             let cell;
-            if (!editable) {
+            if (!editable && t === "wonder" && (f === "desc" ? !row.desc : /^[tv][12]$/.test(f) && !row.owner && !isGm())) {
+              cell = h("td", { class: "na" + (f === "desc" ? " desc" : ""), text: f === "desc" || f === "t1" ? "Данные недоступны" : "—" });
+            } else if (!editable) {
               const v = row[f];
               cell = h("td", { class: (type === "num" ? "num" : "") + (f === "desc" ? " desc" : ""), text: type === "sel" ? ((optsOf(opts).find(o => o[0] === String(v)) || [, v])[1]) : type === "num" ? fmt(+v, Math.abs(+v) < 1 && +v !== 0 ? "d3" : "d2").replace(/,?0+$/, "") : v });
             } else if (type === "sel") {
@@ -625,7 +631,7 @@
     M.COUNT_TABLES.forEach(t => (c.cnt[t] = c.cnt[t] || {}));
     const lives = [];
     let r = null;
-    const calc = () => { r = M.compute(rules, c, opts.id); M.applyWorld(rules, c, r, opts.world); return r; };
+    const calc = () => { r = M.compute(rules, c, opts.id, opts.world); M.applyWorld(rules, c, r, opts.world); return r; };
     const live = (fn, cls) => { const e = h("span", { class: cls || "" }); lives.push({ e, fn }); return e; };
     function refresh() {
       calc();
@@ -767,6 +773,17 @@
       box.append(h("h3", { text: "Особые эффекты" }), list);
       if (opts.gm) box.append(h("button", { class: "small-btn", text: "+ Эффект", onclick: () => editMod(null) }));
       draw();
+      // связи стран и обстоятельства: эффекты считает калькулятор ГМа по положению партнёров, игрок видит только свои
+      const lk = (opts.world && opts.world.links) || [];
+      if (lk.length) {
+        const by = new Map();
+        for (const m of lk) { if (!by.has(m.link)) by.set(m.link, []); by.get(m.link).push(m); }
+        const ll = h("div", { class: "links-list" });
+        for (const ms of by.values()) ll.append(h("div", { class: "mod link" }, h("b", { text: ms[0].name }),
+          h("span", { class: "mod-v", text: ms.map(m => linkVal(m) + " · " + targetName(m.target)).join(" · ") }), ms[0].note ? h("span", { class: "hint", text: ms[0].note }) : null));
+        box.append(h("h3", { text: "Связи и обстоятельства" }),
+          h("p", { class: "mech-note", text: "Следствия союзов, долгов и событий мира. Сила связей меняется вместе с положением стран-партнёров" + (opts.gm ? "; правятся во вкладке «Связи»." : ".") }), ll);
+      }
       if (opts.gm && c.dossier != null) {
         // справка из импорта: источники и что смоделировано. Игроку на странице не показывается
         const dt = h("textarea", { class: "notes dossier", rows: 8 });
@@ -999,11 +1016,14 @@
         gmData[id] = rec.data ? (await C.decJSON(dks[id], rec.data)).c : M.emptyCountry();
       } catch (e) { console.error("страна " + id, e); toast("Не удалось расшифровать страну " + countryName(id)); }
     }
+    // связи стран и обстоятельства — только ГМу (зашифрованы мастер-ключом)
+    gmLinks = [];
+    if (mech.links) { try { gmLinks = M.normLinks(await C.decJSON(mk, mech.links)); } catch (e) { console.error(e); toast("Не удалось расшифровать связи стран"); } }
     snapshotBase();
   }
   function snapshotBase() {
     gmBase = {};
-    try { gmBase = M.computeAll(rules, gmData).results; } catch (e) { console.error(e); }
+    try { gmBase = M.computeAll(rules, gmData, gmLinks).results; } catch (e) { console.error(e); }
   }
   async function unlockGm() {
     if (!isGm()) return false;
@@ -1046,7 +1066,7 @@
     } catch (e) { mk = null; }
   }
   function lockGm() {
-    mk = null; dks = {}; gmData = {}; gmSel = null; gmDirty = false;
+    mk = null; dks = {}; gmData = {}; gmSel = null; gmDirty = false; gmLinks = [];
     try { sessionStorage.removeItem(MK_KEY); } catch (e) { /* */ }
     mech = clone(mechPub); rules = M.normalizeRules(mech.rules);
     fillArticleLists(); renderRef();
@@ -1059,7 +1079,7 @@
     const dot = $("mechDirty"); if (dot) dot.classList.remove("hidden");
     clearTimeout(draftTimer);
     draftTimer = setTimeout(() => {
-      try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ base: mechPub.updated, time: Date.now(), mech, gmData, rules })); } catch (e) { toast("Не удалось сохранить черновик в браузере"); }
+      try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ base: mechPub.updated, time: Date.now(), mech, gmData, rules, gmLinks })); } catch (e) { toast("Не удалось сохранить черновик в браузере"); }
     }, 800);
   }
   async function offerDraft() {
@@ -1070,6 +1090,7 @@
     if (!ok) { try { localStorage.removeItem(DRAFT_KEY); } catch (e) { /* */ } return; }
     const gmBox = mech.gm; // пароль ГМа мог смениться после черновика — оставляем актуальную обёртку ключа
     mech = d.mech; mech.gm = gmBox || mech.gm; gmData = d.gmData; rules = M.normalizeRules(d.rules);
+    if (Array.isArray(d.gmLinks)) gmLinks = M.normLinks(d.gmLinks);
     // ключи стран из черновика: новые страны были созданы в нём
     for (const id in mech.countries) if (!dks[id]) { try { dks[id] = await C.unlockWithKey(mk, mech.countries[id].kg); } catch (e) { /* */ } }
     gmDirty = true; fillArticleLists();
@@ -1089,10 +1110,11 @@
     if (!(await ensureToken())) return;
     const btn = $("mechPublish"); if (btn) btn.disabled = true;
     try {
-      const { results, ctx } = M.computeAll(rules, gmData);
+      const { results, ctx } = M.computeAll(rules, gmData, gmLinks);
       const out = clone(mech);
       out.rules = rules;
       out.updated = new Date().toISOString();
+      if (gmLinks.length || out.links) out.links = await C.encJSON(mk, gmLinks);
       for (const id in out.countries) {
         if (!gmData[id] || !dks[id]) continue;
         out.countries[id].data = await C.encJSON(dks[id], { c: gmData[id], world: ctx[id], turn: out.turn, year: out.year, at: out.updated });
@@ -1150,8 +1172,10 @@
       { key: "mode", label: "Уже подключённые страны", type: "select", options: [["skip", "Не трогать"], ["replace", "Заменить данные (пароли игроков сохраняются)"]],
         hint: "В файле стран: " + all.length + ". Новых: " + fresh.length + ", уже подключено: " + have.length + (all.length > ids.length ? ", нет на карте: " + (all.length - ids.length) : "") + ". Новым странам пароли создаются автоматически — их можно посмотреть в карточке страны." },
       { key: "corp", label: "Корпорации в заменяемых странах", type: "select", options: [["file", "Взять из файла"], ["keep", "Оставить как есть"]],
-        hint: fileCorps ? "В файле корпорации расставлены в " + fileCorps + " странах (присутствие, отношения, анклавы)." : "В файле корпораций нет — у заменяемых стран останутся прежние." }
-    ], { mode: "skip", corp: fileCorps ? "file" : "keep" });
+        hint: fileCorps ? "В файле корпорации расставлены в " + fileCorps + " странах (присутствие, отношения, анклавы)." : "В файле корпораций нет — у заменяемых стран останутся прежние." },
+      { key: "links", label: "Связи стран и обстоятельства", type: "select", options: [["file", "Заменить из файла"], ["keep", "Оставить как есть"]],
+        hint: data.links ? "В файле связей: " + data.links.length + ". Сейчас в калькуляторе: " + gmLinks.length + "." : "В файле связей нет — останутся прежние (" + gmLinks.length + ")." }
+    ], { mode: "skip", corp: fileCorps ? "file" : "keep", links: data.links && data.links.length ? "file" : "keep" });
     if (!v) return;
     // союзы из файла — в правила (если такого ещё нет)
     const B = rules.tables.bloc;
@@ -1176,10 +1200,13 @@
       gmData[id] = c; n++;
       if (n % 10 === 0) toast("Импорт: " + n + " из " + todo.length + "…");
     }
-    if (!n) { toast("Новых стран нет — ничего не изменено"); return; }
+    const linksIn = v.links === "file" && data.links;
+    if (linksIn) gmLinks = data.links;
+    if (!n && !linksIn) { toast("Новых стран нет — ничего не изменено"); return; }
+    if (!n) { markDirty(); gmView = "links"; renderGm(); toast("Связи стран заменены: " + gmLinks.length + ". Проверьте и нажмите «Опубликовать»."); return; }
     gmSel = todo[0]; gmView = "countries";
     markDirty(); renderGm();
-    toast("Импортировано стран: " + n + ". Проверьте и нажмите «Опубликовать».");
+    toast("Импортировано стран: " + n + (linksIn ? ", связей: " + gmLinks.length : "") + ". Проверьте и нажмите «Опубликовать».");
   }
   // корпорация: добавление (corp = null) и правка — из калькулятора, рейтинга и лора
   async function editCorp(corp, fromCalc) {
@@ -1260,7 +1287,7 @@
   async function nextTurn() {
     const ids = Object.keys(gmData);
     if (!ids.length) return;
-    const { results } = M.computeAll(rules, gmData);
+    const { results } = M.computeAll(rules, gmData, gmLinks);
     const losses = ids.filter(id => results[id].sat_loss > 0).map(id => countryName(id) + ": " + results[id].sat_loss);
     // мусор: ожидаемые потери дробные — ГМ решает, кого задело (≥ 0,5 — скорее да)
     const debris = ids.filter(id => results[id].debris_loss >= 0.3).map(id => countryName(id) + " ≈ " + fmt(results[id].debris_loss, "d1"));
@@ -1285,6 +1312,69 @@
     mech.turn = +v.turn || 1; mech.year = +v.year || 2200; markDirty(); renderGm();
   }
 
+  // значение эффекта связи: пункты, проценты или прибавка в единицах показателя
+  const linkVal = m => (+m.value >= 0 ? "+" : "−") + fmt(Math.abs(+m.value), m.mode === "add" && Math.abs(+m.value) >= 10 ? "d1" : "d2").replace(/,?0+$/, "") + (m.mode === "pct" ? "%" : m.target === "d_stab" ? " за ход" : "");
+
+  // ГМ: связи стран и обстоятельства (видит только ГМ; игрок — свои эффекты в карточке страны)
+  let gmLinkQ = "";
+  function gmLinksView() {
+    const wrap = h("div", { class: "gm-links" });
+    const kinds = M.LINK_KINDS, tName = k => (M.MOD_TARGETS.find(t => t[0] === k) || [, k])[1];
+    const kindHint = {
+      fixed: "Страны «Кому» получают эффект, как особый эффект ГМа. Стабильность — пункты за ход, остальное — проценты.",
+      share: "Каждая страна «Откуда» теряет значение % показателя, страны «Кому» делят собранное между собой (прибавкой в единицах).",
+      sync: "Все страны из обоих списков связаны: показатель каждой меняется на значение × зависимость × состояние партнёров. Зависимость больше у маленьких экономик, состояние от −1 (стабильность 0) до +1 (стабильность 70 и выше).",
+      aid: "Страны «Откуда» платят цену, страны «Кому» получают значение × состояние доноров (полностью при стабильности 60 и выше, ноль при 20 и ниже).",
+      echo: "Если показатель стран «Откуда» за ход падает, страны «Кому» получают значение × это падение. Для стабильности 2 значит: кризис отзывается вдвое громче."
+    };
+    const { ctx } = M.computeAll(rules, gmData, gmLinks);
+    const effOf = L => Object.keys(ctx).flatMap(id => (ctx[id].links || []).filter(m => m.link === L.id).map(m => countryName(id) + ": " + linkVal(m) + " " + tName(m.target)));
+    const ids = Object.keys(gmData).sort((a, b) => countryName(a).localeCompare(countryName(b), "ru"));
+    const changed = () => { markDirty(); renderGm(); };
+    wrap.append(h("p", { class: "mech-note", text: "Связи стран и лорные обстоятельства: общие рынки, дань, дотации, кризисы. Таблицу видит только ГМ (она хранится зашифрованной), игрок видит в своей карточке только эффекты на свою страну с пояснением. Эффекты пересчитываются по положению стран-партнёров при каждом расчёте и уходят игрокам с публикацией." }));
+    const q = h("input", { type: "search", placeholder: "Поиск по названию или стране…", value: gmLinkQ, oninput: () => { gmLinkQ = q.value; filter(); } });
+    wrap.append(h("div", { class: "gm-links-top" }, q, h("span", { class: "mech-note", text: "Связей: " + gmLinks.length }), h("button", { class: "small-btn", text: "+ Связь", onclick: () => {
+      gmLinks.unshift({ id: uid("link_"), name: "Новая связь", kind: "fixed", from: [], to: [], target: "d_stab", value: 0, cost_t: "", cost_v: 0, note: "", off: false }); gmLinkQ = ""; changed();
+    } })));
+    const cards = [];
+    const chips = (L, f) => {
+      const box = h("div", { class: "chips" });
+      for (const id of L[f]) box.append(h("span", { class: "chip" }, countryName(id), h("button", { type: "button", text: "✕", title: "Убрать", onclick: () => { L[f] = L[f].filter(x => x !== id); changed(); } })));
+      const add = h("select", { onchange: () => { if (add.value && !L[f].includes(add.value)) { L[f].push(add.value); changed(); } } },
+        h("option", { value: "", text: "+ страна" }), ids.filter(id => !L[f].includes(id)).map(id => h("option", { value: id, text: countryName(id) })));
+      box.append(add);
+      return box;
+    };
+    const sel = (list, val, on) => { const s = h("select", { onchange: () => on(s.value) }, list.map(([v, l]) => h("option", { value: v, text: l }))); s.value = val || ""; return s; };
+    const numIn = (val, on) => { const i = h("input", { type: "number", step: "any", class: "num", value: val, onchange: () => on(+i.value || 0) }); return i; };
+    for (const L of gmLinks) {
+      const eff = effOf(L);
+      const name = h("input", { type: "text", class: "ln-name", value: L.name, onchange: () => { L.name = name.value.trim() || "Связь"; changed(); } });
+      const note = h("textarea", { rows: 2, placeholder: "Пояснение для игрока (видно в его карточке)", onchange: () => { L.note = note.value; markDirty(); } });
+      note.value = L.note || "";
+      const card = h("section", { class: "link-card" + (L.off ? " off" : "") },
+        h("div", { class: "lc-head" }, name, sel(kinds, L.kind, v => { L.kind = v; changed(); }),
+          h("button", { class: "small-btn", text: L.off ? "Включить" : "Выключить", onclick: () => { L.off = !L.off; changed(); } }),
+          h("button", { class: "small-btn danger", text: "✕", title: "Удалить связь", onclick: async () => { if (await ask("Удалить «" + L.name + "»?", "", { confirm: true })) { gmLinks.splice(gmLinks.indexOf(L), 1); changed(); } } })),
+        h("p", { class: "mech-note", text: kindHint[L.kind] || "" }),
+        h("div", { class: "lc-grid" },
+          L.kind !== "fixed" ? h("label", null, h("span", { text: L.kind === "sync" ? "Участники" : "Откуда" }), chips(L, "from")) : null,
+          h("label", null, h("span", { text: L.kind === "sync" ? "Ещё участники" : "Кому" }), chips(L, "to")),
+          h("label", null, h("span", { text: "Показатель" }), sel(M.MOD_TARGETS, L.target, v => { L.target = v; changed(); })),
+          h("label", null, h("span", { text: L.kind === "share" ? "Доля, %" : L.kind === "echo" ? "Множитель" : "Значение" }), numIn(L.value, v => { L.value = v; changed(); })),
+          L.kind === "aid" ? h("label", null, h("span", { text: "Цена для доноров" }), sel([["", "— без цены —"]].concat(M.MOD_TARGETS), L.cost_t, v => { L.cost_t = v; changed(); })) : null,
+          L.kind === "aid" ? h("label", null, h("span", { text: "Цена, % (у стабильности — пункты)" }), numIn(L.cost_v, v => { L.cost_v = v; changed(); })) : null),
+        note,
+        h("div", { class: "lc-eff" + (eff.length ? "" : " empty"), text: eff.length ? "Сейчас: " + eff.join(" · ") : L.off ? "Выключена" : "Сейчас эффекта нет" }));
+      card.dataset.q = (L.name + " " + L.from.concat(L.to).map(countryName).join(" ") + " " + (L.note || "")).toLowerCase();
+      cards.push(card); wrap.append(card);
+    }
+    if (!gmLinks.length) wrap.append(h("p", { class: "empty", text: "Связей нет. Их можно добавить кнопкой «+ Связь» или импортом стран из файла." }));
+    const filter = () => { const t = gmLinkQ.trim().toLowerCase(); cards.forEach(c => c.classList.toggle("hidden", !!t && !c.dataset.q.includes(t))); };
+    filter();
+    return wrap;
+  }
+
   // ГМ: корпорации по всем странам
   let gmCorpSel = null;
   function gmCorps() {
@@ -1294,10 +1384,10 @@
     if (!corps.length) { wrap.append(h("p", { class: "empty", text: "Корпораций нет. Добавьте их в «Правилах»." })); return wrap; }
     if (!gmCorpSel || !corpById(gmCorpSel)) gmCorpSel = corps[0].id;
     const ids = Object.keys(gmData).sort((a, b) => countryName(a).localeCompare(countryName(b), "ru"));
-    let all = M.computeAll(rules, gmData), cw = M.corpWorld(rules, all.results);
+    let all = M.computeAll(rules, gmData, gmLinks), cw = M.corpWorld(rules, all.results);
     const lives = [];
     const live = (fn, tag, cls) => { const e = h(tag || "span", { class: cls || "" }); lives.push({ e, fn }); fn(e); return e; };
-    const refresh = () => { all = M.computeAll(rules, gmData); cw = M.corpWorld(rules, all.results); lives.forEach(L => L.fn(L.e)); };
+    const refresh = () => { all = M.computeAll(rules, gmData, gmLinks); cw = M.corpWorld(rules, all.results); lives.forEach(L => L.fn(L.e)); };
     const isChild = x => x.parent && corpById(x.parent) && x.parent !== x.id;
 
     const list = h("aside", { class: "gm-list corp-list" });
@@ -1401,6 +1491,7 @@
       h("button", { class: "turn", title: "Изменить ход и год", text: "Ход " + mech.turn + " · " + mech.year + " год", onclick: editTurn }),
       h("button", { class: gmView === "countries" ? "active" : "", text: "Страны", onclick: () => { gmView = "countries"; renderGm(); } }),
       h("button", { class: gmView === "corps" ? "active" : "", text: "Корпорации", onclick: () => { gmView = "corps"; renderGm(); } }),
+      h("button", { class: gmView === "links" ? "active" : "", text: "Связи", title: "Связи стран и обстоятельства — видит только ГМ", onclick: () => { gmView = "links"; renderGm(); } }),
       h("button", { class: gmView === "rules" ? "active" : "", text: "Правила", onclick: () => { gmView = "rules"; renderGm(); } }),
       h("span", { class: "sp" }),
       h("button", { text: "+ Страна", onclick: addCountry }),
@@ -1416,10 +1507,11 @@
       return;
     }
     if (gmView === "corps") { box.append(gmCorps()); return; }
+    if (gmView === "links") { box.append(gmLinksView()); return; }
     const ids = Object.keys(gmData).sort((a, b) => countryName(a).localeCompare(countryName(b), "ru"));
     if (gmSel && !gmData[gmSel]) gmSel = null;
     if (!gmSel && ids.length) gmSel = ids[0];
-    const { results, ctx } = M.computeAll(rules, gmData);
+    const { results, ctx } = M.computeAll(rules, gmData, gmLinks);
     const list = h("aside", { class: "gm-list" });
     if (!ids.length) list.append(h("p", { class: "empty", text: "Нет стран. Нажмите «+ Страна»." }));
     for (const id of ids) {
@@ -1447,6 +1539,7 @@
     if (!e.detail) { lockGm(); renderRating(); }
     else if (!mk && gmPw && mech.gm) await unlockGm(); // только что вошёл паролем — расшифровываем сразу
     else if (!mk) await restoreGm(); // вход сохранён в этой вкладке браузера
+    if (e.detail) { fillArticleLists(); renderRef(); } // ГМ видит эффекты невыданных чудес
     renderGm(); renderBlocs(); renderHomeAuth();
     // вышел из режима ГМа, стоя на калькуляторе, — уводим на статью
     if (!e.detail && pane === "calc" && !$("wikiMech").classList.contains("hidden")) window.KG.go("wiki/mech/article", true);
