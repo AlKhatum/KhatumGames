@@ -161,7 +161,7 @@
         ["airborne", "Воздушно-десантная / горная", 7, 9, 0.6, 0, 120, 36, 0, 9], ["marine", "Морской пехоты", 8, 9, 0.65, 40, 150, 36, 0, 10],
         ["art", "Артиллерийская", 6, 11, 0.7, 0, 30, 300, 0, 10], ["garrison", "Гарнизонная (стены мегаполиса)", 10, 5, 0.3, 20, 60, 48, 1, 5],
         ["raider", "Рейдерская «пустошная»", 6, 7, 0.4, 30, 150, 18, 0.5, 6], ["militia", "Ополчение", 15, 3, 0.1, 0, 0, 12, 0.2, 2],
-        // новые типы по мотивам мода Beyond Earth
+        // новые типы мира 2200
         ["rover", "Роверная", 8, 11, 0.7, 40, 380, 24, 0, 11],
         ["walker", "Шагоходная", 3, 15, 1.1, 200, 30, 30, 0, 16],
         ["shock", "Ударная пехотная", 9, 11, 0.75, 0, 80, 72, 0, 11],
@@ -280,7 +280,7 @@
           "Финансовая группа: кредиты государствам, страхование, биржи. Должники MAF сохраняют флаг и гимн, но бюджет утверждают в её офисах."],
         ["dangergal", "Neon Lantern Agency", "intel", "", "Лас-Вегас", 0.3, 60,
           "Частное детективное агентство: расследования, промышленный шпионаж, поиск людей. К ней обращаются и корпорации, и спецслужбы."],
-        // корпорации из мода Beyond Earth
+        // корпорации мира 2200 (группы ARC, Morgan и независимые)
         ["arc_sec", "ARC Security", "pmc", "arc", "Денвер, Скалистые горы", 1, 900,
           "Силовое крыло ARC: охрана дамб, анклавов и конвоев, подавление беспорядков в дистриктах."],
         ["arc_tech", "ARC Technologies", "cyber", "arc", "Денвер, Скалистые горы", 1, 1000,
@@ -392,7 +392,7 @@
       ["balance", "Равновесие", 0, 0, -5, 10, 0, 0, 0, 0, 0, 0, 0]]
   };
   // ---------- чудеса ----------
-  // Десять спецпроектов мода, каждое одно на весь мир. Построившая страна (владелец) получает до двух эффектов:
+  // Десять великих проектов, каждое одно на весь мир. Построившая страна (владелец) получает до двух эффектов:
   // % к показателю, у стабильности — пункты за ход. Владельца ставит ГМ в «Справочнике», таблица «Чудеса».
   const wonderTargets = () => [["", "—"]].concat(MOD_TARGETS);
   const wonderOwners = () => [["", "— не построено —"]].concat(Object.keys(mapCountries)
@@ -1025,7 +1025,7 @@
   }
   const SAMPLES = SAMPLE_BASE.map(([profile, name], i) => ({ profile, name, make: () => sample(i) }));
   // ---------- импорт стран из файла (D:\WorkWPG\Страны_2200.json и подобные) ----------
-  // формат: { format: "khatum-countries", v: 1, blocs: [{id, name, kind, desc}], countries: { idСтраныКарты: { name, tier, blocs: [id], in, cnt, notes } } }
+  // формат: { format: "khatum-countries", v: 1, blocs: [{id, name, kind, desc}], countries: { idСтраныКарты: { name, tier, blocs: [id], in, cnt, mods, notes, corp: { idКорпорации: { pres, rel, enc } } } } }
   function parseImport(data) {
     if (!data || data.format !== "khatum-countries" || !data.countries || typeof data.countries !== "object") throw new Error("это не файл стран KhatumGames");
     return { blocs: Array.isArray(data.blocs) ? data.blocs.filter(b => b && b.id && b.name) : [], countries: data.countries };
@@ -1052,6 +1052,13 @@
     c.mods = (Array.isArray(rec && rec.mods) ? rec.mods : []).filter(m => m && targets.has(m.target) && (m.mode === "add" || m.mode === "pct") && isFinite(+m.value))
       .map((m, i) => ({ id: "imp_" + String(m.id || i).replace(/[^\w-]/g, "").slice(0, 40), name: String(m.name || "Эффект").slice(0, 120), target: m.target, mode: m.mode, value: +m.value, note: String(m.note || "").slice(0, 500) }));
     c.dossier = String((rec && rec.notes) || "").slice(0, 8000);
+    // корпорации в стране: только существующие, присутствие 0–10, отношения −100…100, анклавы 0–20
+    const corpIds = new Set((T.corp || []).map(x => x.id)), src2 = (rec && rec.corp) || {};
+    for (const id in src2) {
+      const o = src2[id] || {}, pres = +o.pres;
+      if (!corpIds.has(id) || !isFinite(pres) || pres <= 0) continue;
+      c.corp[id] = { pres: Math.min(10, pres), rel: Math.max(-100, Math.min(100, isFinite(+o.rel) ? +o.rel : 0)), enc: Math.max(0, Math.min(20, Math.round(+o.enc || 0))) };
+    }
     return c;
   }
   function emptyCountry() {

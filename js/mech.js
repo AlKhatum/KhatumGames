@@ -168,7 +168,7 @@
       for (const [g, x] of groups) pl.append(h("div", { class: "param-row", "data-param": x.keys[0] },
         h("div", { class: "pt", text: g }), h("div", { class: "pd" }, x.text, h("small", { text: "В калькуляторе: " + x.keys.map(k => (M.INPUTS[k] || M.OUT[k])[0]).join(", ") }))));
     }
-    // справочные записи мода (в расчётах пока не участвуют)
+    // справочные записи: ресурсы, здания, законы (в расчётах пока не участвуют)
     document.querySelectorAll('[data-mech-list="ref"]').forEach(el => {
       el.innerHTML = "";
       const names = String(el.dataset.names || "").split("|");
@@ -456,31 +456,31 @@
       svg.append(g);
     }
     // оси противостояния — рядом со схемой
-    const axes = h("div", { class: "ideo-axes" }, h("h3", { text: "Оси противостояния" }),
+    const axes = h("div", { class: "ideo-axes" }, h("h3", { "data-edit-text": "lore.ideo.h.axes", text: "Оси противостояния" }),
       (lore.axes || []).map(a => h("div", { class: "ideo-axis-row" },
-        h("b", { text: a.name }), h("span", { class: "q", text: a.q }),
+        h("b", { "data-edit-text": "lore.ideo.axis." + a.a + "-" + a.b + ".name", text: a.name }), h("span", { class: "q", "data-edit-text": "lore.ideo.axis." + a.a + "-" + a.b + ".q", text: a.q }),
         h("div", { class: "pair" },
           h("button", { class: "ideo-chip", style: "--c:" + byId[a.a].color, onclick: () => go(a.a) }, icon(byId[a.a], "ideo-chip-ico"), nameOf(a.a), h("small", { text: a.a_note })),
           h("span", { class: "vs", text: "↔" }),
           h("button", { class: "ideo-chip", style: "--c:" + byId[a.b].color, onclick: () => go(a.b) }, icon(byId[a.b], "ideo-chip-ico"), nameOf(a.b), h("small", { text: a.b_note }))))),
-      h("p", { class: "mech-note", text: "Каждый гибрид противостоит вершине напротив. Цвета смешиваются так же, как идеи: красный и жёлтый дают оранжевое Господство, жёлтый и бирюзовый — зелёную Ненасытность, бирюзовый и красный — пурпурную Духовность." }));
+      h("p", { class: "mech-note", "data-edit-text": "lore.ideo.axes.note", text: "Каждый гибрид противостоит вершине напротив. Цвета смешиваются так же, как идеи: красный и жёлтый дают оранжевое Господство, жёлтый и бирюзовый — зелёную Ненасытность, бирюзовый и красный — пурпурную Духовность." }));
     el.append(h("div", { class: "ideo-top" }, h("div", { class: "ideo-tri-wrap" }, svg), axes));
 
-    // карточки
+    // карточки: тексты из data/ideologies.json, правки ГМа (✎ Правка) — site.json → texts["lore.ideo.<id>.<поле>"]
     const cards = h("div", { class: "ideo-cards" });
     for (const x of L) {
       const fx = ideoEffects(ruleOf(x.id));
       cards.append(h("article", { class: "ideo-card", id: "ideo-" + x.id, style: "--c:" + x.color },
         h("header", null, icon(x), h("div", null, h("h3", { text: nameOf(x.id) }),
-          h("div", { class: "ideo-meta", text: [x.en, x.kind, x.opposite ? "противник — " + nameOf(x.opposite) : ""].filter(Boolean).join(" · ") }))),
-        h("p", { class: "ideo-desc", text: x.desc }),
+          h("div", { class: "ideo-meta", "data-edit-text": "lore.ideo." + x.id + ".meta", text: [x.en, x.kind, x.opposite ? "противник — " + nameOf(x.opposite) : ""].filter(Boolean).join(" · ") }))),
+        h("p", { class: "ideo-desc", "data-edit-text": "lore.ideo." + x.id + ".desc", text: x.desc }),
         h("dl", null,
-          h("dt", { text: "Виновник Великой ошибки" }), h("dd", { text: x.blame }),
-          h("dt", { text: "Реальные аналоги" }), h("dd", { text: x.real }),
-          h("dt", { text: "Влияние на государство" }), h("dd", { text: x.state })),
+          h("dt", { "data-edit-text": "lore.ideo.dt.blame", text: "Виновник Великой ошибки" }), h("dd", { "data-edit-text": "lore.ideo." + x.id + ".blame", text: x.blame }),
+          h("dt", { "data-edit-text": "lore.ideo.dt.real", text: "Реальные аналоги" }), h("dd", { "data-edit-text": "lore.ideo." + x.id + ".real", text: x.real }),
+          h("dt", { "data-edit-text": "lore.ideo.dt.state", text: "Влияние на государство" }), h("dd", { "data-edit-text": "lore.ideo." + x.id + ".state", text: x.state })),
         h("div", { class: "ideo-fx" }, fx.length ? fx.map(e => h("span", { class: "fx " + (e.v > 0 ? "up" : "down"), text: e.text })) : h("span", { class: "fx", text: "Без модификаторов" }))));
     }
-    el.append(h("h2", { class: "ideo-h", text: "Семь идеологий" }), cards);
+    el.append(h("h2", { class: "ideo-h", "data-edit-text": "lore.ideo.h.cards", text: "Семь идеологий" }), cards);
 
     // отношения
     const rel = h("table", { class: "mt ideo-rel" },
@@ -488,10 +488,10 @@
       h("tbody", null, L.map(a => h("tr", null, h("th", { style: "color:" + a.color, text: nameOf(a.id) }),
         L.map(b => { const v = ideoRel(lore, a.id, b.id); return h("td", { class: "num" + (v > 0 ? " up" : v < 0 ? " down" : "") + (a.id === b.id ? " self" : ""), text: sgn(v) || "0" }); })))));
     const R = lore.relations || {};
-    el.append(h("h2", { class: "ideo-h", text: "Отношения между идеологиями" }),
-      h("p", { class: "mech-note", text: "Своя " + sgn(R.self) + " · соседняя по треугольнику " + sgn(R.near) + " · через одну " + sgn(R.far) + " · противоположная " + sgn(R.opposite) + " · с Равновесием " + (sgn(R.center) || "0") + ". Пока справочно: в расчётах не участвует." }),
+    el.append(h("h2", { class: "ideo-h", "data-edit-text": "lore.ideo.h.rel", text: "Отношения между идеологиями" }),
+      h("p", { class: "mech-note", "data-edit-text": "lore.ideo.rel.note", text: "Своя " + sgn(R.self) + " · соседняя по треугольнику " + sgn(R.near) + " · через одну " + sgn(R.far) + " · противоположная " + sgn(R.opposite) + " · с Равновесием " + (sgn(R.center) || "0") + ". Пока справочно: в расчётах не участвует." }),
       h("div", { class: "mt-scroll" }, rel),
-      h("p", { class: "mech-note", text: "Модификаторы — правила ГМа: Вики → Механики → Справочник → «Идеологии». Те же числа — на листе «Идеологии» в таблице «Механики_Мир2200.xlsx». Идеология страны выбирается в её карточке." }));
+      h("p", { class: "mech-note", "data-edit-text": "lore.ideo.note", text: "Модификаторы — правила ГМа: Вики → Механики → Справочник → «Идеологии». Те же числа — на листе «Идеологии» в таблице «Механики_Мир2200.xlsx». Идеология страны выбирается в её карточке." }));
   }
 
   // ---------- карточка страны (общая для игрока и ГМа) ----------
@@ -713,7 +713,7 @@
       if (opts.gm) box.append(h("button", { class: "small-btn", text: "+ Эффект", onclick: () => editMod(null) }));
       draw();
       if (opts.gm && c.dossier != null) {
-        // справка из импорта: источники (карта, мод), что смоделировано. Игроку на странице не показывается
+        // справка из импорта: источники и что смоделировано. Игроку на странице не показывается
         const dt = h("textarea", { class: "notes dossier", rows: 8 });
         dt.value = c.dossier || "";
         dt.addEventListener("input", () => { c.dossier = dt.value; if (opts.onChange) opts.onChange(r); });
@@ -1090,10 +1090,13 @@
     const all = Object.keys(data.countries), ids = all.filter(id => mapCountries[id]);
     const have = ids.filter(id => mech.countries[id]), fresh = ids.filter(id => !mech.countries[id]);
     if (!ids.length) { toast("В файле нет стран с этой карты"); return; }
+    const fileCorps = ids.filter(id => data.countries[id].corp && Object.keys(data.countries[id].corp).length).length;
     const v = await window.KGForm("Импорт стран: " + f.name, [
       { key: "mode", label: "Уже подключённые страны", type: "select", options: [["skip", "Не трогать"], ["replace", "Заменить данные (пароли игроков сохраняются)"]],
-        hint: "В файле стран: " + all.length + ". Новых: " + fresh.length + ", уже подключено: " + have.length + (all.length > ids.length ? ", нет на карте: " + (all.length - ids.length) : "") + ". Новым странам пароли создаются автоматически — их можно посмотреть в карточке страны." }
-    ], { mode: "skip" });
+        hint: "В файле стран: " + all.length + ". Новых: " + fresh.length + ", уже подключено: " + have.length + (all.length > ids.length ? ", нет на карте: " + (all.length - ids.length) : "") + ". Новым странам пароли создаются автоматически — их можно посмотреть в карточке страны." },
+      { key: "corp", label: "Корпорации в заменяемых странах", type: "select", options: [["file", "Взять из файла"], ["keep", "Оставить как есть"]],
+        hint: fileCorps ? "В файле корпорации расставлены в " + fileCorps + " странах (присутствие, отношения, анклавы)." : "В файле корпораций нет — у заменяемых стран останутся прежние." }
+    ], { mode: "skip", corp: fileCorps ? "file" : "keep" });
     if (!v) return;
     // союзы из файла — в правила (если такого ещё нет)
     const B = rules.tables.bloc;
@@ -1109,8 +1112,10 @@
         mech.countries[id] = { kg: await C.lockWithKey(mk, dk), kp: await C.lockWithPassword(pw, dk), pw: await C.encText(mk, pw) };
         dks[id] = dk;
       } else if (gmData[id]) {
-        // заметки, корпорации и собственные эффекты ГМа не трогаем; эффекты из прошлого импорта (imp_…) заменяются новыми
-        c.notes = gmData[id].notes || ""; c.corp = gmData[id].corp || {};
+        // заметки и собственные эффекты ГМа не трогаем; эффекты из прошлого импорта (imp_…) заменяются новыми;
+        // корпорации — из файла или прежние (по выбору ГМа)
+        c.notes = gmData[id].notes || "";
+        if (v.corp !== "file" || !Object.keys(c.corp || {}).length) c.corp = gmData[id].corp || {};
         c.mods = (gmData[id].mods || []).filter(m => !String(m.id).startsWith("imp_")).concat(c.mods);
       }
       gmData[id] = c; n++;

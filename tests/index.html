@@ -23,8 +23,8 @@
 <script src="../js/sats.js?v=20261115e"></script>
 <script src="../js/moon-names.js?v=20261115a"></script>
 <script src="../js/wrap.js?v=20261115a"></script>
-<script src="../js/mech-lore.js?v=20261117a"></script>
-<script src="../js/mech-model.js?v=20261117a"></script>
+<script src="../js/mech-lore.js?v=20261117b"></script>
+<script src="../js/mech-model.js?v=20261117b"></script>
 <script src="../js/mech-crypto.js?v=20261115a"></script>
 <script>
 (async function () {
@@ -982,7 +982,7 @@
     } finally { delete T0[key]; W.KGSite.applyTexts(D.getElementById("mechArticle")); }
     assert(!visible(el), "шапка не скрылась после удаления картинки");
   });
-  await test("Статья: 10 чудес с эффектами, словарь показателей, ресурсы, здания и законы мода, «Единство» — только проект", () => {
+  await test("Статья: 10 чудес с эффектами, словарь показателей, ресурсы, здания и законы, «Единство» — только проект", () => {
     const wc = [...D.querySelectorAll('#mechArticle [data-mech-list="wonder"] .wonder-card')];
     assert(wc.length === 10 && wc.every(c => c.querySelector(".unit-stats").textContent.length > 5 && c.querySelector(".img-slot")), "чудеса: " + wc.length);
     assert(wc.every(c => /Ещё не построено|Построено: /.test(c.querySelector(".wonder-owner").textContent)), "владелец");

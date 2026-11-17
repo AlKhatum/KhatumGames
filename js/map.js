@@ -1588,7 +1588,14 @@
   const HINT_GLOBE = "Глобус: тяните — вращать, колесо — масштаб, клик по стране — легенда, по городу — его карточка, по спутнику — орбита. Редактирование и измерения — на плоской карте.";
   const Sat = window.KGSats;
   let viewMode = "flat", globe = null, globeRaf = 0, globeLoop = 0, globeReady = null;
-  const satUi = { items: [], sel: "kovcheg", orbits: true, names: true, speed: 60, time: Date.now(), follow: false, last: 0, hidden: {}, showDebris: true, debris: [] };
+  const satUi = { items: [], sel: "kovcheg", orbits: true, names: true, speed: 60, time: Date.now(), follow: false, last: 0, hidden: {}, showDebris: true, showMoon: true, debris: [] };
+  // настройки панели орбит переживают перезагрузку (иначе браузер восстанавливает галочки, а карта рисует всё)
+  {
+    const s = ui.sat || {};
+    for (const k of ["orbits", "names", "showDebris", "showMoon"]) if (typeof s[k] === "boolean") satUi[k] = s[k];
+    if (s.hidden && typeof s.hidden === "object") satUi.hidden = Object.assign({}, s.hidden);
+  }
+  const saveSatUi = () => { ui.sat = { orbits: satUi.orbits, names: satUi.names, showDebris: satUi.showDebris, showMoon: satUi.showMoon, hidden: satUi.hidden }; saveUi(); };
   // элементы списка спутников из данных карты (state.satellites + state.satTypes)
   function rebuildSatItems() {
     const types = state.satTypes || {};
@@ -1865,7 +1872,7 @@
       r.innerHTML = `<input type="checkbox" ${it.on ? "checked" : ""} title="Показывать"><span class="sat-dot" style="background:${it.s.color};box-shadow:0 0 6px ${it.s.color}"></span>` +
         `<span class="sat-name" title="${esc(it.s.ownerName || "Международный")}">${esc(it.s.name)}</span><span class="sat-type" title="${esc(it.s.typeName + " · " + (it.s.ownerName || "международный"))}">${esc(it.s.typeName)}${isFinite(it.deadAt) ? ` <span title="Столкновение «${esc(it.deadBy)}», ${esc(fmtUtc(it.deadAt))}">💥</span>` : ""}</span>` +
         (gm ? `<button class="c-go sat-edit" title="Изменить">✎</button><button class="c-del sat-del" title="Удалить">✕</button>` : "");
-      r.querySelector("input").addEventListener("change", e => { it.on = e.target.checked; satUi.hidden[it.s.id] = !it.on; globeDirty(); });
+      r.querySelector("input").addEventListener("change", e => { it.on = e.target.checked; if (it.on) delete satUi.hidden[it.s.id]; else satUi.hidden[it.s.id] = true; saveSatUi(); globeDirty(); });
       r.addEventListener("click", e => {
         if (e.target.tagName === "INPUT") return;
         if (e.target.classList.contains("sat-edit")) { editSat(it.s.id); return; }
@@ -2100,7 +2107,8 @@
     commit("debris", id, d, null); refreshSats();
   }
   $("addDebrisBtn").onclick = () => editDebris(null);
-  $("satDebris").addEventListener("change", e => { satUi.showDebris = e.target.checked; globeDirty(); });
+  $("satDebris").checked = satUi.showDebris;
+  $("satDebris").addEventListener("change", e => { satUi.showDebris = e.target.checked; saveSatUi(); globeDirty(); });
   $("addSatBtn").onclick = () => editSat(null);
   $("addTypeBtn").onclick = () => editType(null);
   function markSatRows() { document.querySelectorAll("#satList .sat-row").forEach(r => r.classList.toggle("active", r.dataset.id === satUi.sel)); }
@@ -2131,12 +2139,16 @@
     const ts = t.toLocaleString("ru-RU", { timeZone: "UTC", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) + " UTC";
     if ($("satTime").textContent !== ts) $("satTime").textContent = ts;
   }
-  $("satOrbits").addEventListener("change", e => { satUi.orbits = e.target.checked; globeDirty(); });
-  $("satNames").addEventListener("change", e => { satUi.names = e.target.checked; globeDirty(); });
+  // галочки берут состояние из satUi, а не из того, что восстановил браузер
+  $("satOrbits").checked = satUi.orbits;
+  $("satNames").checked = satUi.names;
+  $("satFollow").checked = satUi.follow;
+  $("satMoon").checked = satUi.showMoon;
+  $("satOrbits").addEventListener("change", e => { satUi.orbits = e.target.checked; saveSatUi(); globeDirty(); });
+  $("satNames").addEventListener("change", e => { satUi.names = e.target.checked; saveSatUi(); globeDirty(); });
   $("satFollow").addEventListener("change", e => { satUi.follow = e.target.checked; globeDirty(); });
-  satUi.showMoon = true;
-  $("satMoon").addEventListener("change", e => { satUi.showMoon = e.target.checked; globeDirty(); });
-  $("satMoonBtn").addEventListener("click", () => { if (!globe) return; satUi.showMoon = true; $("satMoon").checked = true; satUi.follow = false; $("satFollow").checked = false; globe.zoom = 0.0145; globeDirty(); });
+  $("satMoon").addEventListener("change", e => { satUi.showMoon = e.target.checked; saveSatUi(); globeDirty(); });
+  $("satMoonBtn").addEventListener("click", () => { if (!globe) return; satUi.showMoon = true; $("satMoon").checked = true; saveSatUi(); satUi.follow = false; $("satFollow").checked = false; globe.zoom = 0.0145; globeDirty(); });
   document.querySelectorAll("#satSpeed button").forEach(b => b.addEventListener("click", () => {
     satUi.speed = +b.dataset.speed;
     if (b.dataset.speed === "now") { satUi.time = Date.now(); satUi.speed = 1; }

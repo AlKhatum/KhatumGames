@@ -827,8 +827,6 @@ body.moon-mode #stateCard, body.moon-mode #sizeBar { display: none; }
 .ls-flags { display: inline-flex; gap: 3px; flex-wrap: wrap; flex-shrink: 0; }
 .ls-flag { display: inline-block; width: 26px; height: 17px; border: 1px solid var(--line-dim); border-radius: 2px; background: rgba(255, 255, 255, .06) center / cover no-repeat; vertical-align: middle; }
 .ls-title { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.ls-src { font-family: var(--font-ui); font-size: 11px; letter-spacing: .04em; text-transform: none; padding: 1px 7px; border-radius: 2px; background: rgba(24, 217, 245, .12); color: var(--muted); }
-.ls-src.own { background: transparent; border: 1px solid var(--pink-soft); color: var(--pink-soft); }
 .ls-tools { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
 .ls-tools .small-btn { margin: 0; display: inline-flex; align-items: center; gap: 4px; }
 .ls-passport { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; color: var(--muted); margin: 6px 0 14px; padding-bottom: 10px; border-bottom: 1px dashed var(--line-dim); }
