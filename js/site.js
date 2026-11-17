@@ -190,8 +190,10 @@
     const rich = el.hasAttribute("data-edit"), key = el.getAttribute(rich ? "data-edit" : "data-edit-text");
     setVal(key, rich ? richHtml(el) : el.textContent.replace(/\s*\n\s*/g, " "));
   }
+  // описания карточек механик ([data-rule-desc]) — поля правил, их ведёт mech.js; статья вокруг них не считается правленой
+  const ruleDesc = t => !!(t && t.closest && t.closest("[data-rule-desc]"));
   document.addEventListener("input", e => {
-    if (!editing || !e.target.closest) return;
+    if (!editing || !e.target.closest || ruleDesc(e.target)) return;
     const el = e.target.closest(SEL);
     if (el && el.isContentEditable) record(el);
   });
@@ -202,7 +204,7 @@
     if (el && el.isContentEditable && e.key === "Enter") { e.preventDefault(); el.blur(); }
   }, true);
   document.addEventListener("paste", e => {
-    if (!editing || !e.target.closest) return;
+    if (!editing || !e.target.closest || ruleDesc(e.target)) return;
     const el = e.target.closest(SEL);
     if (!el || !el.isContentEditable) return;
     const files = [...(e.clipboardData.files || [])].filter(f => /^image\//.test(f.type));
@@ -227,7 +229,7 @@
   bar.addEventListener("mousedown", e => e.preventDefault()); // не терять выделение
   bar.addEventListener("click", e => { const b = e.target.closest("button"); if (b) rteCmd(b.dataset.c); });
   document.addEventListener("focusin", e => {
-    const el = editing && e.target.closest ? e.target.closest("[data-edit]") : null;
+    const el = editing && e.target.closest && !ruleDesc(e.target) ? e.target.closest("[data-edit]") : null;
     rteEl = el && el.isContentEditable ? el : null;
     bar.classList.toggle("hidden", !rteEl);
   });

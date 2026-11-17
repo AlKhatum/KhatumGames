@@ -145,7 +145,7 @@
       el.innerHTML = "";
       for (const r of rows) el.append(h("article", { class: "unit-card", "data-unit": tb + ":" + r.id },
         slot("mech.unit." + tb + "." + r.id, r.name), h("h4", { text: r.name }), st(r) ? h("div", { class: "unit-stats", text: st(r) }) : null,
-        h("p", { class: "unit-desc", text: r.desc || "" })));
+        h("p", { class: "unit-desc", "data-rule-desc": tb + ":" + r.id, "data-placeholder": "Описание…", text: r.desc || "" })));
     });
     // чудеса: владелец, эффекты, описание
     const wl = document.querySelector('[data-mech-list="wonder"]');
@@ -157,7 +157,7 @@
         slot("mech.wonder." + w.id, w.name), h("h4", { text: w.name }),
         h("div", { class: "unit-stats", text: [fx(w.t1, w.v1), fx(w.t2, w.v2)].filter(Boolean).join(" · ") }),
         h("div", { class: "wonder-owner" + (w.owner ? "" : " none"), text: w.owner ? "Построено: " + countryName(w.owner) : "Ещё не построено" }),
-        h("p", { class: "unit-desc", text: w.desc || "" })));
+        h("p", { class: "unit-desc", "data-rule-desc": "wonder:" + w.id, "data-placeholder": "Описание…", text: w.desc || "" })));
     }
     // словарь показателей: запись летописи → строки калькулятора
     const pl = document.querySelector('[data-mech-list="params"]'), L = window.KGMechLore;
@@ -165,16 +165,71 @@
       pl.innerHTML = "";
       const groups = new Map();
       for (const k in L.params) { const x = L.params[k], g = x.name || (M.INPUTS[k] || M.OUT[k] || [k])[0]; if (!groups.has(g)) groups.set(g, { text: x.text, keys: [] }); groups.get(g).keys.push(k); }
+      // название и описание правит ГМ («✎ Правка», публикация «⇪ Сайт»): site.json → texts["mech.param.<ключ>(.name)"]
       for (const [g, x] of groups) pl.append(h("div", { class: "param-row", "data-param": x.keys[0] },
-        h("div", { class: "pt", text: g }), h("div", { class: "pd" }, x.text, h("small", { text: "В калькуляторе: " + x.keys.map(k => (M.INPUTS[k] || M.OUT[k])[0]).join(", ") }))));
+        h("div", { class: "pt", "data-edit-text": "mech.param." + x.keys[0] + ".name", "data-label": "Словарь: " + g, text: g }),
+        h("div", { class: "pd" }, h("span", { "data-edit-text": "mech.param." + x.keys[0], "data-placeholder": "Описание…", text: x.text }),
+          h("small", { text: "В калькуляторе: " + x.keys.map(k => (M.INPUTS[k] || M.OUT[k])[0]).join(", ") }))));
     }
-    // справочные записи: ресурсы, здания, законы (в расчётах пока не участвуют)
+    // справочные записи: ресурсы, здания, законы (в расчётах пока не участвуют); описание правит ГМ, как тексты страницы
     document.querySelectorAll('[data-mech-list="ref"]').forEach(el => {
       el.innerHTML = "";
       const names = String(el.dataset.names || "").split("|");
-      for (const n of names) { const x = L && L.reference[n]; if (x) el.append(h("div", { class: "param-row", "data-ref": n }, h("div", { class: "pt" }, n, h("small", { text: x.unit })), h("div", { class: "pd", text: x.text }))); }
+      for (const n of names) { const x = L && L.reference[n]; if (x) el.append(h("div", { class: "param-row", "data-ref": n }, h("div", { class: "pt" }, n, h("small", { text: x.unit })),
+        h("div", { class: "pd", "data-edit-text": "mech.ref." + n, "data-placeholder": "Описание…", text: x.text }))); }
+    });
+    // правки ГМа к текстам словаря и справочных записей; описания карточек — из правил
+    document.querySelectorAll('[data-mech-list="params"], [data-mech-list="ref"]').forEach(el => { if (window.KGSite && window.KGSite.applyTexts) window.KGSite.applyTexts(el); });
+    markRuleDescs();
+  }
+  // описание показателя для подсказки: правка ГМа из словаря (site.json → texts["mech.param.<первый ключ группы>"]) или летопись
+  function paramText(key) {
+    const L = window.KGMechLore, x = L && L.params[key];
+    if (!x) return null;
+    const g = x.name || (M.INPUTS[key] || M.OUT[key] || [key])[0];
+    const first = Object.keys(L.params).find(k => (L.params[k].name || (M.INPUTS[k] || M.OUT[k] || [k])[0]) === g) || key;
+    const t = window.KGSite && window.KGSite.data && window.KGSite.data.texts;
+    return (t && t["mech.param." + first] != null ? t["mech.param." + first] : x.text);
+  }
+  // ---------- описания карточек статьи (типы войск, техники, энергии, еды, отраслей, чудеса) ----------
+  // это поле «Описание» из Справочника: правится на месте после расшифровки калькулятора, попадает в его черновик
+  function ruleRow(ref) {
+    const [tb, id] = String(ref).split(":");
+    return (rules.tables[tb] || []).find(r => String(r.id) === id) || null;
+  }
+  function markRuleDescs() {
+    const edit = pageEdit(), can = canEditRules();
+    document.querySelectorAll("[data-rule-desc]").forEach(el => {
+      if (can) el.setAttribute("contenteditable", "true"); else el.removeAttribute("contenteditable");
+      el.classList.toggle("editable", can);
+      el.title = can ? "Описание из Справочника: правка попадёт в черновик калькулятора, на сайт — кнопкой «Опубликовать» в калькуляторе"
+        : edit ? "Описание из Справочника: правится после расшифровки калькулятора паролем ГМа" : "";
     });
   }
+  let ruleDescTouched = false;
+  document.addEventListener("input", e => {
+    const el = e.target.closest && e.target.closest("[data-rule-desc]");
+    if (!el || !canEditRules()) return;
+    const r = ruleRow(el.dataset.ruleDesc); if (!r) return;
+    r.desc = el.textContent.replace(/\s*\n\s*/g, " ");
+    ruleDescTouched = true;
+    markDirty();
+  });
+  document.addEventListener("keydown", e => {
+    const el = e.target.closest && e.target.closest("[data-rule-desc]");
+    if (el && el.isContentEditable && e.key === "Enter") { e.preventDefault(); el.blur(); }
+  }, true);
+  document.addEventListener("paste", e => {
+    const el = e.target.closest && e.target.closest("[data-rule-desc]");
+    if (!el || !el.isContentEditable) return;
+    e.preventDefault();
+    document.execCommand("insertText", false, (e.clipboardData.getData("text/plain") || "").replace(/\s+/g, " "));
+  }, true);
+  document.addEventListener("focusout", e => {
+    if (!ruleDescTouched || !(e.target.closest && e.target.closest("[data-rule-desc]"))) return;
+    ruleDescTouched = false;
+    renderRef(); // Справочник показывает то же описание
+  });
   // строка характеристик карточки типа (числа — из действующего справочника)
   const n2 = v => fmt(+v, Math.abs(+v) < 1 && +v !== 0 ? "d3" : "d2").replace(/,?0+$/, "");
   const UNIT_STATS = {
@@ -275,7 +330,7 @@
       h("button", { text: "Калькулятор →", onclick: () => window.KG.go("wiki/mech/calc") }));
   }
   function refreshMechViews() {
-    renderRef(); renderRating(); renderBlocs(); renderGm();
+    renderRef(); renderRating(); renderBlocs(); renderGm(); markRuleDescs();
     if (corpLoreEl && corpLoreEl.isConnected) Promise.resolve(renderCorpLore(corpLoreEl)).then(() => { if (window.KGSite) window.KGSite.applyTexts(corpLoreEl); });
   }
   function renderRef() {
@@ -621,7 +676,7 @@
       const [kind, key] = item.split(":");
       if (kind === "tab") return tableBlock(key);
       // описание показателя из летописи — подсказка при наведении на название строки
-      const lore = M.paramLore(key), lab = text => h("span", { class: "l" + (lore ? " lored" : ""), text, title: lore ? lore.text : null, "data-lore": lore ? key : null });
+      const lore = M.paramLore(key), tip = lore ? paramText(key) : null, lab = text => h("span", { class: "l" + (lore ? " lored" : ""), text, title: tip, "data-lore": lore ? key : null });
       if (kind === "in") {
         const [label, unit, , , , hint] = M.INPUTS[key];
         return h("div", { class: "mrow in" + (opts.editable ? " edit" : "") }, lab(label), h("span", { class: "c" }, inField(key)), h("span", { class: "u", text: unit === "%" ? "" : unit }), h("span", { class: "hint", text: hint || "" }));

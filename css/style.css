@@ -874,7 +874,7 @@ body:not(.site-edit) .edit-only { display: none !important; }
 .site-edit .editable { outline: 1px dashed rgba(255, 63, 208, .55); outline-offset: 3px; cursor: text; min-height: 1em; }
 .site-edit .editable:hover { outline-color: var(--pink); }
 .site-edit .editable:focus { outline: 2px solid var(--pink); background: rgba(255, 63, 208, .05); }
-.site-edit [data-mech-list] { opacity: .7; }
+.site-edit [data-mech-list="law"], .site-edit [data-mech-list="tier"] { opacity: .7; } /* законы и уровни правятся в Справочнике */
 .rte-bar { position: fixed; z-index: 70; left: 50%; bottom: 16px; transform: translateX(-50%); display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; padding: 6px; max-width: calc(100vw - 24px); background: var(--panel-solid); border-color: var(--pink); }
 .rte-bar button { min-width: 34px; height: 32px; padding: 0 8px; background: rgba(24, 217, 245, .08); border: 1px solid var(--line-dim); border-radius: 3px; color: var(--text); font-size: 13px; }
 .rte-bar button:hover { border-color: var(--line); }

@@ -280,6 +280,8 @@
 .unit-card h4 { margin: 0; font-size: 14.5px; color: var(--text); }
 .unit-stats { font-size: 12px; color: var(--line); }
 .unit-desc { margin: 0; font-size: 13px; line-height: 1.5; color: #c7d7ec; }
+/* правка ГМа: пустое описание карточки или словаря показывает подсказку */
+.site-edit [data-rule-desc]:empty::before, .site-edit .param-row [data-edit-text]:empty::before { content: attr(data-placeholder); font-style: italic; opacity: .6; }
 .wonder-owner { font-size: 12px; color: #7dff6a; }
 .wonder-owner.none { color: var(--muted); }
 .param-list { display: flex; flex-direction: column; margin: 8px 0 14px; }
