@@ -17,7 +17,8 @@
     { id: "ideologies", title: "Идеологии 23-го века", sub: "Во что верят и за что воюют", html: "", special: "ideologies" },
     { id: "corporations", title: "Корпорации", sub: "Кто владеет водой, орбитой и всем остальным", html: "", special: "corporations" },
     { id: "chronology", title: "Хронология", sub: "От Великого Потопа до наших дней", html: "", special: "chronology" },
-    { id: "states", title: "Государства", sub: "Страны, союзы и территории на карте", html: "", special: "states" }
+    { id: "states", title: "Государства", sub: "Страны, союзы и территории на карте", html: "", special: "states" },
+    { id: "regions", title: "Регионы", sub: "Старый Свет, Африка, Азия, Америка и Океания", html: "", special: "regions" }
   ];
   // особые разделы (наполняются из механик); у разделов из старого site.json пометки может не быть — узнаём по id
   const specialOf = a => a.special || ((DEF_LORE.find(x => x.id === a.id) || {}).special || "");
@@ -390,6 +391,7 @@
     $("loreHome").classList.add("hidden");
     const art = $("loreArticle"); art.classList.remove("hidden"); art.innerHTML = "";
     if (specialOf(a) === "states" && sub) { renderStatePage(art, sub); return; }
+    if (specialOf(a) === "regions" && sub) { renderRegionPage(art, sub); return; }
     const k = f => "list:lore:" + a.id + ":" + f;
     art.append(h("button", { class: "lore-back", onclick: () => KG.go("wiki/lore") }, "← Все разделы"),
       h("h2", { "data-edit-text": k("title"), text: a.title || "" }),
@@ -402,6 +404,10 @@
     if (specialOf(a) === "states") {
       const body = h("div", { class: "lore-body" }); art.append(body);
       renderStatesIndex(body);
+    }
+    if (specialOf(a) === "regions") {
+      const body = h("div", { class: "lore-body" }); art.append(body);
+      renderRegionsIndex(body);
     }
     if (specialOf(a) === "chronology") {
       const body = h("div", { class: "lore-body chron" }); art.append(body);
@@ -455,14 +461,7 @@
       const list = L.states.filter(s => s.region === r.id);
       if (!list.length) continue;
       const g = h("div", { class: "ls-grid" });
-      for (const s of list) {
-        const al = (C[s.map[0]] || {}).alliance, un = al && AL[al] ? AL[al].name : "";
-        const title = tx(stateKey(s, "title"), s.title);
-        const card = h("button", { class: "ls-state", "data-state": s.id, onclick: () => KG.go("wiki/lore/states/" + s.id) },
-          h("span", { class: "ls-flags" }, s.map.map(id => flagOf(C[id]))),
-          h("span", { class: "ls-name" }, h("b", { text: title }), h("small", { text: [s.passport["Лидер"] || s.passport["Власть"] || s.passport["Лидеры"] || "", un].filter(Boolean).join(" · ") })));
-        card.dataset.q = (title + " " + Object.values(s.passport).join(" ")).toLowerCase(); cards.push(card); g.append(card);
-      }
+      for (const s of list) { const card = stateCard(s, C, AL); cards.push(card); g.append(card); }
       body.append(h("h3", { class: "ls-h", "data-edit-text": "lore.states.region." + r.id, text: r.title }), g);
     }
     applyTexts(body);
@@ -472,6 +471,57 @@
       body.querySelectorAll(".ls-h").forEach(hh => { const n = hh.nextElementSibling; hh.classList.toggle("hidden", !!n && ![...n.children].some(c => !c.classList.contains("hidden"))); });
     });
   }
+  function stateCard(s, C, AL) {
+    const al = (C[s.map[0]] || {}).alliance, un = al && AL[al] ? AL[al].name : "";
+    const title = tx(stateKey(s, "title"), s.title);
+    const card = h("button", { class: "ls-state", "data-state": s.id, onclick: () => KG.go("wiki/lore/states/" + s.id) },
+      h("span", { class: "ls-flags" }, s.map.map(id => flagOf(C[id]))),
+      h("span", { class: "ls-name" }, h("b", { text: title }), h("small", { text: [s.passport["Лидер"] || s.passport["Власть"] || s.passport["Лидеры"] || "", un].filter(Boolean).join(" · ") })));
+    card.dataset.q = (title + " " + Object.values(s.passport).join(" ")).toLowerCase();
+    return card;
+  }
+
+  // ---------- лор: регионы мира ----------
+  // Адреса: #wiki/lore/regions — карточки регионов; #wiki/lore/regions/<регион> — страница региона.
+  // Регионы — как в «Государствах» (data/lore.json → regions, без «Держав»); державы стоят в своём регионе по полю geo.
+  // Старый Свет (Европа) — механика бесчестья союзов из Механик; у остальных регионов пока заглушка, которую ГМ правит на странице.
+  const REGION_TITLE = { eu: "Старый Свет (Европа)" };
+  const REGION_SUB = { eu: "Бесчестье союзов, Бернский договор и резолюции" };
+  const REGION_STUB = "<p>Раздел заполняется по ходу кампании.</p>";
+  const regionKey = (r, f) => "lore.region." + r.id + "." + f;
+  const regionsOf = L => L.regions.filter(r => r.id !== "powers").map(r => ({ id: r.id, title: REGION_TITLE[r.id] || r.title }));
+  const statesOf = (L, id) => L.states.filter(s => (s.geo || s.region) === id);
+  async function renderRegionsIndex(body) {
+    const L = await KG.lore();
+    const g = h("div", { class: "lore-grid regions-grid" });
+    for (const r of regionsOf(L)) {
+      const n = statesOf(L, r.id).length;
+      g.append(h("button", { class: "lore-card", "data-region": r.id, onclick: () => KG.go("wiki/lore/regions/" + r.id) },
+        h("b", { text: tx(regionKey(r, "title"), r.title) }),
+        h("span", { text: (REGION_SUB[r.id] ? REGION_SUB[r.id] + " · " : "") + n + " " + (n % 10 === 1 && n % 100 !== 11 ? "государство" : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? "государства" : "государств") })));
+    }
+    body.append(g);
+    applyTexts(body);
+  }
+  async function renderRegionPage(art, sub) {
+    const [L, st] = await Promise.all([KG.lore(), mapState()]);
+    const r = regionsOf(L).find(x => x.id === sub);
+    if (!r) { KG.go("wiki/lore/regions", true); return; }
+    const C = st.countries || {}, AL = st.alliances || {};
+    art.append(h("button", { class: "lore-back", onclick: () => KG.go("wiki/lore/regions") }, "← Регионы"),
+      h("h2", { "data-edit-text": regionKey(r, "title"), "data-placeholder": "Название региона…", text: r.title }),
+      h("div", { class: "rich lore-text", "data-edit": regionKey(r, "html"), "data-placeholder": r.id === "eu" ? "Вступление к региону (необязательно)…" : "О регионе…",
+        html: r.id === "eu" ? "" : REGION_STUB }));
+    if (r.id === "eu" && window.KGMech) {
+      const ow = h("div", { class: "lore-body region-ow" }); art.append(ow);
+      Promise.resolve(window.KGMech.renderOldWorld(ow)).then(() => applyTexts(ow));
+    }
+    const list = statesOf(L, r.id);
+    art.append(h("h3", { class: "ls-h", "data-edit-text": "lore.region.h.states", text: "Государства региона" }),
+      list.length ? h("div", { class: "ls-grid" }, list.map(s => stateCard(s, C, AL))) : h("p", { class: "empty", text: "Статей о государствах этого региона пока нет." }));
+    applyTexts(art); refreshEditable();
+  }
+
   async function renderStatePage(art, sub) {
     const [L, st] = await Promise.all([KG.lore(), mapState()]);
     const C = st.countries || {}, AL = st.alliances || {};
@@ -698,6 +748,7 @@
     out.texts = s.texts && typeof s.texts === "object" ? s.texts : {};
     out.media = { bg: Object.assign(d.media.bg, (s.media || {}).bg || {}), music: Object.assign(d.media.music, (s.media || {}).music || {}) };
     for (const k of ["events", "lore", "gallery"]) out[k] = Array.isArray(s[k]) ? s[k] : d[k];
+    for (const a of DEF_LORE) if (a.special && !out.lore.some(x => x.id === a.id)) out.lore.push(clone(a));
     return out;
   }
   function applyAll() {

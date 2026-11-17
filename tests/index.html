@@ -941,8 +941,25 @@
   });
   await test("Главная: вход за страну и вход ГМа", () => go("home", () => /Вход за страну/.test(text("#homeAuth")), "вход"));
   await test("Вики → События", () => go("wiki/events", () => visible(D.getElementById("wikiEvents")), "события"));
-  await test("Вики → Лор: четыре раздела", () => go("wiki/lore", () => D.querySelectorAll("#loreGrid .lore-card").length === 4 &&
-    [...D.querySelectorAll("#loreGrid .lore-card b")].map(b => b.textContent).join("|") === "Идеологии 23-го века|Корпорации|Хронология|Государства", "разделы"));
+  await test("Вики → Лор: пять разделов", () => go("wiki/lore", () => D.querySelectorAll("#loreGrid .lore-card").length === 5 &&
+    [...D.querySelectorAll("#loreGrid .lore-card b")].map(b => b.textContent).join("|") === "Идеологии 23-го века|Корпорации|Хронология|Государства|Регионы", "разделы"));
+  await test("Лор → Регионы: шесть регионов, у каждого страница с государствами; Европа — Старый Свет, остальные — заглушка", async () => {
+    const regs = lore.regions.filter(r => r.id !== "powers");
+    await go("wiki/lore/regions", () => D.querySelectorAll("#loreArticle .regions-grid .lore-card").length === regs.length, "регионы");
+    const titles = [...D.querySelectorAll("#loreArticle .regions-grid .lore-card b")].map(b => b.textContent);
+    assert(titles[0] === "Старый Свет (Европа)" && titles.length === 6, titles.join("|"));
+    let total = 0;
+    for (const r of regs) {
+      const want = lore.states.filter(s => (s.geo || s.region) === r.id).length;
+      await go("wiki/lore/regions/" + r.id, () => D.querySelectorAll("#loreArticle .ls-state").length === want && D.querySelector("#loreArticle h2"), r.title);
+      total += want;
+      const txt = text("#loreArticle .lore-text");
+      if (r.id === "eu") await go("wiki/lore/regions/eu", () => D.querySelector("#loreArticle #ow .ow-t tbody tr"), "Старый Свет");
+      else assert(/заполняется по ходу кампании/.test(txt) || W.KGSite.data.texts["lore.region." + r.id + ".html"] != null, r.id + ": заглушка");
+    }
+    assert(total === lore.states.length, "все государства по регионам: " + total);
+    return regs.length + " регионов, " + total + " государств";
+  });
   await test("Лор → Идеологии: все 7", () => go("wiki/lore/ideologies", () => rulesLive.tables.ideo.every(x => D.getElementById("loreArticle").textContent.includes(x.name)), "идеологии"));
   await test("Лор → Корпорации: все корпорации справочника", () => go("wiki/lore/corporations", () => rulesLive.tables.corp.every(x => D.getElementById("loreArticle").textContent.includes(x.name)), "корпорации", 30000));
   await test("Лор → Хронология: пролог летописи", () => go("wiki/lore/chronology", () => /Великую ошибку/.test(text("#loreArticle .chron-text")), "хронология"));
@@ -1060,14 +1077,18 @@
     near(a1.results[scoMem].access, a0.access * 0.85, 1e-9, "доступ к рынкам");
     assert(a1.ctx[scoMem].ow.length === 4, "эффекты уходят игроку в world.ow");
   });
-  await test("Механики → Союзы: блок «Старый Свет» с бесчестьем всех союзов Европы", async () => {
-    await go("wiki/mech/blocs", () => D.querySelector("#mechBlocs #ow .ow-t tbody tr"), "Старый Свет");
-    const rows = [...D.querySelectorAll("#mechBlocs #ow .ow-t tbody tr")];
+  await test("Лор → Регионы → Старый Свет (Европа): бесчестье всех союзов Европы; в Механики → Союзы — ссылка и отметки", async () => {
+    await go("wiki/lore/regions/eu", () => D.querySelector("#loreArticle #ow .ow-t tbody tr"), "Старый Свет");
+    const rows = [...D.querySelectorAll("#loreArticle #ow .ow-t tbody tr")];
     assert(rows.length === OWB.length, "строк: " + rows.length);
-    assert(/Бернский договор/.test(D.querySelector("#mechBlocs #ow .ow-status").textContent), "статус договора");
+    assert(/Бернский договор/.test(D.querySelector("#loreArticle #ow .ow-status").textContent), "статус договора");
+    assert(!/(^|[^а-яё])мод(а|е|ом|у)?([^а-яё]|$)|Beyond/i.test(D.querySelector("#loreArticle #ow").textContent), "без упоминаний мода");
+    await go("wiki/mech/blocs", () => D.querySelector("#mechBlocs .ow-link"), "ссылка в Союзах");
+    assert(!D.querySelector("#mechBlocs #ow"), "блок остался в Союзах");
     const marks = OWB.filter(b => D.querySelector('#mechBlocs [data-bloc="' + b + '"] .bloc-ow'));
     assert(marks.length === OWB.length, "бесчестье на карточках: " + marks.length);
-    assert(!/(^|[^а-яё])мод(а|е|ом|у)?([^а-яё]|$)|Beyond/i.test(D.querySelector("#mechBlocs #ow").textContent), "без упоминаний мода");
+    D.querySelector("#mechBlocs .ow-link button").click();
+    await waitFor(() => W.location.hash === "#wiki/lore/regions/eu" && D.querySelector("#loreArticle #ow"), "переход по ссылке");
   });
   await test("Механики → Союзы: состав каждого блока как на карте, лидер помечен, фильтр по виду", async () => {
     await go("wiki/mech/blocs", () => D.querySelectorAll("#mechBlocs .bloc-card").length === B.length, "союзы");

@@ -338,6 +338,7 @@
   function refreshMechViews() {
     renderRef(); renderRating(); renderBlocs(); renderGm(); markRuleDescs();
     if (corpLoreEl && corpLoreEl.isConnected) Promise.resolve(renderCorpLore(corpLoreEl)).then(() => { if (window.KGSite) window.KGSite.applyTexts(corpLoreEl); });
+    if (owLoreEl && owLoreEl.isConnected) renderOldWorld(owLoreEl);
   }
   function renderRef() {
     const box = $("mechRef"); box.innerHTML = "";
@@ -359,7 +360,8 @@
       "Договор корпорации с союзом даёт ей присутствие во всех странах-членах. История союзов — в «Лор → Государства»." }));
     if (!blocs.length) { box.append(h("p", { class: "empty", text: "Союзов пока нет." })); return; }
     const owRep = owReportNow();
-    box.append(oldWorldView(owRep));
+    box.append(h("p", { class: "mech-note ow-link" }, "Бесчестье союзов Европы, Бернский договор и резолюции — в разделе ",
+      h("button", { class: "linkish", text: "Лор → Регионы → Старый Свет (Европа)", onclick: () => window.KG.go(OW_ROUTE) }), "."));
     const owOf = id => owRep.blocs.find(b => b.id === id);
     const grid = h("div", { class: "bloc-grid" });
     const filt = h("div", { class: "bloc-filter" }, [["", "Все"]].concat(kinds).map(([k, t]) => h("button", { class: "small-btn" + (k ? "" : " active"), "data-kind": k, text: t, onclick: e => {
@@ -371,7 +373,7 @@
       grid.append(h("section", { class: "bloc-card", id: "bloc-" + b.id, "data-kind": b.kind, "data-bloc": b.id },
         h("h3", null, h("span", { class: "bloc-sw", style: "background:" + ((colors[b.id] || {}).color || "transparent") }), b.name),
         h("div", { class: "bloc-kind", text: kindName(b.kind) + " · " + mem.length + " " + plural(mem.length, "страна", "страны", "стран") }),
-        owOf(b.id) ? h("div", { class: "bloc-ow" + (owOf(b.id).infamous ? " bad" : "") }, h("button", { class: "linkish", text: "Старый Свет", onclick: () => owScroll("ow") }),
+        owOf(b.id) ? h("div", { class: "bloc-ow" + (owOf(b.id).infamous ? " bad" : "") }, h("button", { class: "linkish", text: "Старый Свет", onclick: () => window.KG.go(OW_ROUTE) }),
           " · бесчестье " + fmt(owOf(b.id).dis, "d1").replace(/,0$/, "") + " из " + fmt(owRep.threshold, "d1").replace(/,0$/, "") + (owOf(b.id).infamous ? " · агрессор" : "")) : null,
         mem.length ? h("ul", { class: "bloc-members" }, mem.map(x => h("li", null,
           h("button", { class: "linkish", title: "Показать на карте", "data-country": x.id, onclick: () => window.KG.showOnMap(x.id) }, flagEl(x.id), " ", countryName(x.id)),
@@ -383,7 +385,24 @@
     box.append(filt, grid);
   }
 
-  // ---------- Старый Свет (Механики → Союзы, вверху) ----------
+  // ---------- Старый Свет: Лор → Регионы → Старый Свет (Европа); у ГМа — вкладка калькулятора ----------
+  const OW_ROUTE = "wiki/lore/regions/eu";
+  // карточка союза в Механики → Союзы: переходим и прокручиваем, когда вкладка отрисуется
+  function goBloc(id) {
+    window.KG.go("wiki/mech/blocs");
+    let n = 0; const t = setInterval(() => { const el = document.getElementById("bloc-" + id); if (el || ++n > 40) { clearInterval(t); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); } }, 50);
+  }
+  // для страницы региона в лоре (site.js): блок целиком, перерисовывается вместе с механиками
+  let owLoreEl = null;
+  async function renderOldWorld(el) {
+    el.innerHTML = "";
+    el.append(h("p", { class: "mech-note", text: "Загрузка…" }));
+    await init();
+    el.innerHTML = "";
+    owLoreEl = el;
+    if (!rules) { el.append(h("p", { class: "empty", text: "Правила механик ещё не загружены." })); return; }
+    el.append(oldWorldView(owReportNow()));
+  }
   // у ГМа с расшифрованными данными — живой расчёт, у остальных — снимок доли силы и прироста с последней публикации
   function owReportNow() {
     const live = isGm() && mk && Object.keys(gmData).length;
@@ -395,7 +414,6 @@
     "Европа пала низко, но её падение ещё не завершено. Чтобы справиться с растущей нестабильностью, каждый союз стремится объединить континент по своему образу — дипломатией или силой оружия."
   ];
   const stripZero = s => s.replace(/,0+$/, "");
-  const owScroll = id => { const t = document.getElementById(id); if (t) t.scrollIntoView({ behavior: "smooth", block: "start" }); };
   function oldWorldView(rep, inGm) {
     const K = rules.K, tName = k => (M.MOD_TARGETS.find(t => t[0] === k) || [, k])[1];
     const sec = h("section", { class: "ow", id: inGm ? null : "ow" }, h("h2", { text: inGm ? "Как это видят все" : "Старый Свет" }));
@@ -417,7 +435,7 @@
     const body = h("tbody");
     for (const b of rep.blocs.slice().sort((x, y) => y.dis - x.dis)) {
       body.append(h("tr", { class: b.infamous ? "bad" : "" },
-        h("td", null, b.leader ? flagEl(b.leader) : null, " ", h("button", { class: "linkish", text: b.name, onclick: () => owScroll("bloc-" + b.id) })),
+        h("td", null, b.leader ? flagEl(b.leader) : null, " ", h("button", { class: "linkish", text: b.name, onclick: () => goBloc(b.id) })),
         h("td", { class: "num" }, h("span", { class: "bar" }, h("i", { style: "width:" + Math.max(2, Math.min(100, b.dis / (rep.threshold || 1) * 100)) + "%" })), stripZero(fmt(b.dis, "d2")) + " / " + thr),
         h("td", { class: "num", text: b.growth == null ? "—" : "+" + fmt(b.growth, "d2") }),
         h("td", { class: "num", text: b.share == null ? "—" : fmt(b.share, "pct") }),
@@ -867,7 +885,7 @@
         for (const ms of by.values()) ol.append(h("div", { class: "mod link" }, h("b", { text: ms[0].name }),
           h("span", { class: "mod-v", text: ms.map(m => linkVal(m) + " · " + targetName(m.target)).join(" · ") }), ms[0].note ? h("span", { class: "hint", text: ms[0].note }) : null));
         box.append(h("h3", { text: "Старый Свет" }),
-          h("p", { class: "mech-note", text: "Европейские дела: бесчестье союза, Бернский договор и резолюции. Положение всех союзов — в Вики → Механики → Союзы" + (opts.gm ? "; правится во вкладке «Старый Свет»." : ".") }), ol);
+          h("p", { class: "mech-note", text: "Европейские дела: бесчестье союза, Бернский договор и резолюции. Положение всех союзов — в Вики → Лор → Регионы → Старый Свет (Европа)" + (opts.gm ? "; правится во вкладке «Старый Свет»." : ".") }), ol);
       }
       if (opts.gm && c.dossier != null) {
         // справка из импорта: источники и что смоделировано. Игроку на странице не показывается
@@ -1739,6 +1757,7 @@
     rewrapGm,
     renderCorpLore,
     renderIdeoLore,
+    renderOldWorld,
     open: () => { window.KG.go("wiki/mech"); init(); },
     ready: () => init(),
     refreshArticle: () => fillArticleLists(),
