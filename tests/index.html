@@ -23,8 +23,8 @@
 <script src="../js/sats.js?v=20261115e"></script>
 <script src="../js/moon-names.js?v=20261115a"></script>
 <script src="../js/wrap.js?v=20261115a"></script>
-<script src="../js/mech-lore.js?v=20261117b"></script>
-<script src="../js/mech-model.js?v=20261117d"></script>
+<script src="../js/mech-lore.js?v=20261117q"></script>
+<script src="../js/mech-model.js?v=20261117q"></script>
 <script src="../js/mech-crypto.js?v=20261115a"></script>
 <script>
 (async function () {
@@ -349,6 +349,8 @@
     inm: [92.9552, 76.0434, 50.8624, 47.7702, 46.8185], rank: [1, 2, 3, 4, 5], kessler: [0.7725, 0.7725, 0.7725, 0.7725, 0.7725], debris_loss: [4.326, 4.4805, 1.9313, 2.3175, 2.163],
     launch_cost: [0.7725, 0.7725, 0.7725, 0.7725, 0.7725]
   };
+  // Excel считает ход длиной в год; на сайте ход = 3 месяца, поэтому всё «за ход» в 4 раза меньше эталона
+  for (const k of ["d_tech", "d_stab", "d_gdp", "debris_loss"]) XL[k] = XL[k].map(v => v / MM.TURNS_YEAR);
   const rulesM = MM.defaultRules();
   const samples = {}; MM.SAMPLES.forEach((s, i) => (samples["s" + i] = s.make()));
   const all = MM.computeAll(rulesM, samples);
@@ -361,6 +363,54 @@
     const lv = [0, 1, 2, 3, 4].map(i => all.results["s" + i].econ_level);
     assert(lv.join("|") === "Индустриальная|Развитая|Развивающаяся|Развивающаяся|Развивающаяся", lv.join(", "));
   });
+  await test("Ход = 3 месяца: календарь", () => {
+    assert(MM.TURN_MONTHS === 3 && MM.TURNS_YEAR === 4, "длина хода");
+    const L = [1, 2, 4, 5, 9].map(t => MM.turnLabel(t, MM.turnYear(t, 2200)));
+    assert(L.join(" | ") === "Ход 1 · январь–март 2200 | Ход 2 · апрель–июнь 2200 | Ход 4 · октябрь–декабрь 2200 | Ход 5 · январь–март 2201 | Ход 9 · январь–март 2202", L.join(" | "));
+    assert(MM.firstYear(6, 2201) === 2200 && MM.firstYear(1, 2200) === 2200, "год первого хода");
+    return L[3];
+  });
+  await test("Ход = 3 месяца: за 4 хода страна меняется как прежде за год", () => {
+    const old = { K: { pop_growth: 0.012, tech_cost: 25, launch_pad: 4, soc_eff: 40, price_pm: 1.5 },
+      tables: { law: [{ id: "l5", stab: 6 }], ideo: [{ id: "purity", e_stab: 2, e_tech: -10 }], csector: [{ id: "media", stab: 0.25, tech: 0.004, gdp: 0.3 }],
+        wonder: [{ id: "virtual", t1: "d_stab", v1: 3, t2: "", v2: 0 }, { id: "weather", t1: "food_prod", v1: 10, t2: "readiness", v2: 10 }] } };
+    const q = MM.quarterRules(old);
+    near(q.K.pop_growth, 0.003, 1e-12, "прирост"); near(q.K.tech_cost, 100, 1e-12, "стоимость технологий"); near(q.K.launch_pad, 1, 1e-12, "пуски");
+    near(q.K.soc_eff, 10, 1e-12, "соцрасходы"); near(q.K.price_pm, 1.5, 1e-12, "цены не меняются");
+    near(q.tables.law[0].stab, 1.5, 1e-12, "закон"); near(q.tables.ideo[0].e_stab, 0.5, 1e-12, "идеология"); near(q.tables.ideo[0].e_tech, -10, 1e-12, "проценты не меняются");
+    near(q.tables.csector[0].stab, 0.0625, 1e-12, "отрасль: стабильность"); near(q.tables.csector[0].tech, 0.001, 1e-12, "отрасль: технологии");
+    near(q.tables.wonder[0].v1, 0.75, 1e-12, "чудо: стабильность"); near(q.tables.wonder[1].v1, 10, 1e-12, "чудо: проценты");
+    near(old.K.pop_growth, 0.012, 0, "исходные правила не испорчены");
+    // значения по умолчанию = старые годовые / 4: пересчёт годовых правил даёт те же цифры
+    const D = MM.defaultRules(), ann = JSON.parse(JSON.stringify(D));
+    const back = { tech_cost: 0.25 }; for (const k of ["soc_eff", "food_stab", "en_stab", "sec_stab", "support_stab", "pop_growth", "rad_mort", "growth_base", "infra_growth", "stab_growth", "nav_growth", "mop_pen", "ovp_unit", "ton_unit", "ac_unit", "launch_pad", "sat_decay", "kessler_loss", "corp_sov_stab", "corp_host_stab"]) back[k] = 4;
+    for (const k in back) ann.K[k] *= back[k];
+    ann.tables.law.forEach(x => (x.stab *= 4)); ann.tables.ideo.forEach(x => (x.e_stab *= 4)); ann.tables.csector.forEach(x => { x.tech *= 4; x.stab *= 4; });
+    ann.tables.wonder.forEach(x => { if (x.t1 === "d_stab") x.v1 *= 4; if (x.t2 === "d_stab") x.v2 *= 4; });
+    const QA = MM.quarterRules(ann);
+    for (const k in D.K) near(QA.K[k], D.K[k], 1e-9, k);
+    const c = MM.SAMPLES[0].make(), a = MM.compute(D, c), b = MM.compute(QA, c), y = MM.compute(ann, c);
+    for (const k of ["d_stab", "d_tech", "d_pop", "d_gdp", "ovp", "launch_cap", "gdp", "budget", "upkeep_total"]) near(b[k], a[k], 1e-9, k);
+    for (const k of ["d_stab", "d_tech", "d_gdp", "ovp", "launch_cap"]) near(a[k] * 4, y[k], 1e-9, k + " × 4 = за год");
+    near(a.gdp, y.gdp, 1e-9, "ВВП — годовой"); near(a.upkeep_total, y.upkeep_total, 1e-9, "содержание — годовое");
+    return "Δ стабильности " + a.d_stab.toFixed(3) + " за ход, " + y.d_stab.toFixed(2) + " за год";
+  });
+  await test("Ход = 3 месяца: старые эффекты, связи и файл стран делятся на 4", () => {
+    const mods = [{ id: "a", target: "d_stab", mode: "add", value: -2 }, { id: "b", target: "d_tech", mode: "add", value: 0.04 }, { id: "c", target: "d_stab", mode: "pct", value: 10 },
+      { id: "d", target: "budget", mode: "add", value: 50 }, { id: "e", target: "security", mode: "add", value: 0.1 }];
+    const q = MM.quarterMods(mods);
+    assert(q.map(m => m.value).join(",") === "-0.5,0.01,10,50,0.1", q.map(m => m.value).join(","));
+    const L = [{ id: "f", kind: "fixed", to: ["1"], target: "d_stab", value: -1 }, { id: "s", kind: "sync", to: ["1", "2"], target: "d_stab", value: 1 },
+      { id: "g", kind: "fixed", to: ["1"], target: "gdp", value: 10 }, { id: "e", kind: "echo", from: ["1"], to: ["2"], target: "d_stab", value: 2 },
+      { id: "a", kind: "aid", from: ["1"], to: ["2"], target: "d_stab", value: 2, cost_t: "d_stab", cost_v: 1 }];
+    const ql = MM.quarterLinks(L);
+    assert(ql.map(x => x.value).join(",") === "-0.25,0.25,10,2,0.5" && ql[4].cost_v === 0.25, ql.map(x => x.value + "/" + (x.cost_v || "")).join(","));
+    const file = { format: "khatum-countries", countries: { "1": { in: {}, mods: [mods[0]] } }, links: [L[0]] };
+    const o = MM.parseImport(file), n = MM.parseImport(Object.assign({}, file, { turn_months: 3 }));
+    assert(o.countries["1"].mods[0].value === -0.5 && o.links[0].value === -0.25, "годовой файл не переведён");
+    assert(n.countries["1"].mods[0].value === -2 && n.links[0].value === -1, "квартальный файл переведён второй раз");
+    assert(MM.isOldTurn({}) && !MM.isOldTurn({ turn_months: 3 }), "метка хода");
+  });
   await test("Игрок по сводке мира получает те же цифры, что ГМ", () => {
     for (const id in samples) {
       const r = MM.compute(rulesM, samples[id]); MM.applyWorld(rulesM, samples[id], r, all.ctx[id]);
@@ -372,11 +422,11 @@
     const names = [0, 1, 2, 3, 4].map(i => all.results["s" + i].ideology).join("|");
     assert(names === "Превосходство|Гармония|Чистота|Духовность|Равновесие", names);
   });
-  await test("Идеология: модификаторы как в Excel (Превосходство +20% к технологиям, −1 стабильности)", () => {
+  await test("Идеология: модификаторы как в Excel (Превосходство +20% к технологиям, −1 стабильности за год = −0,25 за ход)", () => {
     const ra = MM.compute(rulesM, MM.SAMPLES[0].make());
     const step = f => ra.applied.find(x => x.id === "ideo:supremacy:" + f) || assert(false, "нет шага " + f);
     const t = step("e_tech"), s = step("e_stab"), m = step("e_morale"), p = step("e_pm");
-    near(t.after, t.before * 1.2, 1e-9, "технологии"); near(s.after, s.before - 1, 1e-9, "стабильность");
+    near(t.after, t.before * 1.2, 1e-9, "технологии"); near(s.after, s.before - 0.25, 1e-9, "стабильность");
     near(m.after, m.before * 0.95, 1e-9, "боевой дух"); near(p.after, p.before * 1.05, 1e-9, "ПМ");
     assert(ra.applied.filter(x => String(x.id).startsWith("ideo:")).length === 4, "шагов идеологии не 4");
     const b = MM.SAMPLES[0].make(); b.in.ideology = "";
@@ -419,7 +469,7 @@
     near(MM.normalizeRules({ K: Object.assign({}, oldK, { debris_base: 0.4 }) }).K.debris_base, 0.4, 1e-12, "своё значение ГМа");
     near(MM.normalizeRules({ K: Object.assign({}, d.K, { debris_base: 0.25 }) }).K.debris_base, 0.25, 1e-12, "новые правила с 0,25");
     const r = MM.compute(d, MM.SAMPLES[0].make()); MM.applyWorld(d, MM.SAMPLES[0].make(), r, { satSum: 0 });
-    near(r.debris_loss, r.sat_total * r.kessler * 0.1, 1e-9, "потери от мусора"); near(r.launch_cost, r.kessler, 1e-9, "удорожание запусков");
+    near(r.debris_loss, r.sat_total * r.kessler * 0.025, 1e-9, "потери от мусора"); near(r.launch_cost, r.kessler, 1e-9, "удорожание запусков");
   });
   await test("Особый эффект: +10% к ВВП и −50 к мощи ВМФ", () => {
     const c = MM.SAMPLES[0].make();
@@ -541,7 +591,7 @@
     const c = MM.SAMPLES[0].make(); c.corp = { militech: { pres: 6, rel: -100 } };
     const a = MM.compute(rulesM, MM.SAMPLES[0].make()), b = MM.compute(rulesM, c), W = 6 * 1.6;
     near(b.ovp, a.ovp, 1e-9, "ОВП");
-    near(b.d_stab, a.d_stab - W * 0.4, 1e-9, "стабильность");
+    near(b.d_stab, a.d_stab - W * 0.1, 1e-9, "стабильность");
     assert(b.gdp < a.gdp, "ВВП не упал");
   });
   await test("Государство в государстве: влияние группы ARC складывается, суверенитет падает", () => {
@@ -550,7 +600,7 @@
     assert(m.infl < 30 && m.groupInfl >= 30 && m.sis, "группа " + m.groupInfl);
     assert(b.corp_sis_n === 1, "засчитано " + b.corp_sis_n);
     near(b.sovereignty, 100 - b.corp_infl, 1e-9, "суверенитет");
-    near(b.corp_sov_pen, Math.max(0, b.corp_infl - 30) * 0.1, 1e-9, "штраф");
+    near(b.corp_sov_pen, Math.max(0, b.corp_infl - 30) * 0.025, 1e-9, "штраф");
   });
   await test("Анклавы: дружественный охраняет себя, враждебный — угроза", () => {
     const f = MM.SAMPLES[0].make(); f.corp = { arasaka: { pres: 2, rel: 30, enc: 2 } };
@@ -595,7 +645,7 @@
   // ================= лор, союзы и карта: всё сходится между летописью, картой и механиками =================
   group("Лор: государства, союзы, хронология");
   const lore = await json("../data/lore.json"), mechJ = await json("../data/mech.json");
-  const rulesLive = MM.normalizeRules(mechJ.rules), AL = map.alliances || {}, MC = map.countries;
+  const rulesLive = MM.normalizeRules(MM.isOldTurn(mechJ) ? MM.quarterRules(mechJ.rules) : mechJ.rules), AL = map.alliances || {}, MC = map.countries;
   const low = t => String(t || "").toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ").trim();
   const nm = id => String((MC[id] || {}).name || id).replace(/\n/g, " ");
   const ideoNames = new Set(rulesLive.tables.ideo.map(x => low(x.name)));
@@ -735,9 +785,9 @@
     rl.tables.wonder.find(w => w.id === "virtual").owner = "8"; rl.tables.wonder.find(w => w.id === "freewill").owner = "9";
     const base = MM.compute(rulesLive, MM.SAMPLES[1].make(), "8");
     const v = MM.compute(rl, MM.SAMPLES[1].make(), "8"), f = MM.compute(rl, MM.SAMPLES[1].make(), "9");
-    near(v.d_stab - base.d_stab, 3, 1e-9, "Виртуальный мир");
+    near(v.d_stab - base.d_stab, 0.75, 1e-9, "Виртуальный мир");
     near(f.d_tech / base.d_tech, 1.25, 1e-9, "Машинная свобода воли: технологии");
-    near(f.d_stab - base.d_stab, -1, 1e-9, "Машинная свобода воли: стабильность");
+    near(f.d_stab - base.d_stab, -0.25, 1e-9, "Машинная свобода воли: стабильность");
     assert(MM.wonderMods(rl, null).length === 0, "без номера страны чудес нет");
   });
 

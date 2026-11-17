@@ -79,10 +79,10 @@
       mapState()
     ]);
     config = cfg;
-    mech = mj || { v: 1, updated: null, turn: 1, year: 2200, rules: null, gm: null, countries: {} };
+    mech = mj || { v: 1, updated: null, turn: 1, year: 2200, turn_months: M.TURN_MONTHS, rules: null, gm: null, countries: {} };
     mech.countries = mech.countries || {};
     mechPub = clone(mech);
-    rules = M.normalizeRules(mech.rules);
+    rules = pubRules(mech);
     mapCountries = (mp && mp.countries) || {};
     M.setMap(mapCountries, (mp && mp.alliances) || {}); // союзы карты = союзы механик
   }
@@ -237,10 +237,10 @@
   // строка характеристик карточки типа (числа — из действующего справочника)
   const n2 = v => fmt(+v, Math.abs(+v) < 1 && +v !== 0 ? "d3" : "d2").replace(/,?0+$/, "");
   const UNIT_STATS = {
-    div: r => "Л/с " + n2(r.pers) + " тыс. · мощь " + n2(r.power) + " · содержание " + n2(r.upkeep) + " млрд/ход · постройка " + n2(r.cost) + " ОВП",
-    ac: r => "Мощь " + n2(r.power) + " · содержание " + n2(r.upkeep) + " млрд/ход · постройка " + n2(r.cost) + " ОВП" + (+r.wh ? " · боеголовок " + n2(r.wh) : ""),
+    div: r => "Л/с " + n2(r.pers) + " тыс. · мощь " + n2(r.power) + " · содержание " + n2(r.upkeep) + " млрд/год · постройка " + n2(r.cost) + " ОВП",
+    ac: r => "Мощь " + n2(r.power) + " · содержание " + n2(r.upkeep) + " млрд/год · постройка " + n2(r.cost) + " ОВП" + (+r.wh ? " · боеголовок " + n2(r.wh) : ""),
     ship: r => "Экипаж " + n2(r.pers) + " тыс. · мощь " + n2(r.power) + " · " + n2(r.ton) + " тыс. т · постройка " + n2(r.cost) + " ОВП" + (+r.wh ? " · боеголовок " + n2(r.wh) : ""),
-    sat: r => "Запуск " + n2(r.cost) + " млрд кр. · содержание " + n2(r.upkeep) + " млрд/ход",
+    sat: r => "Запуск " + n2(r.cost) + " млрд кр. · содержание " + n2(r.upkeep) + " млрд/год",
     energy: () => "", food: r => String(r.weather) === "1" ? "Зависит от климата и радиации" : "Не зависит от погоды",
     industry: r => (M.TABLES.industry.fields[1][3].find(o => o[0] === r.role) || [, ""])[1]
   };
@@ -378,12 +378,15 @@
     box.append(filt, grid);
   }
 
+  // правила из опубликованного mech.json (опубликованные при ходе длиной в год переводятся на квартал)
+  const pubRules = m => M.normalizeRules(M.isOldTurn(m) ? M.quarterRules(m.rules) : m.rules);
+
   // ---------- рейтинг ----------
   function renderRating() {
     const box = $("mechRating"); box.innerHTML = "";
     const note = rulesNote(); if (note) box.append(note);
     const list = Object.keys(mech.countries).filter(id => mech.countries[id].pub).map(id => Object.assign({ id }, mech.countries[id].pub)).sort((a, b) => a.rank - b.rank);
-    box.append(h("p", { class: "mech-note" }, "Ход " + mech.turn + ", " + mech.year + " год. Индекс национальной мощи (ИНМ) сравнивает страну с мировым лидером по ВВП, армии, населению, технологиям, стабильности и спутникам." +
+    box.append(h("p", { class: "mech-note" }, M.turnLabel(mech.turn, mech.year) + ". Индекс национальной мощи (ИНМ) сравнивает страну с мировым лидером по ВВП, армии, населению, технологиям, стабильности и спутникам." +
       (mech.updated ? " Обновлено " + new Date(mech.updated).toLocaleString("ru-RU") + "." : "")));
     if (!list.length) { box.append(h("p", { class: "empty", text: "ГМ ещё не опубликовал данные стран." })); renderCorpRating(box); return; }
     const tbl = h("table", { class: "mt rating" }, h("thead", null, h("tr", null, h("th", { text: "Место" }), h("th", { text: "Государство" }), h("th", { text: "ИНМ" }), h("th", { text: "Уровень экономики" }))));
@@ -614,7 +617,7 @@
     if (r.kessler >= 0.75) w.push("Орбита перегружена: индекс Кесслера " + fmt(r.kessler, "d2") + ".");
     if (r.debris_loss >= 0.5) w.push("Мусор на орбите: за ход может погибнуть ≈ " + fmt(r.debris_loss, "d1") + " спутн.; запуски дороже на " + fmt(r.launch_cost, "pct") + ".");
     if (+I.mob_law >= 4) w.push("Режим «" + r.mob_law_name + "» каждый ход снижает стабильность.");
-    if (r.corp_sov_pen > 0) w.push("Корпорации подмяли государство (влияние " + fmt(r.corp_infl, "d1") + "): общество теряет " + fmt(r.corp_sov_pen, "d1") + " стабильности за ход.");
+    if (r.corp_sov_pen > 0) w.push("Корпорации подмяли государство (влияние " + fmt(r.corp_infl, "d1") + "): общество теряет " + fmt(r.corp_sov_pen, "d2") + " стабильности за ход.");
     const sis = (r.corp_rows || []).filter(x => x.sis && x.lead);
     if (sis.length) w.push("«Государство в государстве»: " + sis.map(x => groupName(x.group)).join(", ") + ".");
     const hostile = (r.corp_rows || []).filter(x => x.W > 0 && x.rel < 0);
@@ -721,14 +724,14 @@
       const kpi = (label, fn, sub) => h("div", { class: "kpi" }, h("span", { class: "kl", text: label }), live((e, r, b) => { e.textContent = fn(r); }, "kv"), sub ? live((e, r) => { e.textContent = sub(r); }, "ks") : null);
       box.append(h("div", { class: "kpis" },
         kpi("Место в рейтинге", r => r.rank + "", r => "ИНМ " + fmt(r.inm, "d1")),
-        kpi("ВВП, млрд кр.", r => fmt(r.gdp, "d1"), r => "рост " + fmt(r.d_gdp, "pct") + " за ход"),
+        kpi("ВВП, млрд кр./год", r => fmt(r.gdp, "d1"), r => "рост " + fmt(r.d_gdp, "pct") + " за ход"),
         kpi("ВВП на душу", r => fmt(r.gdp_pc, "d1"), r => r.econ_level),
         kpi("Население, млн", r => fmt(r.pop_total, "d2"), r => "прирост " + fmt(r.d_pop, "pct")),
         kpi("Промышленная мощь", r => fmt(r.pm_eff, "d1"), r => "доля мирового экспорта " + fmt(r.world_share, "pct")),
         kpi("Бюджет, млрд кр.", r => fmt(r.budget, "d1"), r => "оборона " + fmt(r.def_budget, "d1")),
         kpi("Военная мощь", r => fmt(r.total_power, "d1"), r => fmt(r.world_mil_share, "pct") + " мировой"),
         kpi("Армия, тыс. чел.", r => fmt(r.active, "d1"), r => r.div_total + " див. · " + r.ships_total + " кор. · " + r.ac_total + " ЛА"),
-        kpi("Стабильность", () => fmt(+c.in.stability, "d1"), r => (r.d_stab >= 0 ? "+" : "") + fmt(r.d_stab, "d1") + " за ход"),
+        kpi("Стабильность", () => fmt(+c.in.stability, "d1"), r => (r.d_stab >= 0 ? "+" : "") + fmt(r.d_stab, "d2") + " за ход"),
         kpi("Технологии", () => fmt(+c.in.tech, "d2"), r => "+" + fmt(r.d_tech, "d3") + " за ход"),
         kpi("Спутники", r => fmt(r.sat_total, "int"), r => "орбита: " + r.kessler_status.toLowerCase()),
         kpi("Суверенитет", r => fmt(r.sovereignty, "d1"), r => r.corp_status.toLowerCase() + (r.corp_share > 0 ? " · корпорации: " + fmt(r.corp_share, "pct") + " ВВП" : ""))
@@ -923,6 +926,10 @@
     const rec = mech.countries[id];
     if (!rec || !rec.data) throw new Error("Данные страны ещё не опубликованы");
     const data = await C.decJSON(dk, rec.data);
+    if (M.isOldTurn(data)) {
+      data.c.mods = M.quarterMods(data.c.mods);
+      if (data.world && data.world.links) data.world.links = M.quarterMods(data.world.links);
+    }
     const base = M.compute(rules, data.c); M.applyWorld(rules, data.c, base, data.world);
     player = { id, dk, data, base, c: clone(data.c) };
   }
@@ -942,7 +949,7 @@
     }
     const id = player.id, d = player.data;
     const head = h("div", { class: "cv-head" }, flagEl(id, "big"), h("div", { class: "cv-title" }, h("h2", { text: countryName(id) }),
-      h("span", { class: "mech-note", text: "Ход " + (d.turn || mech.turn) + ", " + (d.year || mech.year) + " год" + (sandbox ? " · режим «Что если»: правки не сохраняются, ▲▼ — разница с текущим положением" : "") })));
+      h("span", { class: "mech-note", text: M.turnLabel(d.turn || mech.turn, d.year || mech.year) + (sandbox ? " · режим «Что если»: правки не сохраняются, ▲▼ — разница с текущим положением" : "") })));
     const btns = h("div", { class: "cv-btns" });
     if (sandbox) btns.append(h("button", { text: "Сбросить", onclick: () => { player.c = clone(player.data.c); renderMy(); } }), h("button", { text: "Выйти из «Что если»", onclick: () => { sandbox = false; player.c = clone(player.data.c); renderMy(); } }));
     else btns.append(h("button", { class: "accent", text: "Что если…", title: "Прикинуть последствия решений. Правки не сохраняются", onclick: () => { sandbox = true; renderMy(); } }));
@@ -1019,6 +1026,10 @@
     // связи стран и обстоятельства — только ГМу (зашифрованы мастер-ключом)
     gmLinks = [];
     if (mech.links) { try { gmLinks = M.normLinks(await C.decJSON(mk, mech.links)); } catch (e) { console.error(e); toast("Не удалось расшифровать связи стран"); } }
+    if (M.isOldTurn(mech)) {
+      for (const id in gmData) if (gmData[id]) gmData[id].mods = M.quarterMods(gmData[id].mods);
+      gmLinks = M.quarterLinks(gmLinks);
+    }
     snapshotBase();
   }
   function snapshotBase() {
@@ -1068,7 +1079,7 @@
   function lockGm() {
     mk = null; dks = {}; gmData = {}; gmSel = null; gmDirty = false; gmLinks = [];
     try { sessionStorage.removeItem(MK_KEY); } catch (e) { /* */ }
-    mech = clone(mechPub); rules = M.normalizeRules(mech.rules);
+    mech = clone(mechPub); rules = pubRules(mech);
     fillArticleLists(); renderRef();
   }
 
@@ -1079,7 +1090,7 @@
     const dot = $("mechDirty"); if (dot) dot.classList.remove("hidden");
     clearTimeout(draftTimer);
     draftTimer = setTimeout(() => {
-      try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ base: mechPub.updated, time: Date.now(), mech, gmData, rules, gmLinks })); } catch (e) { toast("Не удалось сохранить черновик в браузере"); }
+      try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ base: mechPub.updated, time: Date.now(), turn_months: M.TURN_MONTHS, mech, gmData, rules, gmLinks })); } catch (e) { toast("Не удалось сохранить черновик в браузере"); }
     }, 800);
   }
   async function offerDraft() {
@@ -1089,8 +1100,13 @@
     const ok = await ask("Восстановить неопубликованный черновик механик?", "", { confirm: true, note });
     if (!ok) { try { localStorage.removeItem(DRAFT_KEY); } catch (e) { /* */ } return; }
     const gmBox = mech.gm; // пароль ГМа мог смениться после черновика — оставляем актуальную обёртку ключа
-    mech = d.mech; mech.gm = gmBox || mech.gm; gmData = d.gmData; rules = M.normalizeRules(d.rules);
-    if (Array.isArray(d.gmLinks)) gmLinks = M.normLinks(d.gmLinks);
+    mech = d.mech; mech.gm = gmBox || mech.gm; gmData = d.gmData;
+    // черновик, сохранённый при ходе длиной в год, переводим на квартал
+    const oldDraft = M.isOldTurn(d);
+    rules = M.normalizeRules(oldDraft ? M.quarterRules(d.rules) : d.rules);
+    if (oldDraft) for (const id in gmData) if (gmData[id]) gmData[id].mods = M.quarterMods(gmData[id].mods);
+    if (Array.isArray(d.gmLinks)) gmLinks = M.normLinks(oldDraft ? M.quarterLinks(d.gmLinks) : d.gmLinks);
+    mech.turn_months = M.TURN_MONTHS;
     // ключи стран из черновика: новые страны были созданы в нём
     for (const id in mech.countries) if (!dks[id]) { try { dks[id] = await C.unlockWithKey(mk, mech.countries[id].kg); } catch (e) { /* */ } }
     gmDirty = true; fillArticleLists();
@@ -1113,11 +1129,12 @@
       const { results, ctx } = M.computeAll(rules, gmData, gmLinks);
       const out = clone(mech);
       out.rules = rules;
+      out.turn_months = M.TURN_MONTHS;
       out.updated = new Date().toISOString();
       if (gmLinks.length || out.links) out.links = await C.encJSON(mk, gmLinks);
       for (const id in out.countries) {
         if (!gmData[id] || !dks[id]) continue;
-        out.countries[id].data = await C.encJSON(dks[id], { c: gmData[id], world: ctx[id], turn: out.turn, year: out.year, at: out.updated });
+        out.countries[id].data = await C.encJSON(dks[id], { c: gmData[id], world: ctx[id], turn: out.turn, year: out.year, turn_months: M.TURN_MONTHS, at: out.updated });
         out.countries[id].pub = { inm: +results[id].inm.toFixed(2), rank: results[id].rank, econ: results[id].econ_level };
       }
       // публичный рейтинг корпораций: только место, выручка и число стран
@@ -1292,7 +1309,8 @@
     // мусор: ожидаемые потери дробные — ГМ решает, кого задело (≥ 0,5 — скорее да)
     const debris = ids.filter(id => results[id].debris_loss >= 0.3).map(id => countryName(id) + " ≈ " + fmt(results[id].debris_loss, "d1"));
     if (debris.length) losses.push("от мусора: " + debris.join(", "));
-    const ok = await ask("Перейти к ходу " + (mech.turn + 1) + "?", "", { confirm: true,
+    const y0 = M.firstYear(mech.turn, mech.year);
+    const ok = await ask("Перейти к ходу " + (mech.turn + 1) + " (" + M.turnMonths(mech.turn + 1) + " " + M.turnYear(mech.turn + 1, y0) + ")?", "", { confirm: true,
       note: "У всех стран технологии, стабильность и население примут прогнозные значения." + (losses.length ? " Не забудьте убрать спутники, сошедшие с орбиты (" + losses.join("; ") + ")." : "") });
     if (!ok) return;
     for (const id of ids) {
@@ -1302,18 +1320,20 @@
       c.in.pop_meg = +((+c.in.pop_meg || 0) * (1 + r.d_pop)).toFixed(3);
       c.in.pop_waste = +((+c.in.pop_waste || 0) * (1 + r.d_pop)).toFixed(3);
     }
-    mech.turn++; mech.year++;
+    mech.turn++; mech.year = M.turnYear(mech.turn, y0);
     markDirty(); renderGm();
-    toast("Ход " + mech.turn + ". Опубликуйте, чтобы игроки увидели.");
+    toast(M.turnLabel(mech.turn, mech.year) + ". Опубликуйте, чтобы игроки увидели.");
   }
   async function editTurn() {
-    const v = await window.KGForm("Ход и год", [{ key: "turn", label: "Номер хода", type: "number", min: 1 }, { key: "year", label: "Год", type: "number" }], { turn: mech.turn, year: mech.year });
+    const v = await window.KGForm("Ход и год", [{ key: "turn", label: "Номер хода", type: "number", min: 1, hint: "1 ход = 3 месяца, 4 хода = игровой год." },
+      { key: "y0", label: "Год первого хода", type: "number", hint: "Ход 1 — январь–март этого года. Год текущего хода считается сам." }],
+      { turn: mech.turn, y0: M.firstYear(mech.turn, mech.year) });
     if (!v) return;
-    mech.turn = +v.turn || 1; mech.year = +v.year || 2200; markDirty(); renderGm();
+    mech.turn = Math.max(1, Math.round(+v.turn || 1)); mech.year = M.turnYear(mech.turn, +v.y0 || 2200); markDirty(); renderGm();
   }
 
   // значение эффекта связи: пункты, проценты или прибавка в единицах показателя
-  const linkVal = m => (+m.value >= 0 ? "+" : "−") + fmt(Math.abs(+m.value), m.mode === "add" && Math.abs(+m.value) >= 10 ? "d1" : "d2").replace(/,?0+$/, "") + (m.mode === "pct" ? "%" : m.target === "d_stab" ? " за ход" : "");
+  const linkVal = m => (+m.value >= 0 ? "+" : "−") + fmt(Math.abs(+m.value), m.mode === "add" && Math.abs(+m.value) >= 10 ? "d1" : Math.abs(+m.value) < 1 ? "d3" : "d2").replace(/,0+$|(,\d*?)0+$/, "$1") + (m.mode === "pct" ? "%" : m.target === "d_stab" ? " за ход" : "");
 
   // ГМ: связи стран и обстоятельства (видит только ГМ; игрок — свои эффекты в карточке страны)
   let gmLinkQ = "";
@@ -1488,7 +1508,7 @@
       return;
     }
     const top = h("div", { class: "gm-top" },
-      h("button", { class: "turn", title: "Изменить ход и год", text: "Ход " + mech.turn + " · " + mech.year + " год", onclick: editTurn }),
+      h("button", { class: "turn", title: "Изменить ход и год", text: M.turnLabel(mech.turn, mech.year), onclick: editTurn }),
       h("button", { class: gmView === "countries" ? "active" : "", text: "Страны", onclick: () => { gmView = "countries"; renderGm(); } }),
       h("button", { class: gmView === "corps" ? "active" : "", text: "Корпорации", onclick: () => { gmView = "corps"; renderGm(); } }),
       h("button", { class: gmView === "links" ? "active" : "", text: "Связи", title: "Связи стран и обстоятельства — видит только ГМ", onclick: () => { gmView = "links"; renderGm(); } }),
@@ -1582,7 +1602,7 @@
     ready: () => init(),
     refreshArticle: () => fillArticleLists(),
     countryView: o => countryView(o), // для автотестов: карточка страны без входа
-    get turn() { return mech ? { turn: mech.turn, year: mech.year } : null; },
+    get turn() { return mech ? { turn: mech.turn, year: mech.year, label: M.turnLabel(mech.turn, mech.year) } : null; },
     get rules() { return rules; },
     corpLabel: id => groupName(id),
     get model() { return M; }

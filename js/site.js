@@ -367,7 +367,7 @@
   }
   $("evAdd").addEventListener("click", () => {
     const t = window.KGMech && window.KGMech.turn;
-    const ev = { id: uid("ev"), date: t ? "Ход " + t.turn + ", " + t.year + " год" : new Date().toLocaleDateString("ru-RU"), title: "Новое событие", html: "" };
+    const ev = { id: uid("ev"), date: t ? (t.label || "Ход " + t.turn + ", " + t.year + " год") : new Date().toLocaleDateString("ru-RU"), title: "Новое событие", html: "" };
     site.events.unshift(ev); markDirty(); renderEvents();
     const el = document.querySelector('[data-edit="list:events:' + ev.id + ':html"]'); if (el) el.focus();
   });
