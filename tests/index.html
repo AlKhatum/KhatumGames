@@ -24,7 +24,7 @@
 <script src="../js/moon-names.js?v=20261115a"></script>
 <script src="../js/wrap.js?v=20261115a"></script>
 <script src="../js/mech-lore.js?v=20261117q"></script>
-<script src="../js/mech-model.js?v=20261118m"></script>
+<script src="../js/mech-model.js?v=20261118n"></script>
 <script src="../js/mech-crypto.js?v=20261115a"></script>
 <script>
 (async function () {
@@ -319,7 +319,7 @@
     return leg.length + " облаков, " + p.toFixed(1) + "%";
   });
   await test("Карточки государств: поля ГМа — строки разумной длины", () => {
-    const keys = ["capital", "gov", "head", "lang", "currency", "pop", "desc"];
+    const keys = ["capital", "gov", "head", "lang", "cur", "desc"]; // население не пишется: считается по городам
     const withInfo = Object.values(map.countries).filter(c => c.info);
     for (const c of withInfo) for (const k in c.info) {
       assert(keys.includes(k), c.name + ": неизвестное поле " + k);
@@ -750,10 +750,34 @@
     const miss = [];
     for (const s of lore.states) if (s.map.length === 1) {
       const info = MC[s.map[0]].info || {};
-      for (const [k, f] of [["Столица", "capital"], ["Лидер", "head"], ["Правление", "gov"], ["Население", "pop"]]) if (s.passport[k] && !info[f]) miss.push(s.title + ": " + k);
+      for (const [k, f] of [["Столица", "capital"], ["Лидер", "head"], ["Правление", "gov"]]) if (s.passport[k] && !info[f]) miss.push(s.title + ": " + k);
     }
     assert(!miss.length, miss.join(", "));
     assert(MC["8"].info.head === "Вадим Петрович Козлов" && MC["8"].info.capital === "Москва", "Москва → Козлов");
+  });
+  await test("Население стран — из городов карты: у каждой страны лора есть города с населением и доля пустошей", () => {
+    const pop = MM.cityPopOf(map.cities), bad = [];
+    for (const s of lore.states) for (const id of s.map) if (!(pop[id] > 0) || !(MC[id].pw >= 0)) bad.push(nm(id));
+    assert(!bad.length, "без городов или доли пустошей: " + bad.join(", "));
+    const noCc = Object.values(map.cities).filter(c => c.cc && !MC[c.cc]);
+    assert(!noCc.length, "город в несуществующей стране: " + noCc.map(c => c.name));
+    assert(!Object.values(MC).some(c => c.info && c.info.pop), "ручное население в карточке");
+    // модель берёт население мегаполисов из городов, пустоши — по доле pw
+    const c = { in: { pop_meg: 1, pop_waste: 1 } }, id = "8";
+    MM.setMap(map.countries, map.alliances); MM.setCityPop(pop);
+    const p = MM.popOf(c, id), r = MM.compute(MM.defaultRules(), c, id);
+    MM.setCityPop({}); MM.setMap({}, {}); // до группы «Союзы и блоки» карта модели пустая — не меняем это другим тестам
+    assert(Math.abs(p.meg - pop[id] / 1e6) < 1e-9 && Math.abs(p.waste - p.meg * MC[id].pw) < 1e-9, "popOf");
+    assert(Math.abs(r.pop_total - p.meg - p.waste) < 1e-9, "compute: pop_total = города + пустоши");
+    return Object.keys(pop).length + " стран с городами, всего " + Math.round(Object.values(pop).reduce((a, b) => a + b, 0) / 1e6) + " млн в городах";
+  });
+  await test("Валюты: у каждой страны лора — валюта из справочника и язык", () => {
+    const CU = map.currencies || {}, bad = [];
+    for (const k in CU) { const x = CU[k]; assert(x.id === k && x.name && x.sign && +x.rate > 0, "валюта " + k); }
+    assert(CU.kr && +CU.kr.rate === 1, "кредит = 1 кр.");
+    for (const s of lore.states) for (const id of s.map) { const i = MC[id].info || {}; if (!CU[i.cur] || !i.lang) bad.push(nm(id)); }
+    assert(!bad.length, "без валюты или языка: " + bad.join(", "));
+    return Object.keys(CU).length + " валют";
   });
 
   group("Механики: описания из летописи и чудеса");
@@ -941,12 +965,14 @@
   });
   await test("Главная: вход за страну и вход ГМа", () => go("home", () => /Вход за страну/.test(text("#homeAuth")), "вход"));
   await test("Вики → События", () => go("wiki/events", () => visible(D.getElementById("wikiEvents")), "события"));
-  await test("Вики → Лор: пять разделов", () => go("wiki/lore", () => D.querySelectorAll("#loreGrid .lore-card").length === 5 &&
-    [...D.querySelectorAll("#loreGrid .lore-card b")].map(b => b.textContent).join("|") === "Идеологии 23-го века|Корпорации|Хронология|Государства|Регионы", "разделы"));
+  await test("Вики → Лор: шесть разделов", () => go("wiki/lore", () => D.querySelectorAll("#loreGrid .ccard").length === 6 &&
+    [...D.querySelectorAll("#loreGrid .ccard .ct b")].map(b => b.textContent).join("|") === "Идеологии 23-го века|Корпорации|Хронология|Государства|Регионы|Валюты", "разделы"));
+  await test("Лор → Валюты: справочник с курсами и странами", () => go("wiki/lore/currencies", () => D.querySelectorAll("#loreArticle .cur-table tbody tr").length === Object.keys(map.currencies || {}).length &&
+    D.querySelectorAll("#loreArticle .cur-table .cur-state").length >= lore.states.length, "таблица валют"));
   await test("Лор → Регионы: семь регионов, у каждого страница с государствами; механики у Европы, Африки, Северной Америки, Азии и Ближнего Востока, остальные — заглушка", async () => {
     const regs = lore.regions.filter(r => r.id !== "powers");
-    await go("wiki/lore/regions", () => D.querySelectorAll("#loreArticle .regions-grid .lore-card").length === regs.length, "регионы");
-    const titles = [...D.querySelectorAll("#loreArticle .regions-grid .lore-card b")].map(b => b.textContent);
+    await go("wiki/lore/regions", () => D.querySelectorAll("#loreArticle .regions-grid .ccard").length === regs.length, "регионы");
+    const titles = [...D.querySelectorAll("#loreArticle .regions-grid .ccard .ct b")].map(b => b.textContent);
     assert(titles[0] === "Старый Свет (Европа)" && titles.length === 7, titles.join("|"));
     let total = 0;
     for (const r of regs) {
@@ -979,11 +1005,14 @@
   await test("Каждая статья о государстве открывается: заголовок, паспорт, текст, кнопки карты и союза", async () => {
     const bad = [];
     for (const s of lore.states) {
-      await go("wiki/lore/states/" + s.id, () => { const h2 = D.querySelector("#loreArticle .ls-title"); return h2 && h2.textContent.includes(s.title) && D.querySelector("#loreArticle .ls-text p"); }, s.title);
+      await go("wiki/lore/states/" + s.id, () => { const h2 = D.querySelector("#loreArticle .hero-title"); return h2 && h2.textContent.includes(s.title) && D.querySelector("#loreArticle .ls-text p"); }, s.title);
       const A = D.getElementById("loreArticle");
       const maps = [...A.querySelectorAll(".ls-map")].map(b => b.dataset.country).join();
       if (maps !== s.map.join()) bad.push(s.title + ": кнопки карты " + maps);
-      if (A.querySelectorAll(".ls-passport span").length !== Object.keys(s.passport).length) bad.push(s.title + ": паспорт");
+      // к паспорту летописи добавляются живые строки «Язык» и «Валюта» (и «Население», если его не было); население — по городам карты
+      const added = ["Население", "Язык", "Валюта"].filter(k => !s.passport[k] && [...A.querySelectorAll(".ls-passport .ls-live")].some(e => e.firstChild.textContent.trim() === k)).length;
+      if (A.querySelectorAll(".ls-passport span").length !== Object.keys(s.passport).length + added) bad.push(s.title + ": паспорт");
+      if (A.querySelectorAll(".ls-passport .ls-live").length < 2) bad.push(s.title + ": нет языка или валюты в паспорте");
       if (A.querySelector(".ls-text .passport")) bad.push(s.title + ": паспорт дважды");
       const al = MC[s.map[0]].alliance, ub = A.querySelector(".ls-tools [data-union]");
       if ((al || "") !== (ub ? ub.dataset.union : "")) bad.push(s.title + ": кнопка союза " + (ub && ub.dataset.union));
@@ -995,7 +1024,7 @@
   await test("Каждый союз в лоре: текст и страны-члены со ссылками на статьи", async () => {
     const bad = [];
     for (const u of lore.unions) {
-      await go("wiki/lore/states/" + u.id, () => (D.querySelector("#loreArticle .ls-title") || {}).textContent && D.querySelector("#loreArticle .ls-title").textContent.includes(u.name), u.name);
+      await go("wiki/lore/states/" + u.id, () => (D.querySelector("#loreArticle .hero-title") || {}).textContent && D.querySelector("#loreArticle .hero-title").textContent.includes(u.name), u.name);
       const ids = [...D.querySelectorAll("#loreArticle .ls-grid .ls-state")].map(b => b.dataset.state).filter(Boolean).sort().join();
       const want = [...new Set(Object.keys(MC).filter(id => MC[id].alliance === u.id).map(id => (lore.states.find(s => s.map.includes(id)) || {}).id))].sort().join();
       if (ids.split(",").filter((x, i, a) => a.indexOf(x) === i).join() !== want) bad.push(u.name + ": " + ids + " ≠ " + want);
@@ -1012,7 +1041,7 @@
     const a = await waitFor(() => body.querySelector(".sc-lore"), "ссылка на лор");
     assert(a.getAttribute("href") === "#wiki/lore/states/sov", a.getAttribute("href"));
     a.click();
-    await waitFor(() => /#wiki\/lore\/states\/sov$/.test(W.location.hash) && (D.querySelector("#loreArticle .ls-title") || {}).textContent.includes("Евразийский Союз"), "статья по ссылке");
+    await waitFor(() => /#wiki\/lore\/states\/sov$/.test(W.location.hash) && (D.querySelector("#loreArticle .hero-title") || {}).textContent.includes("Евразийский Союз"), "статья по ссылке");
   });
   await test("Карточка каждой страны карты ведёт на её статью", async () => {
     await go("map/earth/flat", () => visible(D.getElementById("page-map")), "карта");

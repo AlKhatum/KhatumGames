@@ -704,6 +704,18 @@ body.moon-mode .moon-legend { display: flex; }
 .sc-rows dt { color: var(--muted); font-size: 12px; }
 .sc-rows dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
 .sc-rows dd.sc-tbd { color: var(--muted); }
+.sc-rows .sc-sub { display: block; color: var(--muted); font-size: 11px; }
+.sc-rows .sc-cur { width: 100%; min-width: 0; }
+.sc-rows .pct-in { display: inline-flex; align-items: center; gap: 4px; }
+.sc-rows .sc-pw { width: 72px; }
+.cur-table td { vertical-align: top; }
+.cur-table .cur-users { display: flex; flex-wrap: wrap; gap: 4px; max-width: 420px; }
+.cur-table .cur-state { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; font-size: 12px; }
+.cur-table .cur-note { color: var(--muted); font-size: 12px; max-width: 380px; }
+.cur-table .cur-sign { width: 56px; }
+.cur-table .cur-rate { width: 80px; text-align: right; }
+.cur-table textarea.sc-in { width: 100%; min-width: 220px; resize: vertical; }
+.ls-passport .ls-live b { color: var(--text); }
 .sc-note { font-size: 11px; line-height: 1.45; color: var(--muted); border-top: 1px solid var(--line-dim); padding-top: 8px; }
 .sc-actions { margin-top: 10px; display: flex; gap: 6px; }
 @media (max-width: 900px) { .state-card { top: auto; bottom: 56px; left: 6px; right: 6px; width: auto; max-height: 45%; } .map-frame.globe-mode > .state-card { right: 6px; } }

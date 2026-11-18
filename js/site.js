@@ -18,7 +18,8 @@
     { id: "corporations", title: "Корпорации", sub: "Кто владеет водой, орбитой и всем остальным", html: "", special: "corporations" },
     { id: "chronology", title: "Хронология", sub: "От Великого Потопа до наших дней", html: "", special: "chronology" },
     { id: "states", title: "Государства", sub: "Страны, союзы и территории на карте", html: "", special: "states" },
-    { id: "regions", title: "Регионы", sub: "Старый Свет, Африка, Азия, Америка и Океания", html: "", special: "regions" }
+    { id: "regions", title: "Регионы", sub: "Старый Свет, Африка, Азия, Америка и Океания", html: "", special: "regions" },
+    { id: "currencies", title: "Валюты", sub: "Деньги 2200 года и их курс к кредиту", html: "", special: "currencies" }
   ];
   // особые разделы (наполняются из механик); у разделов из старого site.json пометки может не быть — узнаём по id
   const specialOf = a => a.special || ((DEF_LORE.find(x => x.id === a.id) || {}).special || "");
@@ -310,7 +311,7 @@
     s.setAttribute("class", "ico-svg"); s.setAttribute("aria-hidden", "true"); u.setAttribute("href", "#i-" + name); s.append(u);
     return s;
   }
-  const LORE_ICON = { ideologies: "ideologies", corporations: "corporations", chronology: "chronology", states: "states", regions: "regions" };
+  const LORE_ICON = { ideologies: "ideologies", corporations: "corporations", chronology: "chronology", states: "states", regions: "regions", currencies: "currencies" };
 
   // ---------- обложки и баннеры Лора ----------
   // Картинка — texts["cover:<ключ>"] (при публикации уходит файлом в assets/site/), положение по вертикали —
@@ -394,8 +395,9 @@
   // число материалов в разделах Лора (для карточек и дерева Вики)
   let countsP = null;
   function loreCounts() {
-    if (!countsP) countsP = Promise.all([KG.lore(), fetch("data/ideologies.json", { cache: "no-cache" }).then(r => (r.ok ? r.json() : null)).catch(() => null)])
-      .then(([L, I]) => ({ ideologies: I && Array.isArray(I.list) ? I.list.length : null, states: L.states.length, regions: regionsOf(L).length }));
+    if (!countsP) countsP = Promise.all([KG.lore(), fetch("data/ideologies.json", { cache: "no-cache" }).then(r => (r.ok ? r.json() : null)).catch(() => null), mapState()])
+      .then(([L, I, st]) => ({ ideologies: I && Array.isArray(I.list) ? I.list.length : null, states: L.states.length, regions: regionsOf(L).length,
+        currencies: Object.keys((st && st.currencies) || {}).length || null }));
     return countsP;
   }
 
@@ -510,6 +512,10 @@
     if (specialOf(a) === "regions") {
       const body = h("div", { class: "lore-body" }); art.append(body);
       renderRegionsIndex(body);
+    }
+    if (specialOf(a) === "currencies") {
+      const body = h("div", { class: "lore-body" }); art.append(body);
+      renderCurrencies(body);
     }
     if (specialOf(a) === "chronology") {
       const body = h("div", { class: "lore-body chron" }); art.append(body);
@@ -667,6 +673,83 @@
     art.append(h("div", { class: "ls-pager" }, prev ? h("button", { class: "small-btn", onclick: () => KG.go("wiki/lore/states/" + prev.id) }, "← " + tx(stateKey(prev, "title"), prev.title)) : h("span"),
       next ? h("button", { class: "small-btn", onclick: () => KG.go("wiki/lore/states/" + next.id) }, tx(stateKey(next, "title"), next.title) + " →") : h("span")));
     applyTexts(art);
+    livePassport(art.querySelector(".ls-passport"), s);
+  }
+  // Паспорт статьи: население (города страны на карте + пустоши), язык и валюта (карточка страны на карте) —
+  // всегда живые: перекрывают и текст летописи, и правку ГМа в паспорте.
+  function livePassport(pas, s) {
+    const KM = window.KGMap, st = KM && KM.state;
+    if (!pas || !st || !KM.countryPop) return;
+    const ids = (s.map || []).map(String).filter(id => st.countries[id]);
+    if (!ids.length) return;
+    const info = id => (st.countries[id] || {}).info || {}, uniq = a => [...new Set(a.filter(Boolean))];
+    const total = ids.reduce((acc, id) => acc + KM.countryPop(id).total, 0);
+    const langs = uniq(ids.map(id => info(id).lang)).join("; ");
+    const curs = uniq(ids.map(id => info(id).cur)).map(k => (st.currencies || {})[k]).filter(Boolean).map(cu => KM.curText(cu)).join("; ");
+    let after = setPass(pas, "Население", total ? "≈ " + KM.fmtMln(total) : "", null, "Сумма городов страны на карте и население пустошей");
+    after = setPass(pas, "Язык", langs, after) || after;
+    setPass(pas, "Валюта", curs, after);
+  }
+  function setPass(pas, key, val, after, title) {
+    let span = [...pas.children].find(e => e.tagName === "SPAN" && e.firstChild && e.firstChild.nodeType === 3 && e.firstChild.textContent.trim() === key);
+    if (!val) return span || null;
+    if (!span) {
+      span = h("span", null, key + " ", h("b"));
+      if (after && after.parentNode === pas) after.after(span); else pas.append(span);
+    }
+    let b = span.querySelector("b"); if (!b) { b = h("b"); span.append(b); }
+    b.textContent = val; span.classList.add("ls-live"); if (title) span.title = title;
+    return span;
+  }
+  // ГМ поправил город, долю пустошей, язык или валюту на карте — обновляем открытую статью и справочник валют
+  window.addEventListener("kg:cities", () => {
+    const art = $("loreArticle"); if (!art || art.classList.contains("hidden")) return;
+    const p = (KG.route && KG.route.parts) || [];
+    if (p[0] !== "wiki" || p[1] !== "lore") return;
+    const a = site.lore.find(x => x.id === p[2]);
+    if (!a) return;
+    if (specialOf(a) === "states" && p[3]) { KG.lore().then(L => { const s = L.byId[p[3]]; if (s) livePassport(art.querySelector(".ls-passport"), s); }); }
+    if (specialOf(a) === "currencies") { const body = art.querySelector(".cur-body"); if (body && !body.contains(document.activeElement)) { body.innerHTML = ""; renderCurrencies(body, true); } }
+  });
+
+  // ---------- лор: валюты (map.json → currencies, валюта страны — info.cur в карточке страны на карте) ----------
+  // Курс — справочный (сколько кредитов за 1 единицу), в расчётах механик не участвует. ГМ правит валюты прямо здесь:
+  // это правка карты (Ctrl+Z на карте, публикуется кнопкой карты или вместе с механиками).
+  async function renderCurrencies(body, inner) {
+    const [L, st] = await Promise.all([KG.lore(), mapState()]);
+    const KM = window.KGMap, gmOn = !!(KM && KM.gm), C = st.countries || {};
+    const box = inner ? body : h("div", { class: "cur-body" });
+    if (!inner) {
+      body.append(h("p", { class: "mech-note", "data-edit-text": "lore.cur.note", text: "Все расчёты механик — ВВП, бюджеты, долги — ведутся в кредитах (кр.), расчётной единице мирового рынка. Курс валют к кредиту справочный: он показывает, сколько кредитов стоит одна единица, и в расчётах не участвует. Валюта страны указана в её карточке на карте." }), box);
+      applyTexts(body);
+    }
+    const list = Object.values(st.currencies || {}).sort((a, b) => (a.order ?? 999) - (b.order ?? 999) || a.name.localeCompare(b.name, "ru"));
+    const users = {};
+    for (const id in C) { const k = ((C[id] || {}).info || {}).cur; if (k) (users[k] = users[k] || []).push(id); }
+    const fmtRate = v => (+v).toLocaleString("ru-RU", { maximumFractionDigits: 4 });
+    const stateBtn = id => { const s = L.byMap[id]; return h("button", { class: "ls-state cur-state", title: s ? "Статья о стране" : "Показать на карте", onclick: () => (s ? KG.go("wiki/lore/states/" + s.id) : KG.showOnMap(id)) },
+      flagOf(C[id]), h("span", { text: oneLine(C[id].name) })); };
+    const save = (cu, patch) => { const next = Object.assign({}, cu, patch); KM.setCurrency(cu.id, next); };
+    const inp = (cu, f, type, cls) => h("input", { class: "sc-in " + (cls || ""), type: type || "text", value: cu[f] ?? "", step: type === "number" ? "any" : null, min: type === "number" ? 0 : null,
+      onchange: e => { const v = type === "number" ? +e.target.value : e.target.value.trim(); if (type === "number" ? !(v > 0) : !v && f !== "note") { e.target.value = cu[f] ?? ""; return; } save(cu, { [f]: v }); } });
+    const tbl = h("table", { class: "mt cur-table" }, h("thead", null, h("tr", null, ["Валюта", "Знак", "1 = кр.", "Где ходит", "О валюте"].map((t, i) => h("th", { class: i === 2 ? "num" : null, text: t })), gmOn ? h("th") : null)));
+    const tb = h("tbody");
+    for (const cu of list) {
+      const us = (users[cu.id] || []).sort((a, b) => oneLine(C[a].name).localeCompare(oneLine(C[b].name), "ru"));
+      tb.append(h("tr", { "data-cur": cu.id },
+        h("td", null, gmOn ? inp(cu, "name") : h("b", { text: cu.name })),
+        h("td", null, gmOn ? inp(cu, "sign", "text", "cur-sign") : cu.sign),
+        h("td", { class: "num" }, gmOn ? inp(cu, "rate", "number", "cur-rate") : fmtRate(cu.rate)),
+        h("td", { class: "cur-users" }, us.length ? us.map(stateBtn) : h("span", { class: "muted", text: "—" })),
+        h("td", { class: "cur-note" }, gmOn ? h("textarea", { class: "sc-in", rows: 2, text: cu.note || "", onchange: e => save(cu, { note: e.target.value.trim() }) }) : (cu.note || "")),
+        gmOn ? h("td", null, us.length || cu.id === "kr" ? null : h("button", { class: "small-btn danger", title: "Удалить валюту (ни одна страна её не использует)", text: "✕", onclick: () => KM.setCurrency(cu.id, null) })) : null));
+    }
+    tbl.append(tb);
+    box.append(h("div", { class: "mt-scroll" }, tbl));
+    if (gmOn) box.append(h("p", { class: "mech-note" }, h("button", { class: "small-btn", text: "+ Валюта", onclick: () => {
+      const id = "c" + Date.now().toString(36);
+      KM.setCurrency(id, { id, name: "Новая валюта", sign: "¤", rate: 1, note: "", order: list.length });
+    } }), " Правки валют — это правки карты: отмена — Ctrl+Z на карте, публикация — кнопкой карты «Опубликовать» (или вместе с механиками). Валюту стране выбирают в её карточке на карте."));
   }
 
   // ---------- галерея ----------
@@ -891,6 +974,6 @@
 
   window.KGSite = { get data() { return site; }, applyTexts, sanitize, setEditing, get editing() { return editing; }, publish, imgSlot, IMG_W, IMG_H,
     // для дерева Вики и поиска (js/wiki-nav.js)
-    tx, icon, specialOf, loreCounts, LORE_ICON, regionsOf, statesOf,
+    tx, icon, specialOf, loreCounts, LORE_ICON, regionsOf, statesOf, livePassport,
     names: { region: r => tx(regionKey(r, "title"), r.title), state: s => tx(stateKey(s, "title"), s.title), union: u => tx(unionKey(u, "name"), u.name) } };
 })();

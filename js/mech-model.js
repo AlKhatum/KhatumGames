@@ -1315,6 +1315,29 @@
   const OLD_BLOCS = { bloc_integra: "al_ger_integr", bloc_nsa: "al_sco_nsa", bloc_central: "al_nau_united" }; // id до слияния с картой
   let mapCountries = {}, mapAlliances = {};
   function setMap(countries, alliances) { mapCountries = countries || {}; mapAlliances = alliances || {}; }
+  // ---------- население из городов карты ----------
+  // Население мегаполисов страны = сумма населения её городов на карте (map.json → cities; страна города — по растру
+  // территорий, если он загружен, иначе поле cc). Пустоши — пропорционально городам: pop_waste = pop_meg · pw, где pw —
+  // доля пустошей у страны карты (countries[id].pw), а если её нет — из данных самой страны. Ход умножает города на прирост.
+  let cityPop = {};
+  function cityPopOf(cities, ownerOf) {
+    const out = {};
+    for (const ct of Object.values(cities || {})) {
+      const id = ownerOf ? ownerOf(ct) : ct.cc ? String(ct.cc) : "";
+      if (id && +ct.pop > 0) out[id] = (out[id] || 0) + +ct.pop;
+    }
+    return out;
+  }
+  // byId: { id страны: жителей в городах } (как отдаёт cityPopOf)
+  function setCityPop(byId) { cityPop = {}; for (const id in byId || {}) cityPop[String(id)] = +byId[id] / 1e6; }
+  const hasCityPop = id => id != null && cityPop[String(id)] != null;
+  function popOf(c, id) {
+    const I = (c && c.in) || {}, meg0 = num(I.pop_meg), w0 = num(I.pop_waste);
+    if (!hasCityPop(id)) return { meg: meg0, waste: w0, city: false };
+    const mc = mapCountries[String(id)] || {}, pw = mc.pw != null && isFinite(+mc.pw) ? +mc.pw : meg0 > 0 ? w0 / meg0 : 0;
+    const meg = cityPop[String(id)];
+    return { meg, waste: meg * pw, pw, city: true };
+  }
   const memberIds = b => String((b && b.members) || "").split(/[\s,;]+/).filter(Boolean);
   // откуда страна в блоке: "map" — союз на карте, "list" — номер в блоке, "gm" — галочка ГМа
   function blocLinks(rules, c, id) {
@@ -1818,7 +1841,8 @@
     rules = normalizeRules(rules);
     const K = rules.K, T = rules.tables;
     const c = country || {};
-    const I = new Proxy(c.in || {}, { get: (o, k) => num(o[k]) });
+    const P = popOf(c, id); // население — из городов карты, если они есть
+    const I = new Proxy(c.in || {}, { get: (o, k) => (k === "pop_meg" ? P.meg : k === "pop_waste" ? P.waste : num(o[k])) });
     const cnt = c.cnt || {};
     const n = (t, id) => num(cnt[t] && cnt[t][id]);
     const sum = (t, f, pred) => T[t].reduce((s, row) => (!pred || pred(row) ? s + n(t, row.id) * (f ? num(row[f]) : 1) : s), 0);
@@ -2215,7 +2239,7 @@
 
   window.KGMechModel = {
     K_GROUPS, K_META, TABLES, COUNT_TABLES, INPUTS, OUT, MOD_TARGETS, SAMPLES, CORP_CH, IDEO_FX, ideologyOf, ideoMods,
-    defaultRules, normalizeRules, compute, worldCtx, applyWorld, computeAll, emptyCountry, corpPresence, setMap, wonderMods, wonderMode, LINK_KINDS, linkMods, linkIds, normLinks, paramLore, loreDesc, blocLinks, blocsOf, blocMembers, OLD_BLOCS, corpWorld, corpClass, parseImport, importCountry,
+    defaultRules, normalizeRules, compute, worldCtx, applyWorld, computeAll, emptyCountry, corpPresence, setMap, setCityPop, cityPopOf, hasCityPop, popOf, wonderMods, wonderMode, LINK_KINDS, linkMods, linkIds, normLinks, paramLore, loreDesc, blocLinks, blocsOf, blocMembers, OLD_BLOCS, corpWorld, corpClass, parseImport, importCountry,
     TURN_MONTHS, TURNS_YEAR, turnYear, firstYear, turnMonths, turnLabel, isOldTurn, quarterRules, quarterMods, quarterLinks,
     debtState, debtCreditor, debtMods, debtNextTurn,
     blocKindLinks, OW_TREATY, owState, owMods, owReport, owNextTurn, REGIONS, rgState, rgMods, rgReport, rgNextTurn, rgAll, regionMods, rgAccApply, facShift: (rules, rid, st, fid, df) => {

@@ -200,7 +200,7 @@
     e.setAttribute("d", d || "");
     if (selProv === id) provSelPath.setAttribute("d", d || "");
   }
-  const els = { cfill: {}, cborder: {}, clabel: {}, cities: {}, labels: {}, satellites: {}, satTypes: {}, debris: {}, settings: {}, alliances: {} };
+  const els = { cfill: {}, cborder: {}, clabel: {}, cities: {}, labels: {}, satellites: {}, satTypes: {}, debris: {}, settings: {}, alliances: {}, currencies: {} };
   const paths = new Map(); // id страны -> d
   const flagCache = {};   // id -> dataURL (флаги, загруженные в этой сессии)
 
@@ -395,8 +395,9 @@
     window.KG.lines.svg(t, e.name);
   }
   const renderSatsAny = () => { try { refreshSats(); } catch (e) { /* глобус ещё не готов */ } };
-  const RENDER = { countries: renderCountry, cities: renderCity, labels: renderLabel, provinces: renderProvince, satellites: renderSatsAny, satTypes: renderSatsAny, debris: renderSatsAny, settings: () => applyFonts(), alliances: () => scheduleAlly() };
-  const COLS = ["countries", "cities", "labels", "provinces", "satellites", "satTypes", "debris", "settings", "alliances"];
+  const RENDER = { countries: renderCountry, cities: renderCity, labels: renderLabel, provinces: renderProvince, satellites: renderSatsAny, satTypes: renderSatsAny, debris: renderSatsAny, settings: () => applyFonts(), alliances: () => scheduleAlly(),
+    currencies: () => { if (sel && sel.col === "countries") renderStateCard(); citiesChanged(); } };
+  const COLS = ["countries", "cities", "labels", "provinces", "satellites", "satTypes", "debris", "settings", "alliances", "currencies"];
 
   // ---------- союзы (фракции): слой «Союзы» и вкладка легенды ----------
   // Союз — запись в state.alliances { id, name, color, leader, desc }; страна входит в союз полем country.alliance.
@@ -666,11 +667,30 @@
   }
   const fmtArea = a => (a >= 1e6 ? (a / 1e6).toFixed(2).replace(/\.?0+$/, "").replace(".", ",") + " млн км²" : Math.round(a).toLocaleString("ru-RU") + " км²");
   // Поля карточки, которые ГМ пишет сам (хранятся в countries[id].info). Пустое поле — показываем
-  // то, что посчитано по карте (столица — по отметкам столиц, население — по городам), или «—».
+  // то, что посчитано по карте (столица — по отметкам столиц), или «—». Население считается всегда само:
+  // города страны + пустоши (доля pw от городов); валюта — из справочника валют (state.currencies, info.cur).
   const INFO = [
-    ["capital", "Столица"], ["gov", "Форма правления"], ["head", "Глава государства"],
-    ["lang", "Язык"], ["currency", "Валюта"], ["pop", "Население"]
+    ["capital", "Столица"], ["gov", "Форма правления"], ["head", "Глава государства"], ["lang", "Язык"]
   ];
+  const fmtMln = p => (p >= 1e6 ? (p / 1e6).toFixed(p >= 1e8 ? 0 : 1).replace(".", ",") + " млн" : Math.round(p / 1e3).toLocaleString("ru-RU") + " тыс.");
+  const fmtRate = v => (+v).toLocaleString("ru-RU", { maximumFractionDigits: 3 });
+  const curOf = c => { const k = c && c.info && c.info.cur; return (k && state.currencies && state.currencies[k]) || null; };
+  const curText = cu => cu.name + " (" + cu.sign + ")" + (cu.id === "kr" ? "" : " · 1 " + cu.sign + " = " + fmtRate(cu.rate) + " кр.");
+  function curField(c) {
+    const cu = curOf(c);
+    if (gm) {
+      const list = Object.values(state.currencies || {}).sort((a, b) => (a.order ?? 999) - (b.order ?? 999) || a.name.localeCompare(b.name, "ru"));
+      return `<dt>Валюта</dt><dd><select class="sc-cur" title="Валюта страны (курсы — Вики → Лор → Валюты)"><option value="">—</option>` +
+        list.map(x => `<option value="${esc(x.id)}"${cu && cu.id === x.id ? " selected" : ""}>${esc(curText(x))}</option>`).join("") + `</select></dd>`;
+    }
+    return `<dt>Валюта</dt>` + (cu ? `<dd>${esc(curText(cu))}</dd>` : `<dd class="sc-tbd">—</dd>`);
+  }
+  function popRows(id) {
+    const P = countryPop(id);
+    const sub = P.meg ? `<small class="sc-sub">города ${esc(fmtMln(P.meg))}` + (P.waste ? ` · пустоши ${esc(fmtMln(P.waste))}` : "") + `</small>` : "";
+    return `<dt>Население</dt>` + (P.meg ? `<dd>≈ ${esc(fmtMln(P.total))}${sub}</dd>` : `<dd class="sc-tbd">—</dd>`) +
+      (gm ? `<dt>Пустоши к городам</dt><dd><span class="pct-in"><input class="sc-in sc-pw" type="number" min="0" step="0.1" value="${P.pw != null ? +(P.pw * 100).toFixed(2) : ""}" placeholder="0" title="Сколько людей живёт в пустошах на каждые 100 жителей городов"> %</span></dd>` : "");
+  }
   function renderStateCard() {
     const c = sel && sel.col === "countries" ? state.countries[sel.id] : null;
     if (!c || stateCardClosed === sel.id) { stateCard.classList.add("hidden"); return; }
@@ -680,10 +700,9 @@
     const id = sel.id, info = c.info || {}, inC = Object.values(state.cities).filter(ct => String(T.at(ct.x, ct.y)) === id);
     const caps = inC.filter(ct => ct.capital).map(ct => window.KG.lines.oneLine(ct.name));
     const big = inC.filter(ct => +ct.pop > 0).sort((a, b) => b.pop - a.pop)[0];
-    const pop = inC.reduce((acc, ct) => acc + (+ct.pop > 0 ? +ct.pop : 0), 0);
     const provs = Object.values(state.provinces || {}).filter(p => p.label && String(T.at(p.label[0], p.label[1])) === id).length; // по положению на карте
     const area = countryArea(id), src = flagSrc(c);
-    const auto = { capital: caps.join(", "), pop: pop ? "≈ " + fmtPop(pop) + " (по городам)" : "" };
+    const auto = { capital: caps.join(", ") };
     const row = (k, v) => `<dt>${k}</dt><dd>${esc(v)}</dd>`;
     const field = (k, label) => {
       const v = info[k] || "";
@@ -704,6 +723,7 @@
       row("Городов на карте", inC.length ? String(inC.length) : "—") +
       (big ? row("Крупнейший город", window.KG.lines.oneLine(big.name)) : "") +
       INFO.slice(1).map(([k, l]) => field(k, l)).join("") +
+      curField(c) + popRows(id) +
       `</dl>` +
       loreLink(id) +
       (gm ? `<div class="legend-label">Описание</div><textarea class="sc-in sc-desc" data-k="desc" rows="3" maxlength="2000" placeholder="История, особенности, армия, экономика…">${esc(desc)}</textarea>`
@@ -727,11 +747,29 @@
     return `<dt>Союз</dt>` + (al ? `<dd><span class="sc-swatch" style="background:${esc(al.color)}"></span>${esc(al.name)}${al.leader === c.id ? " (лидер)" : ""}</dd>` : `<dd class="sc-tbd">—</dd>`);
   }
   $("stateCardBody").addEventListener("change", e => { if (e.target.matches(".sc-ally") && sel) setCountryAlly(sel.id, e.target.value); });
+  // валюта страны и доля пустошей (ГМ)
+  $("stateCardBody").addEventListener("change", e => {
+    const c = sel && sel.col === "countries" ? state.countries[sel.id] : null;
+    if (!c || !gm) return;
+    if (e.target.matches(".sc-cur")) {
+      const v = e.target.value, after = clone(c); after.info = Object.assign({}, after.info);
+      if (v) after.info.cur = v; else delete after.info.cur;
+      if (!Object.keys(after.info).length) delete after.info;
+      commit("countries", sel.id, c, after);
+    }
+    if (e.target.matches(".sc-pw")) {
+      const raw = e.target.value.trim(), v = raw === "" ? null : +raw / 100;
+      if (v != null && !(v >= 0 && isFinite(v))) { e.target.value = c.pw != null ? +(c.pw * 100).toFixed(2) : ""; return; }
+      const after = clone(c); if (v == null) delete after.pw; else after.pw = +v.toFixed(4);
+      if (after.pw !== c.pw) commit("countries", sel.id, c, after);
+    }
+  });
   // правка полей карточки: сохраняем при уходе из поля (Enter — тоже), одна правка — один шаг Ctrl+Z
   function saveInfo(inp) {
     const c = sel && sel.col === "countries" ? state.countries[sel.id] : null;
     if (!c || !gm) return;
     const k = inp.dataset.k, v = inp.value.trim(), old = (c.info || {})[k] || "";
+    if (!k) return; // доля пустошей сохраняется своим обработчиком
     if (v === old) return;
     const after = clone(c); after.info = Object.assign({}, after.info); if (v) after.info[k] = v; else delete after.info[k];
     if (!Object.keys(after.info).length) delete after.info;
@@ -887,12 +925,42 @@
   // ---------- история и изменения ----------
   const undoStack = [], redoStack = [];
   function setEntity(col, id, val) {
+    if (col === "cities" && val) setCityCc(val);
     if (val == null) delete state[col][id]; else state[col][id] = val;
     RENDER[col](id);
     if (sel && sel.col === col && sel.id === id) { if (val == null) select(null); else { select(sel); } }
     if (col === "countries") { buildCountryList(); fillBrushSelect(); if (globe && viewMode === "globe") syncGlobe(false); }
     if (col === "countries" || col === "alliances") { allyChanged(); if (col === "alliances" && globe && viewMode === "globe") syncGlobe(false); }
-    if (col === "cities") { refreshCityKey(); if (globe && viewMode === "globe") syncGlobe(false); }
+    if (col === "cities") { refreshCityKey(); if (globe && viewMode === "globe") syncGlobe(false); citiesChanged(); }
+    if (col === "countries") citiesChanged(); // доля пустошей, валюта, язык
+  }
+  // ---------- население стран — из городов ----------
+  // Страна города — по растру территорий (поле cc пишется в map.json при каждой правке и публикации, чтобы механики
+  // и лор считали население и без растра). Сумма населения городов страны — население её мегаполисов, пустоши —
+  // доля pw от городов (поле страны карты). Правки городов и границ рассылают событие «kg:cities».
+  function cityOwner(ct) { if (T.ids) { const v = T.at(ct.x, ct.y); return v ? String(v) : ""; } return ct && ct.cc ? String(ct.cc) : ""; }
+  function setCityCc(ct) { if (!T.ids) return; const v = cityOwner(ct); if (v) ct.cc = v; else delete ct.cc; }
+  function popByCountry() { return window.KGMechModel ? window.KGMechModel.cityPopOf(state.cities, cityOwner) : {}; }
+  // население страны в жителях: города, пустоши (по доле pw), всего
+  function countryPop(id) {
+    const c = state.countries[id], meg = popByCountry()[id] || 0, pw = c && c.pw != null && isFinite(+c.pw) ? +c.pw : 0;
+    return { meg, waste: meg * pw, total: meg * (1 + pw), pw: c && c.pw != null ? +c.pw : null };
+  }
+  let citiesTimer = 0;
+  function citiesChanged() { clearTimeout(citiesTimer); citiesTimer = setTimeout(() => window.dispatchEvent(new CustomEvent("kg:cities")), 150); }
+  // ход механик: население городов страны × множитель (вся правка — один шаг Ctrl+Z)
+  function scaleCities(factors) {
+    const items = [];
+    for (const id in state.cities) {
+      const ct = state.cities[id], f = factors[cityOwner(ct)];
+      if (f == null || f === 1 || !(+ct.pop > 0)) continue;
+      const after = clone(ct); after.pop = Math.max(0, Math.round(+ct.pop * f)); delete after.popYear;
+      items.push({ kind: "entity", col: "cities", id, before: clone(ct), after });
+    }
+    if (!items.length) return 0;
+    pushUndo({ kind: "multi", items });
+    for (const it of items) setEntity("cities", it.id, clone(it.after));
+    return items.length;
   }
   function commit(col, id, before, after) {
     pushUndo({ kind: "entity", col, id: String(id), before: clone(before), after: clone(after) });
@@ -914,6 +982,7 @@
     if (entry) mark(entry);
     $("gmDirty").classList.remove("hidden");
     scheduleDraft();
+    if (entry && touchesPaint(entry)) citiesChanged(); // границы сменились — у городов могла смениться страна
   }
   function recomputeAny(stroke) {
     if (!stroke.wide) { recompute(stroke.labels); return; }
@@ -1037,6 +1106,37 @@
   };
   async function ensureToken() { return GH.token() ? true : setupToken(); }
 
+  // файлы карты для публикации; их же берут механики, когда ход меняет население городов (один коммит на всё)
+  async function publishFiles() {
+    for (const ct of Object.values(state.cities)) setCityCc(ct); // страна у каждого города — по растру (для механик и лора)
+    const st = clone(state), files = [], stamp = Date.now();
+    for (const id in st.countries) {
+      const c = st.countries[id];
+      if (c.flag && c.flag.startsWith("data:")) { // новый флаг из этой сессии
+        const path = `data/flags/${id}.png`;
+        files.push({ path, content: unb64(c.flag.split(",")[1]) });
+        c.flag = `${path}?v=${stamp}`;
+      }
+    }
+    st.updated = new Date().toISOString();
+    if (dirty) files.push({ path: "data/map.json", content: JSON.stringify(st) });
+    if (terrDirty) files.push({ path: "data/territories.png", content: await T.toPngBlob() });
+    if (provDirty) files.push({ path: "data/provinces.png", content: await P.toPngBlob() });
+    if (window.KGMoon && window.KGMoon.isDirty()) files.push(...(await window.KGMoon.files()));
+    return { st, files };
+  }
+  function afterPublish(st) {
+    // локально храним флаги как dataURL (на сайте файлы появятся после сборки Pages)
+    for (const id in st.countries) {
+      const c = state.countries[id];
+      if (c && c.flag && c.flag.startsWith("data:")) { flagCache[id] = c.flag; c.flag = st.countries[id].flag; }
+    }
+    if (dirty) state.updated = loadedStamp = st.updated;
+    if (window.KGMoon && window.KGMoon.isDirty()) window.KGMoon.published();
+    dirty = terrDirty = provDirty = false;
+    $("gmDirty").classList.add("hidden");
+    DB.del("draft").catch(() => {});
+  }
   $("publishBtn").onclick = async () => {
     if (!gm) return;
     const moonDirty = window.KGMoon && window.KGMoon.isDirty();
@@ -1044,32 +1144,9 @@
     if (!(await ensureToken())) return;
     const btn = $("publishBtn"); btn.disabled = true;
     try {
-      const st = clone(state), files = [], stamp = Date.now();
-      for (const id in st.countries) {
-        const c = st.countries[id];
-        if (c.flag && c.flag.startsWith("data:")) { // новый флаг из этой сессии
-          const path = `data/flags/${id}.png`;
-          files.push({ path, content: unb64(c.flag.split(",")[1]) });
-          c.flag = `${path}?v=${stamp}`;
-        }
-      }
-      st.updated = new Date().toISOString();
-      files.push({ path: "data/map.json", content: JSON.stringify(st) });
-      if (terrDirty) files.push({ path: "data/territories.png", content: await T.toPngBlob() });
-      if (provDirty) files.push({ path: "data/provinces.png", content: await P.toPngBlob() });
-      if (moonDirty) files.push(...(await window.KGMoon.files()));
-      if (!dirty) files.splice(files.findIndex(f => f.path === "data/map.json"), 1); // только Луна
+      const { st, files } = await publishFiles();
       await GH.commit(config.repo, files, "Карта: правки ГМа " + new Date().toLocaleString("ru-RU"), m => ($("hint").textContent = m));
-      // локально храним флаги как dataURL (на сайте файлы появятся после сборки Pages)
-      for (const id in st.countries) {
-        const c = state.countries[id];
-        if (c && c.flag && c.flag.startsWith("data:")) { flagCache[id] = c.flag; c.flag = st.countries[id].flag; }
-      }
-      state.updated = loadedStamp = st.updated;
-      dirty = terrDirty = provDirty = false;
-      if (moonDirty) window.KGMoon.published();
-      $("gmDirty").classList.add("hidden");
-      DB.del("draft").catch(() => {});
+      afterPublish(st);
       toast("Опубликовано. Сайт обновится примерно через минуту.");
     } catch (e) {
       toast("Не удалось опубликовать: " + e.message);
@@ -2423,5 +2500,13 @@
   setTool("pan");
   requestAnimationFrame(fit);
   load();
-  window.KGMap = { get state() { return state; }, ready: () => mapReady, stateReady: () => stateReady, login, logout, select, focusCountry, setTool, fit, T, setView3, measures, get globe() { return globe; }, get view() { return { s, tx, ty }; }, get gm() { return gm; }, get fonts() { return currentFonts(); }, get fontScale() { return fontScales(); }, get sat() { return satUi; } };
+  // справочник валют (Вики → Лор → Валюты): правка ГМа — обычная правка карты (Ctrl+Z, публикация карты)
+  function setCurrency(id, val) {
+    if (!gm) return;
+    const before = (state.currencies || {})[id] || null;
+    if (JSON.stringify(before) === JSON.stringify(val)) return;
+    state.currencies = state.currencies || {};
+    commit("currencies", id, before, val);
+  }
+  window.KGMap = { get state() { return state; }, get dirty() { return dirty || terrDirty || provDirty; }, publishFiles, afterPublish, scaleCities, popByCountry, countryPop, cityOwner, setCurrency, curText: cu => curText(cu), fmtMln: p => fmtMln(p), ready: () => mapReady, stateReady: () => stateReady, login, logout, select, focusCountry, setTool, fit, T, setView3, measures, get globe() { return globe; }, get view() { return { s, tx, ty }; }, get gm() { return gm; }, get fonts() { return currentFonts(); }, get fontScale() { return fontScales(); }, get sat() { return satUi; } };
 })();

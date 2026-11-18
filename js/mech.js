@@ -9,7 +9,7 @@
   const PLAYER_KEY = "kg-mech-player", MK_KEY = "kg-mech-mk", DRAFT_KEY = "kg-mech-draft";
 
   let inited = false, loading = null;
-  let config = null, mech = null, mechPub = null, mapCountries = {};
+  let config = null, mech = null, mechPub = null, mapCountries = {}, mapCurrencies = {};
   let rules = M.defaultRules();
   // ГМ
   let mk = null, gmPw = null, dks = {}, gmData = {}, gmSel = null, gmView = "countries", gmDirty = false, gmBase = {}, gmLinks = [];
@@ -85,7 +85,25 @@
     rules = pubRules(mech);
     mapCountries = (mp && mp.countries) || {};
     M.setMap(mapCountries, (mp && mp.alliances) || {}); // союзы карты = союзы механик
+    syncCityPop(mp);
   }
+  // население стран — из городов карты (страна города — по растру карты, без него — поле cc города)
+  function syncCityPop(mp) {
+    const KM = window.KGMap, own = KM && KM.cityOwner && KM.state && KM.state === mp ? KM.cityOwner : null;
+    mapCurrencies = (mp && mp.currencies) || {};
+    M.setCityPop(M.cityPopOf((mp && mp.cities) || {}, own));
+  }
+  // ГМ поправил город, границу, долю пустошей или валюту на карте — пересчитываем открытые карточки
+  window.addEventListener("kg:cities", () => {
+    const KM = window.KGMap;
+    if (!mech || !KM || !KM.state) return;
+    mapCountries = KM.state.countries || mapCountries;
+    M.setMap(mapCountries, KM.state.alliances || {});
+    syncCityPop(KM.state);
+    if (pane === "calc" && isGm()) renderGm();
+    if (pane === "my") renderMy();
+    if (pane === "rating") renderRating();
+  });
   async function init() {
     if (inited) return loading;
     inited = true;
@@ -839,7 +857,7 @@
   const LAYOUT = [
     { id: "overview", title: "Обзор" },
     { id: "state", title: "Государство", blocks: [
-      ["Общие сведения", ["in:capital", "in:gov", "in:ideology", "out:wonders", "in:position", "in:megapolis"]],
+      ["Общие сведения", ["in:capital", "in:gov", "in:ideology", "out:wonders", "in:position", "map:lang", "map:cur", "in:megapolis"]],
       ["Территория и среда", ["in:territory", "in:habitable", "out:habitable_area", "in:flooded", "in:radiation", "in:waste_threat", "in:climate"]],
       ["Население", ["in:pop_meg", "in:pop_waste", "out:pop_total", "out:urban", "out:pop_per_meg", "in:working_share", "in:mob_share", "in:education", "in:healthcare", "out:health", "out:labor"]],
       ["Политика и общество", ["in:stability", "in:support", "in:corruption", "out:corruption_eff", "in:mob_law", "out:mob_law_name", "in:tech", "out:tech_mult", "in:infra", "out:infra_mult", "out:stab_mult", "out:hdi", "out:inm", "out:rank"]]] },
@@ -968,14 +986,35 @@
       const [kind, key] = item.split(":");
       if (kind === "tab") return tableBlock(key);
       if (kind === "debt") return loansBlock();
+      if (kind === "map") return mapRow(key);
       // описание показателя из летописи — подсказка при наведении на название строки
       const lore = M.paramLore(key), tip = lore ? paramText(key) : null, lab = text => h("span", { class: "l" + (lore ? " lored" : ""), text, title: tip, "data-lore": lore ? key : null });
+      if (kind === "in" && (key === "pop_meg" || key === "pop_waste") && M.hasCityPop(opts.id)) return popRow(key, lab);
       if (kind === "in") {
         const [label, unit, , , , hint] = M.INPUTS[key];
         return h("div", { class: "mrow in" + (opts.editable ? " edit" : "") }, lab(label), h("span", { class: "c" }, inField(key)), h("span", { class: "u", text: unit === "%" ? "" : unit }), h("span", { class: "hint", text: hint || "" }));
       }
       const [label, unit, , okind, hint] = M.OUT[key];
       return h("div", { class: "mrow out" + (okind === "res" ? " is-res" : "") }, lab(label), h("span", { class: "c" }, outVal(key)), h("span", { class: "u", text: unit === "%" ? "" : unit }), h("span", { class: "hint", text: hint || "" }));
+    }
+    // язык и валюта — из карточки страны на карте (ГМ правит их там; курсы валют — Вики → Лор → Валюты)
+    function mapRow(key) {
+      const info = (mapCountries[String(opts.id)] || {}).info || {};
+      let text = "—";
+      if (key === "lang") text = info.lang || "—";
+      if (key === "cur") {
+        const cu = info.cur && mapCurrencies[info.cur];
+        text = cu ? cu.name + " (" + cu.sign + ")" + (cu.id === "kr" ? "" : " · 1 " + cu.sign + " = " + (+cu.rate).toLocaleString("ru-RU", { maximumFractionDigits: 3 }) + " кр.") : "—";
+      }
+      return h("div", { class: "mrow out" }, h("span", { class: "l", text: key === "lang" ? "Язык" : "Валюта" }), h("span", { class: "c" }, h("span", { class: "v", text })), h("span", { class: "u" }),
+        h("span", { class: "hint", text: "из карточки страны на карте" }));
+    }
+    // население мегаполисов и пустошей — из городов карты: правятся на карте, а не здесь
+    function popRow(key, lab) {
+      const [label, unit] = M.INPUTS[key];
+      const v = live(e => { const p = M.popOf(c, opts.id); e.textContent = fmt(key === "pop_meg" ? p.meg : p.waste, "d2"); e.className = "v"; });
+      return h("div", { class: "mrow out" }, lab(label), h("span", { class: "c" }, v), h("span", { class: "u", text: unit }),
+        h("span", { class: "hint", text: key === "pop_meg" ? "сумма городов страны на карте" : "по доле пустошей в карточке страны на карте" }));
     }
     function tableBlock(t) {
       const meta = M.TABLES[t], info = TAB_INFO[t] || [];
@@ -1508,7 +1547,10 @@
       const cw = M.corpWorld(rules, results);
       out.corpPub = {};
       for (const id in cw) out.corpPub[id] = { rank: cw[id].rank, rev: +cw[id].rev.toFixed(1), grp: +cw[id].grp.toFixed(1), n: cw[id].n };
-      await GH.commit(config.repo, [{ path: "data/mech.json", content: JSON.stringify(out) }], "Механики: правки ГМа " + new Date().toLocaleString("ru-RU"));
+      // карта с правками (население городов после хода и всё остальное, что ГМ не опубликовал) — тем же коммитом
+      const KM = window.KGMap, mapPub = KM && KM.gm && KM.dirty ? await KM.publishFiles() : null;
+      await GH.commit(config.repo, [{ path: "data/mech.json", content: JSON.stringify(out) }].concat(mapPub ? mapPub.files : []), "Механики: правки ГМа " + new Date().toLocaleString("ru-RU"));
+      if (mapPub) KM.afterPublish(mapPub.st);
       mech = out; mechPub = clone(out);
       gmDirty = false; try { localStorage.removeItem(DRAFT_KEY); } catch (e) { /* */ }
       snapshotBase();
@@ -1681,19 +1723,24 @@
     if (debris.length) losses.push("от мусора: " + debris.join(", "));
     const y0 = M.firstYear(mech.turn, mech.year);
     const ok = await ask("Перейти к ходу " + (mech.turn + 1) + " (" + M.turnMonths(mech.turn + 1) + " " + M.turnYear(mech.turn + 1, y0) + ")?", "", { confirm: true,
-      note: "У всех стран технологии, стабильность и население примут прогнозные значения, перерасход бюджета уйдёт в госдолг, резерв погасит часть долга, а при долге от " + fmt(+rules.K.debt_default, "pct") + " ВВП будет объявлен дефолт. Бесчестье союзов Старого Света вырастет на прирост за ход." + (losses.length ? " Не забудьте убрать спутники, сошедшие с орбиты (" + losses.join("; ") + ")." : "") });
+      note: "У всех стран технологии, стабильность и население примут прогнозные значения (население городов на карте умножится на прирост и опубликуется вместе с механиками), перерасход бюджета уйдёт в госдолг, резерв погасит часть долга, а при долге от " + fmt(+rules.K.debt_default, "pct") + " ВВП будет объявлен дефолт. Бесчестье союзов Старого Света вырастет на прирост за ход." + (losses.length ? " Не забудьте убрать спутники, сошедшие с орбиты (" + losses.join("; ") + ")." : "") });
     if (!ok) return;
-    const debtNews = [];
+    const debtNews = [], grow = {};
     for (const id of ids) {
       const c = gmData[id], r = results[id];
       c.in.tech = +r.next_tech.toFixed(3);
       c.in.stability = +r.next_stab.toFixed(1);
-      c.in.pop_meg = +((+c.in.pop_meg || 0) * (1 + r.d_pop)).toFixed(3);
-      c.in.pop_waste = +((+c.in.pop_waste || 0) * (1 + r.d_pop)).toFixed(3);
+      // население: прирост за ход умножает города страны на карте; в данных страны — то же число (запасной вариант без карты)
+      const p = M.popOf(c, id);
+      if (p.city) grow[id] = 1 + r.d_pop;
+      c.in.pop_meg = +(p.meg * (1 + r.d_pop)).toFixed(3);
+      c.in.pop_waste = +(p.waste * (1 + r.d_pop)).toFixed(3);
       const wasDef = M.debtState(c).def, D = M.debtNextTurn(rules, c, r);
       if (D.def !== wasDef) debtNews.push(countryName(id) + (D.def ? ": дефолт" : ": дефолт снят"));
     }
     for (const d of M.REGIONS) M.rgNextTurn(rules, d.id, rgS(d.id), results, gmData, mech.turn);
+    const KM = window.KGMap, nCities = KM && KM.scaleCities && Object.keys(grow).length ? KM.scaleCities(grow) : 0;
+    if (nCities) syncCityPop(KM.state);
     mech.turn++; mech.year = M.turnYear(mech.turn, y0);
     markDirty(); renderGm(); renderBlocs();
     toast(M.turnLabel(mech.turn, mech.year) + ". " + (debtNews.length ? "Госдолг — " + debtNews.join("; ") + ". " : "") + "Опубликуйте, чтобы игроки увидели.");
