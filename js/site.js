@@ -958,7 +958,7 @@
   }
   captureOrig(); // исходные тексты разметки — до любых подстановок
   async function load() {
-    const get = u => fetch(u + "?t=" + Date.now(), { cache: "no-store" }).then(r => (r.ok ? r.json() : r.status === 404 ? null : Promise.reject(new Error(u + ": " + r.status))));
+    const get = u => fetch(u, { cache: "no-cache" }).then(r => (r.ok ? r.json() : r.status === 404 ? null : Promise.reject(new Error(u + ": " + r.status))));
     try {
       const [cfg, sj] = await Promise.all([get("data/config.json"), get("data/site.json").catch(() => null)]);
       config = cfg; pub = sj; site = normalize(sj ? clone(sj) : null);

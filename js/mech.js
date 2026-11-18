@@ -58,7 +58,7 @@
 
   // ---------- загрузка ----------
   async function fetchJSON(url) {
-    const r = await fetch(url + "?t=" + Date.now(), { cache: "no-store" });
+    const r = await fetch(url, { cache: "no-cache" }); // проверка по ETag: неизменный файл берётся из кэша
     if (!r.ok) { const e = new Error(url + ": " + r.status); e.status = r.status; throw e; }
     return r.json();
   }
@@ -782,7 +782,7 @@
     el.append(h("p", { class: "mech-note", text: "Загрузка…" }));
     await init();
     let lore = null;
-    try { lore = await fetch("data/ideologies.json?t=" + Date.now(), { cache: "no-store" }).then(r => (r.ok ? r.json() : null)); } catch (e) { lore = null; }
+    try { lore = await fetch("data/ideologies.json", { cache: "no-cache" }).then(r => (r.ok ? r.json() : null)); } catch (e) { lore = null; }
     el.innerHTML = "";
     if (!lore || !Array.isArray(lore.list)) { el.append(h("p", { class: "mech-note", text: "Не удалось загрузить описание идеологий." })); return; }
     const L = lore.list, byId = {}; L.forEach(x => (byId[x.id] = x));

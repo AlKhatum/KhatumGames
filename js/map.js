@@ -2479,11 +2479,11 @@
     catch (e) { console.warn(name + ".ids:", e.message, "— читаю PNG"); await M.load("data/" + name + ".png" + ver, land); }
   }
   async function load() {
-    const bust = "?t=" + Date.now();
+    // «no-cache» — браузер каждый раз спрашивает сервер (по ETag), но если файл не менялся, берёт его из кэша (ответ 304 без тела)
     try {
       const [cfg, st] = await Promise.all([
-        fetch("data/config.json" + bust, { cache: "no-store" }).then(r => r.json()),
-        fetch("data/map.json" + bust, { cache: "no-store", priority: "high" }).then(r => r.json())
+        fetch("data/config.json", { cache: "no-cache" }).then(r => r.json()),
+        fetch("data/map.json", { cache: "no-cache", priority: "high" }).then(r => r.json())
       ]);
       config = cfg; state = st; loadedStamp = st.updated || "";
       stateReadyResolve();

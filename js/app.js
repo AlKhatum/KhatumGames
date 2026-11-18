@@ -269,7 +269,7 @@
   // Загружается один раз и нужен и Вики, и карте (ссылка «Статья в лоре» в карточке страны).
   let lorePromise = null;
   function lore() {
-    if (!lorePromise) lorePromise = fetch("data/lore.json?t=" + Date.now(), { cache: "no-store" })
+    if (!lorePromise) lorePromise = fetch("data/lore.json", { cache: "no-cache" })
       .then(r => (r.ok ? r.json() : null)).catch(() => null)
       .then(L => {
         L = L && Array.isArray(L.states) ? L : { states: [], unions: [], regions: [], chronology: "" };

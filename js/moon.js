@@ -1112,7 +1112,7 @@ void main(){
   async function load() {
     const bust = "?t=" + Date.now();
     if (!tex.getAttribute("src")) tex.src = "assets/moon/moon.jpg";
-    st = await fetch("data/moon.json" + bust, { cache: "no-store" }).then(r => r.json());
+    st = await fetch("data/moon.json", { cache: "no-cache" }).then(r => r.json());
     ["territories", "marks", "markTypes", "roads", "roadTypes", "satellites", "satTypes"].forEach(k => (st[k] = st[k] || {}));
     await TM.load("data/moon_territories.png" + bust, new Uint8Array(MW * MH).fill(1));
     for (const [id, d] of TM.allPaths()) if (st.territories[String(id)]) setTerrPath(id, d);
