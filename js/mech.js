@@ -253,7 +253,7 @@
   function rulesView(editable, onChange, rerender) {
     const root = h("div", { class: "rules" });
     const changed = () => { fillArticleLists(); if (onChange) onChange(); };
-    const order = ["div", "ac", "ship", "sat", "industry", "energy", "food", "law", "tier", "wonder", "ideo", "csector", "corp", "bloc", "cdeal"]
+    const order = ["div", "ac", "ship", "sat", "industry", "energy", "food", "law", "tier", "wonder", "ideo", "csector", "corp", "bloc", "bkind", "cdeal"]
       .concat(...M.REGIONS.map(d => ["bloc", "land", "fac", "loy", "res", "track", "tland"].map(x => d.p + x).filter(t => M.TABLES[t])));
     for (const t of order) {
       const meta = M.TABLES[t], rows = rules.tables[t];
@@ -340,7 +340,7 @@
   function refreshMechViews() {
     renderRef(); renderRating(); renderBlocs(); renderGm(); markRuleDescs();
     if (corpLoreEl && corpLoreEl.isConnected) Promise.resolve(renderCorpLore(corpLoreEl)).then(() => { if (window.KGSite) window.KGSite.applyTexts(corpLoreEl); });
-    for (const rid in rgLoreEls) if (rgLoreEls[rid].isConnected) renderRegion(rgLoreEls[rid], rid);
+    for (const rid in rgLoreEls) if (rgLoreEls[rid].isConnected) Promise.resolve(renderRegion(rgLoreEls[rid], rid)).then(() => { if (window.KGSite) window.KGSite.applyTexts(rgLoreEls[rid]); });
   }
   function renderRef() {
     const box = $("mechRef"); box.innerHTML = "";
@@ -370,6 +370,14 @@
       filt.querySelectorAll("button").forEach(x => x.classList.toggle("active", x === e.currentTarget));
       grid.querySelectorAll(".bloc-card").forEach(x => x.classList.toggle("hidden", !!k && x.dataset.kind !== k));
     } })));
+    // связи по виду союза (таблица «Виды союзов»): что союз сам даёт своим членам
+    const tgName = k => { const s = (M.MOD_TARGETS.find(x => x[0] === k) || [, k])[1]; return /^[A-ZА-ЯЁ]{2}/.test(s) ? s : s.charAt(0).toLowerCase() + s.slice(1); };
+    const bkOf = (b, n) => {
+      const rows = (rules.tables.bkind || []).filter(x => x.bkind === b.kind && x.link && x.target && +x.value);
+      if (!rows.length) return "";
+      return (n < 2 ? "Когда в союзе будет больше одной страны: " : "По виду союза: ") +
+        rows.map(x => x.name + " (" + tgName(x.target) + ", " + (x.target === "d_stab" && x.link !== "echo" ? "+" + fmt(+x.value, "d2") : x.link === "echo" ? "×" + fmt(+x.value, "d2") : fmt(+x.value, "d1").replace(/,0$/, "") + "%") + ")").join(", ") + ".";
+    };
     for (const b of blocs) {
       const mem = M.blocMembers(rules, b.id, gm), deals = rules.tables.cdeal.filter(d => d.bloc === b.id);
       grid.append(h("section", { class: "bloc-card", id: "bloc-" + b.id, "data-kind": b.kind, "data-bloc": b.id },
@@ -383,6 +391,7 @@
           x.leader ? h("small", { text: " · лидер" }) : x.how === "gm" ? h("small", { text: " · отмечено ГМом" }) : null)))
           : h("p", { class: "empty", text: "В блоке пока нет стран." }),
         b.desc ? h("p", { class: "bloc-desc", text: b.desc }) : null,
+        bkOf(b, mem.length) ? h("div", { class: "hint bloc-bk", text: bkOf(b, mem.length) }) : null,
         deals.length ? h("div", { class: "hint", text: "Договоры корпораций: " + deals.map(d => groupName(d.corp) + " (присутствие " + fmt(+d.pres, "d1") + ")").join(", ") }) : null));
     }
     box.append(filt, grid);
@@ -447,14 +456,34 @@
     "Нефть кончилась раньше, чем море поднялось, и Ближний Восток пережил Великую ошибку дважды: сначала без денег, потом без побережий. Залив проглотил Катар и Бахрейн, Басру и Шатт-эль-Араб, Газу и Тель-Авив. Остались горы, оазисы, последние реки — и старые соперники, которые веками делили Аравию.",
     "В 2188 году Иран и Турция сошлись за Аравийский полуостров в решающей войне, увязнув в мелких конфликтах с марионетками друг друга. Обоих разбил Египет — людскими волнами, которых никто не ждал. Мекканское перемирие закончило войну, но не спор: Иран хочет мести и паломников в Тегеране, Египет — Великого Арабского государства, Турция — вернуть уважение.",
     "Новые игроки выросли на обломках. Эмираты Омана мечтают собрать Аравию заново, Хиджаз держит святыни, Машрик и Аль-Хиляль делят пересыхающие Тигр и Евфрат, Палестина и Израиль — горы и источники. Жажда растёт с каждым годом, спор за святыни — с каждой речью в Тегеране и Каире."]];
+  // история региона: текст по умолчанию — RG_LORE, правка ГМа хранится в site.json (ключи lore.region.<механика>.history[.title]).
+  // На странице региона её правят в режиме «✎ Правка», как статьи государств; во вкладке ГМа — только чтение с правками.
+  function rgLoreBox(d, inGm) {
+    const lore = RG_LORE[d.id]; if (!lore) return null;
+    const kT = "lore.region." + d.id + ".history.title", kH = "lore.region." + d.id + ".history";
+    const S = window.KGSite, T = (S && S.data && S.data.texts) || {}, editing = !!(S && S.editing);
+    const def = lore[1].map(x => h("p", { text: x }));
+    if (inGm) {
+      const body = h("div", { class: "rich" }, def);
+      if (T[kH] != null && S.sanitize) body.innerHTML = S.sanitize(T[kH]);
+      return h("details", { class: "ow-lore" }, h("summary", { text: T[kT] != null ? T[kT] : lore[0] }), body);
+    }
+    const box = h("details", { class: "ow-lore" },
+      h("summary", null, h("span", { "data-edit-text": kT, "data-label": "Регион: заголовок истории (" + d.title + ")", text: lore[0] })),
+      h("div", { class: "rich", "data-edit": kH, "data-label": "Регион: история (" + d.title + ")", "data-placeholder": "История региона…" }, def));
+    box.open = editing;
+    // щелчок по заголовку в режиме правки ставит курсор, а не сворачивает историю
+    box.querySelector("summary").addEventListener("click", e => { if (window.KGSite && window.KGSite.editing) e.preventDefault(); });
+    return box;
+  }
   const stripZero = s => s.replace(/,0+$/, "");
   const rgSign = v => (+v > 0 ? "+" : "−") + stripZero(fmt(Math.abs(+v), "d2"));
   // регион с накоплением (Северная Америка): шкала надрыва Союза, два договора, вклад членов, внешние силы, резолюции союза и стран
   function accView(d, rep, inGm) {
     const p = d.p, K = rules.K, A = rep.acc, T = d.txt, tName = k => (M.MOD_TARGETS.find(t => t[0] === k) || [, k])[1];
     const sec = h("section", { class: "ow rg-" + d.id, id: inGm ? null : "rg-" + d.id }, h("h2", { text: inGm ? "Как это видят все" : d.title }));
-    const lore = RG_LORE[d.id];
-    if (lore) sec.append(h("details", { class: "ow-lore" }, h("summary", { text: lore[0] }), lore[1].map(x => h("p", { text: x }))));
+    const lore = rgLoreBox(d, inGm);
+    if (lore) sec.append(lore);
     const st = n => stripZero(fmt(n, "d2")), lc = s => s.charAt(0).toLowerCase() + s.slice(1).replace(/\.$/, "");
     sec.append(h("p", { class: "mech-note", text: T.intro.replace("{base}", st(A.base)).replace("{lvl}", st(K[p + "_acc_stab_lvl"])) }));
     const tLine = (name, sts, notes, cur, sK) => {
@@ -550,8 +579,8 @@
     const d = rep.def || rgDef(rid), p = d.p, K = rules.K, tName = k => (M.MOD_TARGETS.find(t => t[0] === k) || [, k])[1];
     if (d.acc) return accView(d, rep, inGm);
     const sec = h("section", { class: "ow rg-" + d.id, id: inGm ? null : (d.id === "eu" ? "ow" : "rg-" + d.id) }, h("h2", { text: inGm ? "Как это видят все" : d.title }));
-    const lore = RG_LORE[d.id];
-    if (lore) sec.append(h("details", { class: "ow-lore" }, h("summary", { text: lore[0] }), lore[1].map(x => h("p", { text: x }))));
+    const lore = rgLoreBox(d, inGm);
+    if (lore) sec.append(lore);
     const treaty = (d.st.find(t => t[0] === rep.treaty) || d.st[0])[1];
     const lc = s => s.charAt(0).toLowerCase() + s.slice(1).replace(/\.$/, "");
     const tNote = rep.treaty === "active" ? d.notes.active
@@ -2083,7 +2112,9 @@
     if (e.detail && /^#wiki\/mech\/calc/.test(location.hash)) openPane("calc");
   });
   // «✎ Правка» включена или выключена — справочник, рейтинг и лор корпораций переключаются между чтением и правкой
-  window.addEventListener("siteedit", async () => {
+  window.addEventListener("siteedit", async e => {
+    // в режиме правки история регионов раскрыта, чтобы её было видно и можно было править
+    if (e.detail) document.querySelectorAll("#loreArticle details.ow-lore").forEach(x => { x.open = true; });
     if (!inited) return;
     await loading;
     refreshMechViews();

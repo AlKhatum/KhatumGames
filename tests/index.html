@@ -24,7 +24,7 @@
 <script src="../js/moon-names.js?v=20261115a"></script>
 <script src="../js/wrap.js?v=20261115a"></script>
 <script src="../js/mech-lore.js?v=20261117q"></script>
-<script src="../js/mech-model.js?v=20261118h"></script>
+<script src="../js/mech-model.js?v=20261118m"></script>
 <script src="../js/mech-crypto.js?v=20261115a"></script>
 <script>
 (async function () {
@@ -1194,6 +1194,20 @@
     assert(D.querySelectorAll("#loreArticle #rg-na .rg-acc-bar u").length === 3, "отметки стадий");
     assert(D.querySelectorAll("#loreArticle #rg-na .ow-t tbody tr").length === 9, "Централ и восемь дистриктов");
     assert(!/(^|[^а-яё])мод(а|е|ом|у)?([^а-яё]|$)|Beyond|гражданск\w+ войн\w+ (начн|будущ)/i.test(D.querySelector("#loreArticle").textContent), "без упоминаний мода");
+  });
+  await test("Виды союзов: связи членов по виду союза — политический, военный, фракция; союз из одной страны без связей", () => {
+    const tg = new Set(MM.MOD_TARGETS.map(x => x[0]));
+    assert(rulesLive.tables.bkind.length >= 8 && rulesLive.tables.bkind.every(x => tg.has(x.target) && (!x.cost_t || tg.has(x.cost_t))), "таблица «Виды союзов»");
+    const cs = {}; for (const id in MC) cs[id] = MM.emptyCountry();
+    const L = MM.blocKindLinks(rulesLive, cs), of = b => L.filter(x => x.bloc === b), lead = b => String((AL[b] || {}).leader);
+    const integ = of("al_ger_integr");
+    assert(integ.length === 2 && integ.every(x => x.from.join() === lead("al_ger_integr")) && integ.some(x => x.kind === "echo"), "ИНТЕГР — политический союз: " + integ.map(x => x.name));
+    const tithe = of("al_eqg_morgan").find(x => x.kind === "share");
+    assert(tithe && tithe.to.join() === lead("al_eqg_morgan") && tithe.from.length >= 1 && !tithe.from.includes(lead("al_eqg_morgan")), "Morgan — доля хозяину");
+    assert(of("al_pru").length === 2 && of("al_pru").every(x => x.kind === "aid" && x.from.join() === lead("al_pru")), "Андский пакт — помощь лидера");
+    const one = Object.keys(AL).filter(b => Object.keys(MC).filter(id => MC[id].alliance === b).length < 2);
+    assert(one.every(b => !of(b).length), "союз из одной страны без связей: " + one.filter(b => of(b).length));
+    return L.length + " связей у " + new Set(L.map(x => x.bloc)).size + " союзов";
   });
   group("Азия и Ближний Восток");
   await test("Азия: Дракон, Медведь и Тигр — союзы, клики и силы, верность ОСС, резолюции; Ближний Восток — угроза держав и треки", () => {

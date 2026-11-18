@@ -529,6 +529,22 @@
       fields: [["name", "Союз", "text"], ["kind", "Вид", "sel", [["pol", "Политический союз"], ["econ", "Экономический союз"], ["mil", "Военный блок"], ["fac", "Фракция"]]], ["desc", "Описание", "text"],
         ["members", "Страны вне карты (номера)", "text"]],
       rows: [] },
+    // вид союза → связи, которые союз сам даёт своим членам (выбор ГМа 18.11.2026: «союз как живая связь»).
+    // Направление: lead — от лидера членам, all — все члены поровну, up — от членов лидеру. Складываются с сюжетными связями.
+    bkind: { title: "Виды союзов: связи членов", note: "Каждый союз карты сам создаёт эти связи между своими членами по своему виду. «Помощь» действует полностью при стабильности лидера от 60 и пропадает при 20 и ниже; «Взаимозависимость» сильнее у маленьких экономик и тянет вниз, когда у партнёров кризис. Союз из одной страны связей не получает.",
+      fields: [["bkind", "Вид союза", "sel", [["pol", "Политический союз"], ["econ", "Экономический союз"], ["mil", "Военный блок"], ["fac", "Фракция"]]], ["name", "Связь", "text"],
+        ["link", "Как действует", "sel", () => LINK_KINDS.filter(k => k[0] !== "fixed")], ["dir", "Направление", "sel", [["lead", "Лидер → члены"], ["all", "Все члены"], ["up", "Члены → лидер"]]],
+        ["target", "Показатель", "sel", () => MOD_TARGETS], ["value", "Значение", "num"], ["cost_t", "Цена для лидера", "sel", () => [["", "— без цены —"]].concat(MOD_TARGETS)],
+        ["cost_v", "Цена, % (у стабильности — пункты)", "num"], ["desc", "Описание", "text"]],
+      rows: [
+        ["bk_pol_echo", "pol", "Кризис в столице союза", "echo", "lead", "d_stab", 0.1, "", 0, "Когда у лидера за ход падает стабильность, члены теряют десятую часть этого падения."],
+        ["bk_pol_aid", "pol", "Поддержка центра", "aid", "lead", "d_stab", 0.05, "budget", 1, "Лидер тратит 1% доходов бюджета, а члены получают до +0,05 стабильности за ход, пока лидер сам стабилен."],
+        ["bk_econ_gdp", "econ", "Общий рынок", "sync", "all", "gdp", 6, "", 0, "Низкие пошлины: экономики членов растут и падают вместе."],
+        ["bk_econ_access", "econ", "Общие торговые пути", "sync", "all", "access", 5, "", 0, "Порты и конвои союза открыты всем его членам, пока у партнёров нет кризиса."],
+        ["bk_mil_sec", "mil", "Общая оборона", "aid", "lead", "security", 6, "budget", 1, "Лидер держит гарнизоны и патрули у членов блока за 1% своего бюджета."],
+        ["bk_mil_rdy", "mil", "Совместные учения", "aid", "lead", "readiness", 5, "", 0, "Штабы и учения блока подтягивают армии членов."],
+        ["bk_fac_tithe", "fac", "Доля хозяина", "share", "up", "gdp", 5, "", 0, "Члены фракции отдают хозяину 5% ВВП: прибыль уходит в его отчёты."],
+        ["bk_fac_energy", "fac", "Энергия хозяина", "aid", "lead", "en_supply", 5, "", 0, "Хозяин фракции даёт членам свои станции и топливо."]] },
     cdeal: { title: "Договоры корпораций с союзами", note: "Договор даёт корпорации присутствие во всех странах союза. Значение, заданное самой стране, важнее договора.",
       fields: [["corp", "Корпорация", "sel", R => R.tables.corp.map(s => [s.id, s.name])], ["bloc", "Союз", "sel", R => (R.tables.bloc.length ? R.tables.bloc.map(s => [s.id, s.name]) : [["", "— сначала создайте союз —"]])],
         ["pres", "Присутствие, 0–10", "num"], ["rel", "Отношения, −100…100", "num"], ["note", "Условия", "text"]],
@@ -1004,6 +1020,25 @@
       } else if (L.kind === "echo") {
         const fall = from.length ? from.reduce((s, d) => s + Math.min(0, +((R[d] || {})[t]) || 0), 0) / from.length : 0;
         if (fall < 0) to.forEach(id => put(L, id, t, "add", v * fall));
+      }
+    }
+    return out;
+  }
+  // связи по виду союза: из таблицы «Виды союзов» для каждого союза карты (члены — как в «Союзах», с отметками ГМа).
+  // Союз без лидера среди членов получает только связи «Все члены»; союз из одной страны — ничего.
+  function blocKindLinks(rules, countries) {
+    const T = (rules && rules.tables) || {}, rows = Array.isArray(T.bkind) ? T.bkind : defaultRules().tables.bkind, out = [];
+    for (const b of T.bloc || []) {
+      const list = rows.filter(x => x && x.bkind === b.kind && x.link && x.target && +x.value);
+      if (!list.length) continue;
+      const mem = blocMembers(rules, b.id, countries).filter(x => countries && countries[x.id]);
+      if (mem.length < 2) continue;
+      const lead = (mem.find(x => x.leader) || {}).id, ids = mem.map(x => x.id), others = ids.filter(id => id !== lead);
+      for (const x of list) {
+        if (x.dir !== "all" && !lead) continue;
+        const from = x.dir === "all" ? [] : x.dir === "up" ? others : [lead], to = x.dir === "all" ? ids : x.dir === "up" ? [lead] : others;
+        out.push({ id: "bk_" + b.id + "_" + x.id, name: b.name + ": " + x.name, kind: x.link, from, to, target: x.target, value: +x.value,
+          cost_t: x.cost_t || "", cost_v: +x.cost_v || 0, note: x.desc || "", bloc: b.id });
       }
     }
     return out;
@@ -2062,7 +2097,7 @@
   function computeAll(rules, countries, links, rg) {
     const results = {}, ctx = {}, om = {};
     for (const id in countries) om[id] = regionMods(rules, rg, countries[id], id);
-    const L = Array.isArray(links) ? links.filter(x => x && !x.off) : [];
+    const L = (Array.isArray(links) ? links.filter(x => x && !x.off) : []).concat(blocKindLinks(rules, countries));
     // займы у стран: проценты и выдача займа меняют бюджет кредитора — нужна ставка должника из первого прохода
     const lend = Object.keys(countries).some(id => debtState(countries[id]).loans.some(x => x.cr.startsWith("c:")));
     let lm = {}, dm = {};
@@ -2183,7 +2218,7 @@
     defaultRules, normalizeRules, compute, worldCtx, applyWorld, computeAll, emptyCountry, corpPresence, setMap, wonderMods, wonderMode, LINK_KINDS, linkMods, linkIds, normLinks, paramLore, loreDesc, blocLinks, blocsOf, blocMembers, OLD_BLOCS, corpWorld, corpClass, parseImport, importCountry,
     TURN_MONTHS, TURNS_YEAR, turnYear, firstYear, turnMonths, turnLabel, isOldTurn, quarterRules, quarterMods, quarterLinks,
     debtState, debtCreditor, debtMods, debtNextTurn,
-    OW_TREATY, owState, owMods, owReport, owNextTurn, REGIONS, rgState, rgMods, rgReport, rgNextTurn, rgAll, regionMods, rgAccApply, facShift: (rules, rid, st, fid, df) => {
+    blocKindLinks, OW_TREATY, owState, owMods, owReport, owNextTurn, REGIONS, rgState, rgMods, rgReport, rgNextTurn, rgAll, regionMods, rgAccApply, facShift: (rules, rid, st, fid, df) => {
       const d = rgDef(rid), R = normalizeRules(rules), S = rgState(R, d.id, st); facShift(R, d, S, fid, df); Object.assign(st, S); return st; }
   };
 })();
