@@ -24,7 +24,7 @@
 <script src="../js/moon-names.js?v=20261115a"></script>
 <script src="../js/wrap.js?v=20261115a"></script>
 <script src="../js/mech-lore.js?v=20261117q"></script>
-<script src="../js/mech-model.js?v=20261118d"></script>
+<script src="../js/mech-model.js?v=20261118h"></script>
 <script src="../js/mech-crypto.js?v=20261115a"></script>
 <script>
 (async function () {
@@ -683,7 +683,7 @@
   const inLine = (line, name) => sameName(line, name) || line.split(/\s*[·,]\s*/).some(part => sameName(part, name));
   await test("data/lore.json: структура, регионы, хронология", () => {
     assert(lore.v === 1 && Array.isArray(lore.states) && Array.isArray(lore.unions) && Array.isArray(lore.regions), "структура");
-    assert(lore.regions.map(r => r.id).join(",") === "powers,eu,af,as,na,la,oc", "регионы " + lore.regions.map(r => r.id));
+    assert(lore.regions.map(r => r.id).join(",") === "powers,eu,af,as,me,na,la,oc", "регионы " + lore.regions.map(r => r.id));
     assert(/Великую ошибку/.test(lore.chronology) && /Тёмные века/.test(lore.chronology), "хронология без пролога");
     const ids = lore.states.map(s => s.id), dup = ids.filter((x, i) => ids.indexOf(x) !== i);
     assert(!dup.length, "повторы статей: " + dup);
@@ -797,7 +797,7 @@
     near(own.air_power / none.air_power, 1.15, 1e-9, "ВВС владельца");
     near(other.air_power, none.air_power, 1e-9, "ВВС чужой страны");
     assert(own.wonders === "Академия «Клаудбейс»" && other.wonders === "—", own.wonders + " / " + other.wonders);
-    const all4 = MM.computeAll(rl, { "8": MM.SAMPLES[0].make(), "36": MM.SAMPLES[0].make() });
+    const all4 = MM.computeAll(rl, { "8": MM.SAMPLES[0].make(), "36": MM.SAMPLES[0].make() }, [], { sb: { acc: 0 } }); // без кризиса Сибири: Евразия не получает боевого духа соседа
     near(all4.results["8"].air_power / all4.results["36"].air_power, 1.15, 1e-9, "computeAll");
   });
   await test("Чудеса: стабильность — пункты за ход, остальное — проценты", () => {
@@ -943,11 +943,11 @@
   await test("Вики → События", () => go("wiki/events", () => visible(D.getElementById("wikiEvents")), "события"));
   await test("Вики → Лор: пять разделов", () => go("wiki/lore", () => D.querySelectorAll("#loreGrid .lore-card").length === 5 &&
     [...D.querySelectorAll("#loreGrid .lore-card b")].map(b => b.textContent).join("|") === "Идеологии 23-го века|Корпорации|Хронология|Государства|Регионы", "разделы"));
-  await test("Лор → Регионы: шесть регионов, у каждого страница с государствами; Европа — Старый Свет, Африка — механика Африки, остальные — заглушка", async () => {
+  await test("Лор → Регионы: семь регионов, у каждого страница с государствами; механики у Европы, Африки, Северной Америки, Азии и Ближнего Востока, остальные — заглушка", async () => {
     const regs = lore.regions.filter(r => r.id !== "powers");
     await go("wiki/lore/regions", () => D.querySelectorAll("#loreArticle .regions-grid .lore-card").length === regs.length, "регионы");
     const titles = [...D.querySelectorAll("#loreArticle .regions-grid .lore-card b")].map(b => b.textContent);
-    assert(titles[0] === "Старый Свет (Европа)" && titles.length === 6, titles.join("|"));
+    assert(titles[0] === "Старый Свет (Европа)" && titles.length === 7, titles.join("|"));
     let total = 0;
     for (const r of regs) {
       const want = lore.states.filter(s => (s.geo || s.region) === r.id).length;
@@ -956,6 +956,9 @@
       const txt = text("#loreArticle .lore-text");
       if (r.id === "eu") await go("wiki/lore/regions/eu", () => D.querySelector("#loreArticle #ow .ow-t tbody tr"), "Старый Свет");
       else if (r.id === "af") await go("wiki/lore/regions/af", () => D.querySelector("#loreArticle #rg-af .ow-t tbody tr") && D.querySelector("#loreArticle #rg-af .rg-track"), "Африка");
+      else if (r.id === "na") await go("wiki/lore/regions/na", () => D.querySelector("#loreArticle #rg-na .rg-acc") && D.querySelector("#loreArticle #rg-na .ow-t tbody tr"), "Северная Америка");
+      else if (r.id === "as") await go("wiki/lore/regions/as", () => ["dr", "sb", "tg"].every(x => D.querySelector("#loreArticle #rg-" + x + " .rg-acc")), "Азия");
+      else if (r.id === "me") await go("wiki/lore/regions/me", () => D.querySelector("#loreArticle #rg-me .ow-t tbody tr") && D.querySelector("#loreArticle #rg-me .rg-track"), "Ближний Восток");
       else assert(/заполняется по ходу кампании/.test(txt) || W.KGSite.data.texts["lore.region." + r.id + ".html"] != null, r.id + ": заглушка");
     }
     assert(total === lore.states.length, "все государства по регионам: " + total);
@@ -1076,7 +1079,7 @@
     const cs = { [scoMem]: MM.SAMPLES[1].make() };
     const a0 = MM.computeAll(rulesLive, cs, [], null).results[scoMem], a1 = MM.computeAll(rulesLive, cs, [], ow);
     near(a1.results[scoMem].access, a0.access * 0.85, 1e-9, "доступ к рынкам");
-    assert(a1.ctx[scoMem].ow.length === 4, "эффекты уходят игроку в world.ow");
+    assert(a1.ctx[scoMem].ow.filter(m => (m.rg || "eu") === "eu").length === 4, "эффекты уходят игроку в world.ow");  // у Дании есть ещё и эффекты Северной Америки
   });
   await test("Лор → Регионы → Старый Свет (Европа): бесчестье всех союзов Европы; в Механики → Союзы — ссылка и отметки", async () => {
     await go("wiki/lore/regions/eu", () => D.querySelector("#loreArticle #ow .ow-t tbody tr"), "Старый Свет");
@@ -1152,6 +1155,104 @@
     assert(D.querySelectorAll("#loreArticle #rg-af .rg-track").length === 3, "треки");
     assert(!/(^|[^а-яё])мод(а|е|ом|у)?([^а-яё]|$)|Beyond/i.test(D.querySelector("#loreArticle").textContent), "без упоминаний мода");
     assert(/Тибести/.test(text("#loreArticle .region-lands")), "кочевые земли");
+  });
+
+  group("Северная Америка");
+  await test("Северная Америка: Союз копит накопление, внешние силы — Сопротивление, хунта и Дания; резолюции союза и стран", () => {
+    const nb = rulesLive.tables.nabloc.map(b => b.bloc), nl = rulesLive.tables.naland;
+    assert(nb.join() === "al_nau_united" && Bid.has("al_nau_united"), nb.join());
+    assert(nl.filter(x => x.role === "opp").map(x => String(x.country)).sort().join() === ["125", "126", "15"].sort().join(), "внешние силы");
+    assert(nl.every(x => MC[x.country] && MC[x.country].alliance !== "al_nau_united"), "страны вне Союза");
+    const tg = new Set(MM.MOD_TARGETS.map(t => t[0])), res = rulesLive.tables.nares;
+    assert(res.every(x => (!x.t1 || tg.has(x.t1)) && (!x.t2 || tg.has(x.t2)) && (!x.bloc || nb.includes(x.bloc) || (/^c:/.test(x.bloc) && MC[x.bloc.slice(2)]))), "показатели и авторы резолюций");
+    assert(nm("15") === "Королевство Дания" && MC["15"].alliance === "al_sco_nsa", "Дания в Североморском альянсе");
+    const dan = lore.states.find(s => s.id === "grn"), cas = lore.states.find(s => s.id === "cas");
+    assert(dan && dan.region === "na" && /Дания/.test(dan.title) && cas && cas.passport["Лидер"] === "Джон Доу", "статьи Дании и Каскадии");
+    return res.length + " резолюций";
+  });
+  await test("Накопление: старт 34, рост от надрыва дистриктов, стадии, договоры и внешние силы", () => {
+    const S = MM.rgState(rulesLive, "na", null);
+    assert(S.acc === 34 && S.treaty === "active" && S.treaty2 === "active", JSON.stringify(S));
+    const e = MM.emptyCountry(), ids = x => x.map(m => m.target + ":" + +m.value.toFixed(4)).sort().join();
+    assert(ids(MM.rgMods(rulesLive, "na", null, e, "117")) === "d_stab:-0.05,security:-2", "Дистрикт 1 на «Трещинах»: " + ids(MM.rgMods(rulesLive, "na", null, e, "117")));
+    assert(ids(MM.rgMods(rulesLive, "na", { acc: 65 }, e, "125")) === "morale:6", "Сопротивление на «Надломе»");
+    assert(ids(MM.rgMods(rulesLive, "na", { acc: 10, treaty: "void", treaty2: "void" }, e, "126")) === "d_stab:-0.25", "хунта: Хартия её не касается");
+    assert(ids(MM.rgMods(rulesLive, "na", { acc: 10, treaty2: "amended" }, e, "121")) === "d_stab:-0.125", "Дистрикт 5: Хартия нарушена");
+    assert(ids(MM.rgMods(rulesLive, "na", { acc: 10, res: { "c:125": ["na_que_woodman"] } }, e, "121")) === "security:-3", "резолюция Квебека бьёт по Союзу");
+    assert(ids(MM.rgMods(rulesLive, "na", { acc: 10, res: { "c:125": ["na_que_woodman"] } }, e, "125")) === "budget:-2", "и стоит самому Квебеку");
+    assert(!MM.rgMods(rulesLive, "na", { acc: 95, treaty: "void" }, e, "19").length, "Германия вне Северной Америки");
+    const cs = {}; ["117", "119", "121"].forEach(id => { cs[id] = MM.emptyCountry(); cs[id].in.stability = { "117": 15, "119": 21, "121": 56 }[id]; });
+    const st = {}; MM.rgNextTurn(rulesLive, "na", st, {}, cs, 1);
+    near(st.acc, 34 + 0.25 + 0.5 + 0.38, 1e-6, "рост: база + Д1 + Д3");
+    const st2 = { acc: 89.9 }; MM.rgNextTurn(rulesLive, "na", st2, {}, cs, 1);
+    assert(st2.log.some(x => /точка невозврата/.test(x.why)), "смена стадии в журнале");
+  });
+  await test("Лор → Регионы → Северная Америка: шкала накопления, два договора, вклад членов Союза", async () => {
+    await go("wiki/lore/regions/na", () => D.querySelector("#loreArticle #rg-na .rg-acc"), "Северная Америка");
+    const st = D.querySelector("#loreArticle #rg-na .ow-status").textContent;
+    assert(/Денверский пакт/.test(st) && /Хартия дистриктов/.test(st), "договоры");
+    assert(D.querySelectorAll("#loreArticle #rg-na .rg-acc-bar u").length === 3, "отметки стадий");
+    assert(D.querySelectorAll("#loreArticle #rg-na .ow-t tbody tr").length === 9, "Централ и восемь дистриктов");
+    assert(!/(^|[^а-яё])мод(а|е|ом|у)?([^а-яё]|$)|Beyond|гражданск\w+ войн\w+ (начн|будущ)/i.test(D.querySelector("#loreArticle").textContent), "без упоминаний мода");
+  });
+  group("Азия и Ближний Восток");
+  await test("Азия: Дракон, Медведь и Тигр — союзы, клики и силы, верность ОСС, резолюции; Ближний Восток — угроза держав и треки", () => {
+    const T = rulesLive.tables, tg = new Set(MM.MOD_TARGETS.map(t => t[0])), okBloc = b => (/^c:/.test(b) ? !!MC[b.slice(2)] : Bid.has(b));
+    for (const p of ["dr", "sb", "tg", "me"]) {
+      assert(T[p + "bloc"].length && T[p + "bloc"].every(b => okBloc(b.bloc)), p + ": союзы и страны-союзы");
+      assert(T[p + "res"].every(x => (!x.t1 || tg.has(x.t1)) && (!x.t2 || tg.has(x.t2)) && (!x.bloc || okBloc(x.bloc))), p + ": показатели и авторы резолюций");
+      assert(T[p + "land"].every(x => MC[x.country]), p + ": страны вне союзов на карте");
+    }
+    for (const p of ["dr", "sb", "tg"]) {
+      const f = T[p + "fac"], ids = new Set(f.map(x => x.id));
+      near(f.reduce((s, x) => s + +x.start, 0), 100, 1e-9, p + ": веса сил в сумме 100");
+      assert(T[p + "res"].every(x => !x.fac || ids.has(x.fac)), p + ": резолюции ссылаются на свои силы");
+    }
+    const oss = new Set(MM.blocMembers(rulesLive, "al_chin_strategic_cooperation_organization_faction").map(x => x.id));
+    assert(T.drloy.every(x => oss.has(String(x.country))) && T.drloy.length === oss.size - 1, "верность — у каждого члена ОСС, кроме Китая");
+    assert(T.metland.every(x => MC[x.country] && T.metrack.some(t => t.id === x.track)), "страны треков Ближнего Востока");
+    assert(nm("86") === "Сибирская Республика" && nm("42") === "Объединённые Эмираты Омана", "Сибирь и Оман на карте");
+    for (const id of ["94", "102", "98", "104", "99", "101", "106", "105", "100", "107", "93", "92", "88", "48", "41", "149", "38", "47", "43", "150"]) assert(MC[id], "новая страна на карте: " + id);
+    const sib = lore.states.find(s => s.id === "sib");
+    assert(sib && sib.passport["Президент"] === "Борис Морозов" && sib.passport["Столица"] === "Иркутск", "Сибирь: Морозов, Иркутск");
+    assert(lore.states.filter(s => s.region === "me").length === 8 && lore.states.find(s => s.id === "oma").geo === "me", "том «Ближний Восток» и Оман в нём");
+    return T.drres.length + T.sbres.length + T.tgres.length + T.meres.length + " резолюций";
+  });
+  await test("Раскол, кризис власти, угасание: старт, стадии, силы без большинства, реванш, верность, держава как союз", () => {
+    const e = MM.emptyCountry(), ids = x => x.map(m => m.target + ":" + +m.value.toFixed(4)).sort().join();
+    const D0 = MM.rgState(rulesLive, "dr", null);
+    assert(D0.acc === 40 && D0.fac.dr_uni === 45 && D0.loy["14"] === 85, JSON.stringify(D0.fac));
+    assert(ids(MM.rgMods(rulesLive, "dr", null, e, "84")) === "d_stab:-0.05,security:-2", "Китай на «Двух партиях»: " + ids(MM.rgMods(rulesLive, "dr", null, e, "84")));
+    assert(ids(MM.rgMods(rulesLive, "dr", null, e, "86")) === "morale:3", "Сибирь ждёт слабости Пекина");
+    assert(ids(MM.rgMods(rulesLive, "dr", { acc: 0, fac: { dr_uni: 60, dr_fed: 30, dr_nat: 10 } }, e, "84")) === "security:5", "унитарии с большинством");
+    const st = MM.rgState(rulesLive, "dr", null); MM.facShift(rulesLive, "dr", st, "dr_uni", 10);
+    near(st.fac.dr_uni, 55, 1e-6, "сдвиг клики"); near(st.fac.dr_fed + st.fac.dr_nat, 45, 1e-6, "остальные пропорционально");
+    const g = MM.rgReport(rulesLive, "dr", MM.rgState(rulesLive, "dr", null), {}, {});
+    near(g.acc.growth, 0.25 + 0.5, 1e-9, "рост: база + без большинства");
+    const st2 = MM.rgState(rulesLive, "dr", { loy: { "97": 20.3 } }); MM.rgNextTurn(rulesLive, "dr", st2, {}, {}, 1);
+    assert(st2.loy["97"] < 20 && st2.log.some(x => /Непал: готов уйти/.test(x.why)), "верность Непала падает со стадией");
+    assert(ids(MM.rgMods(rulesLive, "dr", st2, e, "84")).includes("access:-2"), "Китай теряет рынки за уходящего");
+    const S = MM.rgState(rulesLive, "sb", null);
+    assert(S.acc === 35 && S.acc2 === 15 && S.fac.sb_ind === 40, "Сибирь на старте");
+    assert(ids(MM.rgMods(rulesLive, "sb", null, e, "86")) === "d_stab:-0.05,security:-2", "Сибирь на «Двоевластии»");
+    assert(ids(MM.rgMods(rulesLive, "sb", { acc2: 65 }, e, "86")).includes("readiness:10"), "реванш: мобилизация");
+    const sx = MM.rgState(rulesLive, "sb", null); MM.rgAccApply(rulesLive, "sb", sx, "c:86", rulesLive.tables.sbres.find(x => x.id === "sb_sword"), 1);
+    assert(sx.acc === 37 && sx.acc2 === 20 && Math.abs(sx.fac.sb_rev - 35) < 1e-6, "резолюция «Меч и молот»: кризис, реванш и вес реваншистов");
+    assert(ids(MM.rgMods(rulesLive, "tg", null, e, "109")) === "d_stab:-0.075,security:-3", "Дели на «Тяжёлой болезни»");
+    assert(ids(MM.rgMods(rulesLive, "tg", null, e, "94")) === "morale:5", "Пенджаб ждёт смерти Тхакура");
+    assert(ids(MM.rgMods(rulesLive, "me", { res: { "c:49": ["me_per_revenge"] } }, e, "49")).includes("morale:10"), "Иран — держава вместо союза");
+    assert(MM.rgMods(rulesLive, "me", null, e, "48").some(m => m.name === "Жажда"), "Аравия под жаждой");
+    assert(!MM.rgMods(rulesLive, "tg", null, e, "19").length && !MM.rgMods(rulesLive, "sb", null, e, "19").length, "Германия вне Азии");
+  });
+  await test("Лор → Регионы → Азия: три механики на одной странице; Ближний Восток — четыре силы и два трека", async () => {
+    await go("wiki/lore/regions/as", () => ["dr", "sb", "tg"].every(x => D.querySelector("#loreArticle #rg-" + x + " .rg-acc")), "Азия");
+    assert(D.querySelectorAll("#loreArticle .rg-jump a").length === 3, "переходы к механикам");
+    assert(/Клики партии/.test(text("#loreArticle #rg-dr")) && /Верность членов ОСС/.test(text("#loreArticle #rg-dr")), "клики и верность");
+    assert(/Реванш/.test(text("#loreArticle #rg-sb")) && /Северный договор/.test(text("#loreArticle #rg-sb")), "реванш и договор");
+    assert(/Претенденты на наследство/.test(text("#loreArticle #rg-tg")) && /Хайдарабадский пакт/.test(text("#loreArticle #rg-tg")), "претенденты и пакт");
+    await go("wiki/lore/regions/me", () => D.querySelector("#loreArticle #rg-me .ow-t tbody tr"), "Ближний Восток");
+    assert(D.querySelectorAll("#loreArticle #rg-me .ow-t tbody tr").length === 4 && D.querySelectorAll("#loreArticle #rg-me .rg-track").length === 2, "силы и треки");
+    assert(!/(^|[^а-яё])мод(а|е|ом|у)?([^а-яё]|$)|Beyond/i.test(D.querySelector("#loreArticle").textContent), "без упоминаний мода");
   });
   await test("Механики → Союзы: состав каждого блока как на карте, лидер помечен, фильтр по виду", async () => {
     await go("wiki/mech/blocs", () => D.querySelectorAll("#mechBlocs .bloc-card").length === B.length, "союзы");

@@ -94,11 +94,12 @@
 .mrow .c { text-align: right; font-variant-numeric: tabular-nums; }
 .mrow .u { color: var(--muted); font-size: 12px; }
 /* .hint в style.css — плавающая подсказка карты (#hint, #moonHint: position:absolute внизу рамки, на телефоне скрыта).
-   В механиках подсказка — обычный текст в своей колонке, иначе все подсказки карточки слипаются внизу и закрывают строки */
-#wikiMech .hint { position: static; z-index: auto; left: auto; right: auto; bottom: auto; transform: none; max-width: none; padding: 0;
+   В механиках и на страницах регионов (лор, вкладки регионов у ГМа) подсказка — обычный текст в своей колонке,
+   иначе все подсказки слипаются внизу и закрывают строки и карточки */
+#wikiMech .hint, #loreArticle .hint, .ow .hint, .gm-ow .hint { position: static; z-index: auto; left: auto; right: auto; bottom: auto; transform: none; max-width: none; padding: 0;
   background: none; border: 0; border-radius: 0; text-align: left; pointer-events: auto; display: block; }
-#wikiMech td.hint { display: table-cell; }
-#wikiMech .hint:empty { display: none; }
+#wikiMech td.hint, #loreArticle td.hint, .ow td.hint, .gm-ow td.hint { display: table-cell; }
+#wikiMech .hint:empty, #loreArticle .hint:empty, .ow .hint:empty, .gm-ow .hint:empty { display: none; }
 .mrow .hint { color: var(--muted); font-size: 12px; line-height: 1.35; }
 .mrow.in .l::before { content: "✎ "; color: var(--pink-soft); font-size: 11px; opacity: 0; }
 .mrow.in.edit .l::before { opacity: .8; }
@@ -357,3 +358,15 @@
 .loans .small-btn { margin-top: 6px; }
 .debt-defs { list-style: none; padding: 0; margin: 6px 0 16px; display: flex; flex-wrap: wrap; gap: 6px 14px; }
 .debt-defs li { display: inline-flex; align-items: center; gap: 4px; color: var(--danger); }
+/* Северная Америка: шкала накопления со стадиями */
+.rg-acc { font-size: 13px; padding: 8px 10px; border-left: 3px solid var(--line-dim); background: rgba(24, 217, 245, .04); margin: 10px 0; }
+.rg-acc.bad { border-left-color: var(--danger); }
+.rg-acc .bar.rg-acc-bar { position: relative; display: block; height: 10px; margin: 6px 0; background: rgba(24, 217, 245, .12); border-radius: 3px; overflow: hidden; }
+.rg-acc .bar.rg-acc-bar i { display: block; height: 100%; background: linear-gradient(90deg, #e2a35e, var(--danger)); }
+.rg-acc .bar.rg-acc-bar u { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--text, #fff); opacity: .55; text-decoration: none; }
+.rg-acc .hint { color: var(--muted); font-size: 12px; }
+/* Азия: три механики на одной странице региона */
+.rg-jump { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 14px; }
+.region-ow .ow + .ow { margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--line-dim); }
+.ow-t tr.on td { background: rgba(24, 217, 245, .07); }
+.ow-gm-row.on b { color: var(--accent, #18d9f5); }
