@@ -19,7 +19,7 @@
 <div id="summary">Выполняется…</div>
 <div id="out"></div>
 <script src="../js/geo.js?v=20261115a"></script>
-<script src="../js/territory.js?v=20261117v"></script>
+<script src="../js/territory.js?v=20261118q"></script>
 <script src="../js/sats.js?v=20261115e"></script>
 <script src="../js/moon-names.js?v=20261115a"></script>
 <script src="../js/wrap.js?v=20261115a"></script>
@@ -142,7 +142,7 @@
   let T8 = null;
   await test("Растр стран: все 139 стран из данных есть на карте", async () => {
     T8 = window.KGTerritoryMake(false);
-    await T8.load("../data/territories.png?t=" + Date.now(), "../assets/map/land.png");
+    await T8.load("../data/territories.png?t=" + Date.now(), "../assets/map/land_mask.png");
     const missing = Object.keys(map.countries).filter(id => !T8.bbox[+id]);
     assert(!missing.length, "нет на карте: " + missing.join(", "));
     return Object.keys(map.countries).length + " стран, " + T8.W + "×" + T8.H;

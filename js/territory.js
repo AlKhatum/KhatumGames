@@ -156,7 +156,8 @@
     wide,
     W: 0, H: 0, ids: null, land: null, bbox: [],
     async load(idsUrl, land) {
-      const a = await readPixels(idsUrl);
+      // растр id и маска суши грузятся одновременно
+      const [a, b] = await Promise.all([readPixels(idsUrl), land instanceof Uint8Array ? null : readPixels(land)]);
       T.W = a.w; T.H = a.h;
       const N = a.w * a.h;
       T.ids = new Arr(N);
@@ -164,7 +165,6 @@
       else for (let i = 0; i < N; i++) T.ids[i] = a.data[i * 4];
       if (land instanceof Uint8Array) T.land = land; // общая маска суши
       else {
-        const b = await readPixels(land);
         T.land = new Uint8Array(N);
         if (b.w === a.w && b.h === a.h) for (let i = 0; i < N; i++) T.land[i] = b.data[i * 4 + 3] >= 128 ? 1 : 0;
       }

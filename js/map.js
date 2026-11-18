@@ -17,18 +17,18 @@
   // road — цвет подсветки растровых линий; glow — цвет подсветки векторного слоя
   const LAYERS = [
     { id: "ocean", name: "Океан", kind: "div", cls: "ocean", vis: true },
-    { id: "landDark", name: "Суша вне стран", kind: "img", src: "assets/map/land.png", cls: "land-dark", vis: true, internal: true }, // подложка суши: всегда видна, в списке слоёв её нет
+    { id: "landDark", name: "Суша вне стран", kind: "img", src: "assets/map/land.webp", cls: "land-dark", vis: true, internal: true }, // подложка суши: всегда видна, в списке слоёв её нет
     { id: "countries", name: "Заливка стран", kind: "svg", vis: true },
     { id: "alliances", name: "Союзы", kind: "svg", vis: false }, // страны союза — цветом союза, остальные притемнены
-    { id: "relief", name: "Рельеф", kind: "img", src: "assets/map/land.png", cls: "relief", vis: true },
-    { id: "hydro", name: "Гидрография", kind: "img", src: "assets/map/hydro.png", cls: "hydro", vis: true },
+    { id: "relief", name: "Рельеф", kind: "img", src: "assets/map/land.webp", cls: "relief", vis: true },
+    { id: "hydro", name: "Гидрография", kind: "img", src: "assets/map/hydro.webp", cls: "hydro", vis: true },
     { group: "roads", name: "Дороги", children: [
-      { id: "road_major", name: "Главные автострады", kind: "img", src: "assets/map/road_major.png", vis: true, road: "#ff3fd0" },
-      { id: "road_road", name: "Основные магистрали", kind: "img", src: "assets/map/road_road.png", vis: false, road: "#ffe14d" },
-      { id: "road_secondary", name: "Второстепенные дороги", kind: "img", src: "assets/map/road_secondary.png", vis: true, road: "#19e6ff" },
-      { id: "rail", name: "Железные дороги", kind: "img", src: "assets/map/rail.png", vis: false, road: "#ff9b3d" }
+      { id: "road_major", name: "Главные автострады", kind: "img", src: "assets/map/road_major.webp", vis: true, road: "#ff3fd0" },
+      { id: "road_road", name: "Основные магистрали", kind: "img", src: "assets/map/road_road.webp", vis: false, road: "#ffe14d" },
+      { id: "road_secondary", name: "Второстепенные дороги", kind: "img", src: "assets/map/road_secondary.webp", vis: true, road: "#19e6ff" },
+      { id: "rail", name: "Железные дороги", kind: "img", src: "assets/map/rail.webp", vis: false, road: "#ff9b3d" }
     ] },
-    { id: "citiesFill", name: "Городские зоны", kind: "img", src: "assets/map/cities_fill.png", vis: true, opacity: 0.45 },
+    { id: "citiesFill", name: "Городские зоны", kind: "img", src: "assets/map/cities_fill.webp", vis: true, opacity: 0.45 },
     { id: "provBorders", name: "Провинции", kind: "svg", vis: true, glow: "#7fe8ff" },
     { id: "borders", name: "Границы стран", kind: "svg", vis: true, glow: "#ff3fd0" },
     { id: "coast", name: "Береговая линия", kind: "svg", vis: true },
@@ -2413,7 +2413,15 @@
   // ---------- контуры: из кэша браузера или в фоновом потоке ----------
   // Контуры стран, провинций и берега считаются из растров один раз и кладутся в IndexedDB
   // (ключ — время публикации карты). Расчёт идёт в Web Worker, страница при этом не замирает.
-  const PATHS_VER = 3; // поднять при изменении алгоритма контуров
+  const PATHS_VER = 4; // поднять при изменении алгоритма контуров или маски суши
+  // отпечаток растра id (FNV-1a по 32-битным словам) — ключ кэша контуров
+  function idsHash(a) {
+    const n4 = a.byteLength >> 2, u = new Uint32Array(a.buffer, a.byteOffset, n4), b = new Uint8Array(a.buffer, a.byteOffset, a.byteLength);
+    let h = 0x811c9dc5 ^ a.length;
+    for (let i = 0; i < n4; i++) h = Math.imul(h ^ u[i], 16777619);
+    for (let i = n4 << 2; i < b.length; i++) h = Math.imul(h ^ b[i], 16777619);
+    return (h >>> 0).toString(36) + "." + a.length;
+  }
   function pathsInWorker(M, wide, withCoast) {
     return new Promise((res, rej) => {
       let w;
@@ -2454,20 +2462,22 @@
     try {
       const [cfg, st] = await Promise.all([
         fetch("data/config.json" + bust, { cache: "no-store" }).then(r => r.json()),
-        fetch("data/map.json" + bust, { cache: "no-store" }).then(r => r.json())
+        fetch("data/map.json" + bust, { cache: "no-store", priority: "high" }).then(r => r.json())
       ]);
       config = cfg; state = st; loadedStamp = st.updated || "";
       stateReadyResolve();
       for (const c of COLS) state[c] = state[c] || {};
       // растры привязаны к времени публикации: браузер берёт их из кэша, пока карту не обновят
       const ver = "?v=" + encodeURIComponent(loadedStamp || String(Date.now()));
-      const key = PATHS_VER + "|" + loadedStamp;
       const t0 = performance.now();
+      // маска суши — отдельный лёгкий файл (1 бит на пиксель), чтобы контуры не ждали тяжёлый рисунок рельефа
       const [cache] = await Promise.all([
-        loadedStamp ? DB.get("paths").catch(() => null) : null,
-        T.load("data/territories.png" + ver, "assets/map/land.png")
+        DB.get("paths").catch(() => null),
+        T.load("data/territories.png" + ver, "assets/map/land_mask.png")
       ]);
-      const hit = !!(cache && cache.key === key && cache.c && cache.p);
+      // ключ кэша — содержимое растра, а не время публикации: правка городов или текстов не заставляет пересчитывать контуры
+      const kc = PATHS_VER + "|" + idsHash(T.ids);
+      const hit = !!(cache && cache.kc === kc && cache.c);
       const cp = hit ? cache.c : await computePaths(T, false, true);
       for (const [id, d] of cp.paths) if (state.countries[String(id)]) setCountryPath(id, d);
       setCoast(cp.coast);
@@ -2485,12 +2495,14 @@
       // провинции — уже после показа карты
       const t1 = performance.now();
       await P.load("data/provinces.png" + ver, T.land);
-      const pp = hit ? cache.p : await computePaths(P, true, false);
+      const kp = PATHS_VER + "|" + idsHash(P.ids);
+      const hitP = !!(cache && cache.kp === kp && cache.p);
+      const pp = hitP ? cache.p : await computePaths(P, true, false);
       await applyProvPaths(pp.paths);
       provReady = true;
       wrapVectorLayers(); // копии векторных слоёв по краям — когда всё построено
-      console.info("провинции " + (hit ? "из кэша" : "построены") + " за", Math.round(performance.now() - t1), "мс");
-      if (!hit && loadedStamp) DB.set("paths", { key, c: { paths: cp.paths, coast: cp.coast }, p: { paths: pp.paths } }).catch(() => {});
+      console.info("провинции " + (hitP ? "из кэша" : "построены") + " за", Math.round(performance.now() - t1), "мс");
+      if (!hit || !hitP) DB.set("paths", { kc, c: { paths: cp.paths, coast: cp.coast }, kp, p: { paths: pp.paths } }).catch(() => {});
       if (gm) offerDraft();
     } catch (err) {
       console.error(err);
