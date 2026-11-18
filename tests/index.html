@@ -19,7 +19,7 @@
 <div id="summary">Выполняется…</div>
 <div id="out"></div>
 <script src="../js/geo.js?v=20261115a"></script>
-<script src="../js/territory.js?v=20261118q"></script>
+<script src="../js/territory.js?v=20261118r"></script>
 <script src="../js/sats.js?v=20261115e"></script>
 <script src="../js/moon-names.js?v=20261115a"></script>
 <script src="../js/wrap.js?v=20261115a"></script>
@@ -161,6 +161,23 @@
     let diff = 0; for (let i = 0; i < P.ids.length; i++) if (P.ids[i] !== d[i * 4] + d[i * 4 + 1] * 256) diff++;
     assert(diff === 0, diff + " пикселей отличаются");
     return ids.length + " провинций";
+  });
+  await test("Компактные растры .ids совпадают с PNG; запись .ids и чтение обратно — без потерь", async () => {
+    const out = [];
+    for (const [name, wide] of [["territories", false], ["provinces", true]]) {
+      const A = window.KGTerritoryMake(wide), B = window.KGTerritoryMake(wide), C = window.KGTerritoryMake(wide);
+      await A.load("../data/" + name + ".png?t=" + Date.now(), T8.land);
+      await B.load("../data/" + name + ".ids?t=" + Date.now(), T8.land);
+      assert(A.W === B.W && A.H === B.H, name + ": размер");
+      let diff = 0; for (let i = 0; i < A.ids.length; i++) if (A.ids[i] !== B.ids[i]) diff++;
+      assert(diff === 0, name + ".ids устарел: " + diff + " пикселей не как в PNG (Лор/растры_ids.py)");
+      const blob = await A.toIdsBlob();
+      await C.load(URL.createObjectURL(blob) + "#.ids", T8.land);
+      diff = 0; for (let i = 0; i < A.ids.length; i++) if (A.ids[i] !== C.ids[i]) diff++;
+      assert(diff === 0, name + ": запись .ids с потерями");
+      out.push(name + " " + Math.round(blob.size / 1024) + " КБ");
+    }
+    return out.join(", ");
   });
 
   group("Орбиты");

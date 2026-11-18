@@ -21,6 +21,27 @@
     return { w: cv.width, h: cv.height, data: ctx.getImageData(0, 0, cv.width, cv.height).data };
   }
 
+  // Компактный растр id (.ids): zlib-поток (deflate) из заголовка 16 байт — «KGID», ширина, высота, байт на пиксель
+  // (uint32, little-endian) — и самих id по строкам (1 байт или uint16 little-endian). Пишет ГМ при публикации карты.
+  const IDS_HEAD = 16, IDS_MAGIC = 0x4449474b; // «KGID» как uint32 LE
+  async function readIds(url, bpp) {
+    if (typeof DecompressionStream === "undefined") throw new Error("браузер не умеет распаковывать");
+    const r = await fetch(url, { priority: "high" });
+    if (!r.ok) throw new Error(r.status + " " + url);
+    const buf = await new Response(r.body.pipeThrough(new DecompressionStream("deflate"))).arrayBuffer();
+    const v = new DataView(buf);
+    if (buf.byteLength < IDS_HEAD || v.getUint32(0, true) !== IDS_MAGIC) throw new Error("не растр id");
+    const w = v.getUint32(4, true), h = v.getUint32(8, true);
+    if (v.getUint32(12, true) !== bpp || buf.byteLength < IDS_HEAD + w * h * bpp) throw new Error("неверный размер растра id");
+    return { w, h, buf };
+  }
+  async function idsBlob(ids, W, H, bpp) {
+    const head = new DataView(new ArrayBuffer(IDS_HEAD));
+    head.setUint32(0, IDS_MAGIC, true); head.setUint32(4, W, true); head.setUint32(8, H, true); head.setUint32(12, bpp, true);
+    const z = new Blob([head.buffer, ids]).stream().pipeThrough(new CompressionStream("deflate"));
+    return new Response(z).blob();
+  }
+
   // ---------- контуры (marching squares по центрам пикселей) ----------
   // Для каждой метки L ячейка 2×2 даёт код (tl=8, tr=4, br=2, bl=1). Отрезки ориентированы так,
   // что метка всегда справа по ходу — это позволяет однозначно сцеплять их в замкнутые кольца.
@@ -156,13 +177,17 @@
     wide,
     W: 0, H: 0, ids: null, land: null, bbox: [],
     async load(idsUrl, land) {
-      // растр id и маска суши грузятся одновременно
-      const [a, b] = await Promise.all([readPixels(idsUrl), land instanceof Uint8Array ? null : readPixels(land)]);
+      // растр id и маска суши грузятся одновременно; id — из компактного .ids или из PNG
+      const compact = /\.ids(\?|$)/.test(idsUrl);
+      const [a, b] = await Promise.all([compact ? readIds(idsUrl, wide ? 2 : 1) : readPixels(idsUrl), land instanceof Uint8Array ? null : readPixels(land)]);
       T.W = a.w; T.H = a.h;
       const N = a.w * a.h;
-      T.ids = new Arr(N);
-      if (wide) for (let i = 0; i < N; i++) T.ids[i] = a.data[i * 4] + a.data[i * 4 + 1] * 256;
-      else for (let i = 0; i < N; i++) T.ids[i] = a.data[i * 4];
+      if (compact) T.ids = new Arr(a.buf.slice(IDS_HEAD, IDS_HEAD + N * Arr.BYTES_PER_ELEMENT));
+      else {
+        T.ids = new Arr(N);
+        if (wide) for (let i = 0; i < N; i++) T.ids[i] = a.data[i * 4] + a.data[i * 4 + 1] * 256;
+        else for (let i = 0; i < N; i++) T.ids[i] = a.data[i * 4];
+      }
       if (land instanceof Uint8Array) T.land = land; // общая маска суши
       else {
         T.land = new Uint8Array(N);
@@ -351,6 +376,7 @@
       return best;
     },
     // PNG (серый) для публикации
+    toIdsBlob() { return idsBlob(T.ids, T.W, T.H, wide ? 2 : 1); },
     toPngBlob() {
       const cv = document.createElement("canvas");
       cv.width = T.W; cv.height = T.H;

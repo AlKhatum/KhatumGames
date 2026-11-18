@@ -51,7 +51,7 @@
     let el;
     if (l.kind === "img") {
       el = document.createElement("img"); el.alt = ""; el.draggable = false; el.decoding = "async";
-      el.dataset.src = l.src; if (l.internal || (ui.vis[l.id] != null ? ui.vis[l.id] : l.vis)) el.src = l.src; // выключенные слои грузятся при включении
+      el.dataset.src = l.src; // выключенные слои грузятся при включении, включённые — после показа карты (loadLayers)
     } else if (l.kind === "div") {
       el = document.createElement("div");
     } else if (l.kind === "canvas") {
@@ -84,11 +84,26 @@
 
   const isVisible = l => (ui.vis[l.id] != null ? ui.vis[l.id] : l.vis);
   function ensureSrc(img) { if (img && img.tagName === "IMG" && !img.getAttribute("src") && img.dataset.src) img.src = img.dataset.src; }
+  // Рисунки слоёв (рельеф, реки, дороги) весят мегабайты. На медленном канале они отнимали скорость у данных границ,
+  // поэтому грузятся после показа карты и по одному: сначала рельеф, затем реки, дороги, городские зоны.
+  let layersGo = false; // до показа карты включённые слои рисунков не грузим
+  async function loadLayers() {
+    layersGo = true;
+    const order = ["relief", "hydro", "road_major", "road_secondary", "citiesFill", "road_road", "rail"];
+    const list = flat.filter(l => l.kind === "img").sort((a, b) => (order.indexOf(a.id) + 1 || 99) - (order.indexOf(b.id) + 1 || 99));
+    for (const l of list) {
+      const el = L[l.id];
+      if (!(l.internal || isVisible(l)) || el.getAttribute("src")) continue;
+      el.fetchPriority = "low"; ensureSrc(el);
+      if (l.id === "relief") L.landDark.src = el.src; // подложка суши — тот же рисунок
+      await whenLoaded(el);
+    }
+  }
   function applyLayer(l) {
     const el = L[l.id]; if (!el || l.internal) return;
     try { if (globe) globeDirty(); } catch (e) { /* глобус ещё не создан */ }
     el.style.display = isVisible(l) ? "" : "none";
-    if (isVisible(l)) ensureSrc(el);
+    if (isVisible(l) && layersGo) ensureSrc(el);
     if (l.road) {
       const on = !!ui.hl[l.id];
       el.classList.toggle("hl", on);
@@ -1120,8 +1135,8 @@
     }
     st.updated = new Date().toISOString();
     if (dirty) files.push({ path: "data/map.json", content: JSON.stringify(st) });
-    if (terrDirty) files.push({ path: "data/territories.png", content: await T.toPngBlob() });
-    if (provDirty) files.push({ path: "data/provinces.png", content: await P.toPngBlob() });
+    if (terrDirty) files.push({ path: "data/territories.png", content: await T.toPngBlob() }, { path: "data/territories.ids", content: await T.toIdsBlob() });
+    if (provDirty) files.push({ path: "data/provinces.png", content: await P.toPngBlob() }, { path: "data/provinces.ids", content: await P.toIdsBlob() });
     if (window.KGMoon && window.KGMoon.isDirty()) files.push(...(await window.KGMoon.files()));
     return { st, files };
   }
@@ -2457,6 +2472,12 @@
     applyProvPaths(Array.from(P.allPaths()));
     console.info("провинции построены за", Math.round(performance.now() - t0), "мс");
   }
+  // Растр id: компактный data/<name>.ids (сжатые id, в 4 раза меньше PNG и без разбора картинки),
+  // если его нет или браузер не умеет распаковывать — PNG. ГМ публикует оба: PNG читают и скрипты лора.
+  async function loadIds(M, name, ver, land) {
+    try { await M.load("data/" + name + ".ids" + ver, land); }
+    catch (e) { console.warn(name + ".ids:", e.message, "— читаю PNG"); await M.load("data/" + name + ".png" + ver, land); }
+  }
   async function load() {
     const bust = "?t=" + Date.now();
     try {
@@ -2473,7 +2494,7 @@
       // маска суши — отдельный лёгкий файл (1 бит на пиксель), чтобы контуры не ждали тяжёлый рисунок рельефа
       const [cache] = await Promise.all([
         DB.get("paths").catch(() => null),
-        T.load("data/territories.png" + ver, "assets/map/land_mask.png")
+        loadIds(T, "territories", ver, "assets/map/land_mask.png")
       ]);
       // ключ кэша — содержимое растра, а не время публикации: правка городов или текстов не заставляет пересчитывать контуры
       const kc = PATHS_VER + "|" + idsHash(T.ids);
@@ -2492,9 +2513,10 @@
       $("mapLoading").classList.add("hidden");
       requestAnimationFrame(refit);
       mapReadyResolve();
+      loadLayers();
       // провинции — уже после показа карты
       const t1 = performance.now();
-      await P.load("data/provinces.png" + ver, T.land);
+      await loadIds(P, "provinces", ver, T.land);
       const kp = PATHS_VER + "|" + idsHash(P.ids);
       const hitP = !!(cache && cache.kp === kp && cache.p);
       const pp = hitP ? cache.p : await computePaths(P, true, false);
