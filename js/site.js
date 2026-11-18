@@ -303,6 +303,102 @@
     return f.type === "image/png" ? cv.toDataURL("image/png") : cv.toDataURL("image/jpeg", 0.86);
   }
 
+  // ---------- иконки (спрайт в index.html: <symbol id="i-…">) ----------
+  const NS = "http://www.w3.org/2000/svg";
+  function icon(name) {
+    const s = document.createElementNS(NS, "svg"), u = document.createElementNS(NS, "use");
+    s.setAttribute("class", "ico-svg"); s.setAttribute("aria-hidden", "true"); u.setAttribute("href", "#i-" + name); s.append(u);
+    return s;
+  }
+  const LORE_ICON = { ideologies: "ideologies", corporations: "corporations", chronology: "chronology", states: "states", regions: "regions" };
+
+  // ---------- обложки и баннеры Лора ----------
+  // Картинка — texts["cover:<ключ>"] (при публикации уходит файлом в assets/site/), положение по вертикали —
+  // texts["coverpos:<ключ>"], 0–100 % (0 — виден верх картинки). Одна картинка — и на карточке, и в баннере статьи.
+  // Ключи: lore/<раздел>, region/<регион>, state/<статья о стране>, union/<союз>. Загружает и двигает ГМ в режиме правки.
+  const coverOf = key => site.texts["cover:" + key] || "";
+  const coverPosOf = key => { const v = parseFloat(site.texts["coverpos:" + key]); return isFinite(v) ? Math.max(0, Math.min(100, v)) : 50; };
+  const cssUrl = s => "url('" + String(s).replace(/'/g, "%27") + "')";
+  // картинка — прямо в background-image: относительный адрес в CSS-переменной считался бы от папки css/
+  const coverStyle = key => (coverOf(key) ? "background-image:" + cssUrl(coverOf(key)) + ";background-position:50% " + coverPosOf(key) + "%" : null);
+  const rerouteWiki = () => { if (KG.route.tab === "wiki") window.dispatchEvent(new CustomEvent("routechange", { detail: KG.route })); };
+  async function uploadCover(key) {
+    if (!editing) return;
+    const f = await pickFile("image/*"); if (!f) return;
+    // без обрезки: пропорции сохраняются, иначе в баннере нечего двигать
+    try { setVal("cover:" + key, await readImage(f, 2000)); setVal("coverpos:" + key, undefined); rerouteWiki(); }
+    catch (e) { toast("Не удалось прочитать картинку: " + e.message); }
+  }
+  async function removeCover(key) {
+    if (!(await ask("Убрать обложку?", "", { confirm: true, note: "Карточка и баннер вернутся к неоновой сетке." }))) return;
+    setVal("cover:" + key, undefined); setVal("coverpos:" + key, undefined); rerouteWiki();
+  }
+  // карточка с обложкой (раздел Лора, регион); count — число материалов внутри
+  function coverCard(key, o) {
+    const has = !!coverOf(key);
+    return h("button", { type: "button", class: "ccard" + (has ? "" : " no-cover"), "data-cover": key, onclick: o.onclick },
+      h("span", { class: "cover-img", style: coverStyle(key) }),
+      has ? null : h("span", { class: "cover-ph" }, icon("image"), "Место под обложку"),
+      o.count != null ? h("span", { class: "cnt", text: o.count }) : null,
+      h("span", { class: "ct" }, h("b", null, o.icon ? icon(o.icon) : null, o.title), o.sub ? h("span", { text: o.sub }) : null));
+  }
+  // баннер статьи: обложка (или размытый флаг страны), кнопка «назад», заголовок и подпись — правятся на месте
+  function hero(key, o) {
+    const own = coverOf(key);
+    const el = h("div", { class: "hero" + (own || o.flagCover ? "" : " no-cover") + (!own && o.flagCover ? " flag-cover" : ""), "data-hint": "Тяните картинку вверх или вниз" },
+      h("span", { class: "cover-img", style: own ? coverStyle(key) : o.flagCover ? "background-image:" + cssUrl(o.flagCover) : null }),
+      own ? null : h("span", { class: "cover-ph" }, icon("image"), "Место под баннер"),
+      h("h2", { class: "hero-title" },
+        o.back ? h("button", { type: "button", class: "back", title: "Назад", "aria-label": "Назад", onclick: () => KG.go(o.back) }, icon("back")) : null,
+        o.flags || null,
+        h("span", { "data-edit-text": o.titleKey || null, "data-placeholder": o.titlePh || "Название…", text: o.title || "" })),
+      o.subKey ? h("div", { class: "hero-sub", "data-edit-text": o.subKey, "data-placeholder": "Подпись на карточке…", text: o.sub || "" })
+        : o.sub ? h("div", { class: "hero-sub", text: o.sub }) : null);
+    el.append(heroTools(el, key));
+    return el;
+  }
+  // кнопки ГМа в баннере: «Обложка», «⇅ Положение» (сдвиг вверх-вниз мышью, пальцем или ↑ ↓), «✕»
+  function heroTools(el, key) {
+    const own = coverOf(key), box = h("div", { class: "hero-tools edit-only" });
+    box.append(toolBtn("Обложка", own ? "Заменить картинку" : "Загрузить картинку: любая горизонтальная от 1280 px в ширину, без обрезки", () => uploadCover(key)));
+    if (!own) return box;
+    const cv = el.querySelector(".cover-img");
+    let pos = coverPosOf(key), ar = 0, drag = null;
+    const paint = () => { cv.style.backgroundPosition = "50% " + pos + "%"; };
+    const save = () => setVal("coverpos:" + key, pos === 50 ? undefined : String(pos));
+    const nudge = d => { pos = Math.max(0, Math.min(100, pos + d)); paint(); save(); };
+    const up = toolBtn("↑", "Показать верх картинки", () => nudge(-10)), down = toolBtn("↓", "Показать низ картинки", () => nudge(10));
+    up.classList.add("hidden"); down.classList.add("hidden");
+    const mv = toolBtn("⇅ Положение", "Сдвинуть картинку вверх или вниз", async () => {
+      const on = el.classList.toggle("moving");
+      mv.classList.toggle("on", on); mv.textContent = on ? "Готово" : "⇅ Положение";
+      up.classList.toggle("hidden", !on); down.classList.toggle("hidden", !on);
+      if (on && !ar) { const im = new Image(); im.src = own; try { await im.decode(); ar = im.naturalHeight / im.naturalWidth; } catch (e) { ar = 9 / 16; } }
+    });
+    box.append(up, down, mv, toolBtn("✕", "Убрать обложку", () => removeCover(key), "danger"));
+    el.addEventListener("pointerdown", e => {
+      if (!editing || !el.classList.contains("moving") || e.target.closest("button, [contenteditable=true]")) return;
+      const r = el.getBoundingClientRect(), over = r.width * (ar || 9 / 16) - r.height; // сколько картинки не влезло по высоте, px
+      if (over <= 1) { el.dataset.hint = "Картинка уже видна целиком по высоте"; return; }
+      drag = { y: e.clientY, pos, over };
+      el.setPointerCapture(e.pointerId); el.classList.add("dragging"); e.preventDefault();
+    });
+    el.addEventListener("pointermove", e => {
+      if (!drag) return;
+      pos = Math.round(Math.max(0, Math.min(100, drag.pos - (e.clientY - drag.y) / drag.over * 100)) * 10) / 10; paint();
+    });
+    const end = () => { if (!drag) return; drag = null; el.classList.remove("dragging"); save(); };
+    el.addEventListener("pointerup", end); el.addEventListener("pointercancel", end);
+    return box;
+  }
+  // число материалов в разделах Лора (для карточек и дерева Вики)
+  let countsP = null;
+  function loreCounts() {
+    if (!countsP) countsP = Promise.all([KG.lore(), fetch("data/ideologies.json", { cache: "no-cache" }).then(r => (r.ok ? r.json() : null)).catch(() => null)])
+      .then(([L, I]) => ({ ideologies: I && Array.isArray(I.list) ? I.list.length : null, states: L.states.length, regions: regionsOf(L).length }));
+    return countsP;
+  }
+
   // ---------- Вики: события, лор ----------
   const WIKI = { events: "wikiEvents", lore: "wikiLore", mech: "wikiMech" };
   let wikiSub = "events";
@@ -334,7 +430,7 @@
     if (!site.events.length) box.append(h("p", { class: "empty", text: "Событий пока нет." }));
     for (const ev of site.events) {
       const k = f => "list:events:" + ev.id + ":" + f;
-      box.append(h("article", { class: "event" },
+      box.append(h("article", { class: "event", id: "ev-" + ev.id },
         h("div", { class: "ev-head" },
           h("span", { class: "ev-date", "data-edit-text": k("date"), text: ev.date || "" }),
           h("h3", { "data-edit-text": k("title"), text: ev.title || "" }),
@@ -375,11 +471,19 @@
 
   function renderLoreGrid() {
     $("loreHome").classList.remove("hidden"); $("loreArticle").classList.add("hidden");
-    const grid = $("loreGrid"); grid.innerHTML = "";
+    const grid = $("loreGrid"); grid.innerHTML = ""; grid.classList.add("cgrid");
     for (const a of site.lore) grid.append(h("div", { class: "lore-cell" },
-      h("button", { class: "lore-card", onclick: () => KG.go("wiki/lore/" + a.id) }, h("b", { text: a.title || "Без названия" }), h("span", { text: a.sub || "" })),
+      coverCard("lore/" + a.id, { title: a.title || "Без названия", sub: a.sub || "", icon: LORE_ICON[specialOf(a)] || "article", onclick: () => KG.go("wiki/lore/" + a.id) }),
       h("div", { class: "card-tools edit-only" }, toolBtn("←", "Левее", () => moveIn(site.lore, a, -1, renderLoreGrid)), toolBtn("→", "Правее", () => moveIn(site.lore, a, 1, renderLoreGrid)),
+        toolBtn("🖼", coverOf("lore/" + a.id) ? "Заменить обложку" : "Загрузить обложку", () => uploadCover("lore/" + a.id)),
         specialOf(a) ? null : toolBtn("✕", "Удалить раздел", () => removeFrom(site.lore, a, "раздел «" + a.title + "»", renderLoreGrid), "danger"))));
+    KG.stagger(grid);
+    // счётчики: сколько материалов в разделе
+    loreCounts().then(c => site.lore.forEach(a => {
+      const n = c[specialOf(a)], card = grid.querySelector('[data-cover="lore/' + a.id + '"]');
+      if (n == null || !card || card.querySelector(".cnt")) return;
+      card.append(h("span", { class: "cnt", text: n, title: "Материалов: " + n }));
+    }));
   }
   $("loreAdd").addEventListener("click", () => {
     const a = { id: uid("lore"), title: "Новый раздел", sub: "Подпись на карточке", html: "" };
@@ -393,9 +497,7 @@
     if (specialOf(a) === "states" && sub) { renderStatePage(art, sub); return; }
     if (specialOf(a) === "regions" && sub) { renderRegionPage(art, sub); return; }
     const k = f => "list:lore:" + a.id + ":" + f;
-    art.append(h("button", { class: "lore-back", onclick: () => KG.go("wiki/lore") }, "← Все разделы"),
-      h("h2", { "data-edit-text": k("title"), text: a.title || "" }),
-      h("div", { class: "lore-sub edit-only" }, h("small", { text: "Подпись на карточке: " }), h("span", { "data-edit-text": k("sub"), text: a.sub || "" })),
+    art.append(hero("lore/" + a.id, { back: "wiki/lore", titleKey: k("title"), title: a.title || "", subKey: k("sub"), sub: a.sub || "" }),
       h("div", { class: "rich lore-text" + (specialOf(a) ? " special" : ""), "data-edit": k("html"), "data-placeholder": specialOf(a) ? "Вступление к разделу (необязательно)…" : "Раздел в разработке. Скоро здесь появятся статьи — а пока лор живёт в головах игроков и ГМа.", html: a.html || "" }));
     if (a.special === "corporations" && window.KGMech) {
       const body = h("div", { class: "lore-body" }); art.append(body);
@@ -497,14 +599,16 @@
   const statesOf = (L, id) => L.states.filter(s => (s.geo || s.region) === id);
   async function renderRegionsIndex(body) {
     const L = await KG.lore();
-    const g = h("div", { class: "lore-grid regions-grid" });
+    const g = h("div", { class: "lore-grid cgrid regions-grid" });
     for (const r of regionsOf(L)) {
       const n = statesOf(L, r.id).length;
-      g.append(h("button", { class: "lore-card", "data-region": r.id, onclick: () => KG.go("wiki/lore/regions/" + r.id) },
-        h("b", { text: tx(regionKey(r, "title"), r.title) }),
-        h("span", { text: (REGION_SUB[r.id] ? REGION_SUB[r.id] + " · " : "") + n + " " + (n % 10 === 1 && n % 100 !== 11 ? "государство" : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? "государства" : "государств") })));
+      const card = coverCard("region/" + r.id, { title: tx(regionKey(r, "title"), r.title), icon: "regions", count: n, onclick: () => KG.go("wiki/lore/regions/" + r.id),
+        sub: (REGION_SUB[r.id] ? REGION_SUB[r.id] + " · " : "") + n + " " + (n % 10 === 1 && n % 100 !== 11 ? "государство" : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? "государства" : "государств") });
+      card.dataset.region = r.id;
+      g.append(h("div", { class: "lore-cell" }, card, h("div", { class: "card-tools edit-only" },
+        toolBtn("🖼", coverOf("region/" + r.id) ? "Заменить обложку" : "Загрузить обложку", () => uploadCover("region/" + r.id)))));
     }
-    body.append(g);
+    body.append(KG.stagger(g));
     applyTexts(body);
   }
   async function renderRegionPage(art, sub) {
@@ -512,8 +616,7 @@
     const r = regionsOf(L).find(x => x.id === sub);
     if (!r) { KG.go("wiki/lore/regions", true); return; }
     const C = st.countries || {}, AL = st.alliances || {};
-    art.append(h("button", { class: "lore-back", onclick: () => KG.go("wiki/lore/regions") }, "← Регионы"),
-      h("h2", { "data-edit-text": regionKey(r, "title"), "data-placeholder": "Название региона…", text: r.title }),
+    art.append(hero("region/" + r.id, { back: "wiki/lore/regions", titleKey: regionKey(r, "title"), title: r.title, titlePh: "Название региона…" }),
       h("div", { class: "rich lore-text", "data-edit": regionKey(r, "html"), "data-placeholder": MECH_REGION[r.id] ? "Вступление к региону (необязательно)…" : "О регионе…",
         html: MECH_REGION[r.id] ? "" : REGION_STUB }));
     if (MECH_REGION[r.id] && window.KGMech) {
@@ -533,13 +636,14 @@
   async function renderStatePage(art, sub) {
     const [L, st] = await Promise.all([KG.lore(), mapState()]);
     const C = st.countries || {}, AL = st.alliances || {};
-    const back = h("button", { class: "lore-back", onclick: () => KG.go("wiki/lore/states") }, "← Государства");
+    const bigFlag = id => h("span", { class: "hero-flag", title: oneLine((C[id] || {}).name || ""), style: (C[id] || {}).flag ? "background-image:" + cssUrl(C[id].flag) : null });
     const onMap = id => h("button", { class: "small-btn ls-map", "data-country": id, title: "Открыть карту на этой стране", onclick: () => KG.showOnMap(id) }, flagOf(C[id]), " " + oneLine((C[id] || {}).name || id) + " на карте");
     const u = L.unions.find(x => x.id === sub);
     if (u) { // союз
       const al = AL[u.id] || {}, mem = Object.keys(C).filter(id => C[id].alliance === u.id).sort((a, b) => (String(al.leader) === b) - (String(al.leader) === a));
-      art.append(back, h("h2", { class: "ls-title" }, h("span", { class: "sc-swatch", style: "background:" + (al.color || "transparent") }),
-          h("span", { "data-edit-text": unionKey(u, "name"), "data-placeholder": "Название союза…", text: u.name })),
+      const lead = al.leader != null ? C[String(al.leader)] : null;
+      art.append(hero("union/" + u.id, { back: "wiki/lore/states", titleKey: unionKey(u, "name"), title: u.name, titlePh: "Название союза…",
+          flags: h("span", { class: "sc-swatch", style: "background:" + (al.color || "transparent") }), flagCover: lead && lead.flag }),
         h("div", { class: "ls-passport", "data-edit-text": unionKey(u, "members"), "data-placeholder": "Состав союза…", text: u.members }),
         h("div", { class: "rich lore-body ls-text", "data-edit": unionKey(u, "html"), "data-placeholder": "Статья о союзе…", html: u.html }),
         h("h3", { class: "ls-h", "data-edit-text": "lore.union.h.members", text: "Страны союза" }),
@@ -554,8 +658,8 @@
     const i = L.states.indexOf(s), prev = L.states[i - 1], next = L.states[i + 1];
     // паспорт, заголовок и статья правятся ГМом прямо на странице
     const pas = h("div", { class: "rich ls-passport", "data-edit": stateKey(s, "passport"), "data-placeholder": "Паспорт страны…" }, Object.entries(s.passport).map(([k, v]) => h("span", null, k + " ", h("b", { text: v }))));
-    art.append(back, h("h2", { class: "ls-title" }, h("span", { class: "ls-flags" }, s.map.map(id => flagOf(C[id]))),
-        h("span", { "data-edit-text": stateKey(s, "title"), "data-placeholder": "Название…", text: s.title })),
+    art.append(hero("state/" + s.id, { back: "wiki/lore/states", titleKey: stateKey(s, "title"), title: s.title,
+        flags: h("span", { class: "hero-flags" }, s.map.map(bigFlag)), flagCover: (C[s.map[0]] || {}).flag }),
       h("div", { class: "ls-tools" }, s.map.map(onMap), un ? h("button", { class: "small-btn", "data-union": un.id, onclick: () => KG.go("wiki/lore/states/" + un.id) }, "Союз: " + tx(unionKey(un, "name"), un.name)) : null),
       h("div", { class: "lore-body ls-text" }, pas,
         h("div", { class: "rich", "data-edit": stateKey(s, "html"), "data-placeholder": "Статья о государстве…", html: s.html.replace(/<div class="passport">[\s\S]*?<\/div>/, "") })));
@@ -568,11 +672,12 @@
   let lightbox = null;
   function showImage(it) {
     if (!lightbox) {
-      lightbox = h("div", { class: "modal hidden lightbox", onclick: () => lightbox.classList.add("hidden") }, h("figure", null, h("img", { alt: "" }), h("figcaption")));
+      lightbox = h("div", { class: "modal hidden lightbox", role: "dialog", "aria-label": "Просмотр картинки", onclick: () => KG.hideModal(lightbox) }, h("figure", null, h("img", { alt: "" }), h("figcaption")));
       document.body.append(lightbox);
+      document.addEventListener("keydown", e => { if (e.key === "Escape") KG.hideModal(lightbox); });
     }
     lightbox.querySelector("img").src = it.img; lightbox.querySelector("figcaption").textContent = it.title || "";
-    lightbox.classList.remove("hidden");
+    KG.showModal(lightbox);
   }
   function renderGallery() {
     const box = $("galGrid"); box.innerHTML = "";
@@ -783,5 +888,8 @@
   });
   load();
 
-  window.KGSite = { get data() { return site; }, applyTexts, sanitize, setEditing, get editing() { return editing; }, publish, imgSlot, IMG_W, IMG_H };
+  window.KGSite = { get data() { return site; }, applyTexts, sanitize, setEditing, get editing() { return editing; }, publish, imgSlot, IMG_W, IMG_H,
+    // для дерева Вики и поиска (js/wiki-nav.js)
+    tx, icon, specialOf, loreCounts, LORE_ICON, regionsOf, statesOf,
+    names: { region: r => tx(regionKey(r, "title"), r.title), state: s => tx(stateKey(s, "title"), s.title), union: u => tx(unionKey(u, "name"), u.name) } };
 })();

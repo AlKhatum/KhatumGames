@@ -7,7 +7,7 @@
   // Вкладка выбирается здесь, подразделы разбирают модули по событию «routechange» (detail: { tab, parts }).
   const TABS = ["home", "map", "wiki", "gallery", "about"];
   const ALIAS = { lore: "wiki/lore", mech: "wiki/mech", news: "wiki/events", events: "wiki/events" }; // старые ссылки
-  const tabs = document.querySelectorAll("#tabs button");
+  const tabs = document.querySelectorAll("#tabs button, #mdrawer button[data-tab]"); // вкладки сверху и в меню на телефоне
   let route = { tab: "", parts: [] }, booted = false;
   function parse(h) {
     let parts = String(h || "").replace(/^#/, "").split("/").filter(Boolean).map(x => { try { return decodeURIComponent(x); } catch (e) { return x; } });
@@ -21,7 +21,9 @@
     route = { tab, parts };
     tabs.forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
     document.querySelectorAll("main > .page").forEach(p => p.classList.toggle("active", p.id === "page-" + tab));
+    closeDrawers();
     if (!booted) return; // до загрузки всех модулей события не шлём
+    if (changed) replay(document.getElementById("page-" + tab), tab === "map" ? "enter-fade" : "enter"); // карта — только проявление
     if (changed) window.dispatchEvent(new CustomEvent("tabchange", { detail: tab }));
     window.dispatchEvent(new CustomEvent("routechange", { detail: route }));
   }
@@ -34,6 +36,50 @@
   }
   const openTab = name => go(name);
   tabs.forEach(b => b.addEventListener("click", () => go(b.dataset.tab)));
+
+  // ---------- анимация появления ----------
+  // Класс снимается по окончании: пока анимация transform действует, Chrome делает элемент контейнером
+  // для position: fixed, и выезжающие панели внутри него встают не по экрану, а по странице.
+  function replay(el, cls) {
+    if (!el) return;
+    el.classList.remove("enter", "enter-fade"); void el.offsetWidth; el.classList.add(cls || "enter");
+    const done = e => { if (e.target !== el) return; el.classList.remove("enter", "enter-fade"); el.removeEventListener("animationend", done); };
+    el.addEventListener("animationend", done);
+  }
+  // карточки появляются по очереди
+  function stagger(el) { if (el) { [...el.children].forEach((c, i) => c.style.setProperty("--i", Math.min(i, 14))); el.classList.add("stagger"); } return el; }
+
+  // ---------- меню на телефоне и выезжающее дерево Вики ----------
+  const scrim = document.getElementById("scrim");
+  function openDrawer(el) {
+    if (!el) return;
+    el.classList.add("open");
+    if (el.id === "wtree") document.body.classList.add("tree-open"); else if (scrim) scrim.classList.add("on");
+  }
+  function closeDrawers() {
+    const d = document.getElementById("mdrawer"), t = document.getElementById("wtree");
+    if (d) d.classList.remove("open"); if (t) t.classList.remove("open");
+    if (scrim) scrim.classList.remove("on"); document.body.classList.remove("tree-open");
+  }
+  const drawerOpen = () => !!((scrim && scrim.classList.contains("on")) || document.body.classList.contains("tree-open"));
+  const burger = document.getElementById("burger");
+  if (burger) burger.addEventListener("click", () => openDrawer(document.getElementById("mdrawer")));
+  if (scrim) scrim.addEventListener("click", closeDrawers);
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && drawerOpen()) closeDrawers(); });
+
+  // ---------- окна: открытие и закрытие с анимацией ----------
+  // hideModal: окно сначала тает (класс closing), потом получает hidden — проверки «окно открыто?» смотрят на hidden
+  function showModal(m) {
+    if (!m) return;
+    clearTimeout(m._kgClose); m.classList.remove("closing", "hidden");
+  }
+  function hideModal(m) {
+    if (!m || m.classList.contains("hidden")) return;
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) { m.classList.add("hidden"); return; }
+    m.classList.add("closing");
+    clearTimeout(m._kgClose);
+    m._kgClose = setTimeout(() => { m.classList.remove("closing"); m.classList.add("hidden"); }, 200);
+  }
   document.addEventListener("click", e => { const b = e.target.closest("[data-goto]"); if (b) go(b.dataset.goto); });
   window.addEventListener("hashchange", () => applyRoute(parse(location.hash)));
   applyRoute(parse(location.hash));
@@ -171,10 +217,12 @@
       area.classList.toggle("hidden", !opts.multiline || !!opts.confirm);
       inp.value = value || "";
       if (opts.multiline) area.rows = Math.min(4, Math.max(2, (value || "").split("\n").length));
-      m.classList.remove("hidden");
+      const back = document.activeElement;
+      showModal(m);
       setTimeout(() => { inp.focus(); inp.select(); }, 0);
       function done(v) {
-        m.classList.add("hidden");
+        hideModal(m);
+        if (back && back.focus && back.isConnected) back.focus(); // фокус — туда, откуда открыли
         ok.removeEventListener("click", onOk); cancel.removeEventListener("click", onCancel); inp.removeEventListener("keydown", onKey);
         resolve(v);
       }
@@ -233,5 +281,6 @@
   }
   // показать страну карты: Земля, плоская карта, выбрать и приблизить
   const showOnMap = id => go("map/earth/flat/" + encodeURIComponent(id));
-  window.KG = { toast, ask, openTab, go, get route() { return route; }, lines, setMedia, ytId, lore, showOnMap };
+  window.KG = { toast, ask, openTab, go, get route() { return route; }, lines, setMedia, ytId, lore, showOnMap,
+    replay, stagger, showModal, hideModal, openDrawer, closeDrawers };
 })();

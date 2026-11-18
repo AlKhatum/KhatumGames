@@ -2017,10 +2017,10 @@
       const read = () => { const v = {}; for (const f of fields) v[f.key] = f.type === "number" ? (inputs[f.key].value === "" ? "" : +inputs[f.key].value) : inputs[f.key].value.trim(); return v; };
       const vis = () => { const v = read(); for (const f of fields) body.querySelector(`[data-key="${f.key}"]`).style.display = !f.show || f.show(v) ? "" : "none"; };
       Object.values(inputs).forEach(i => i.addEventListener("change", vis)); vis();
-      m.classList.remove("hidden");
+      KG.showModal(m);
       setTimeout(() => { const first = body.querySelector("input,select"); if (first) first.focus(); }, 0);
       const ok = $("formOk"), cancel = $("formCancel");
-      function done(v) { m.classList.add("hidden"); ok.onclick = cancel.onclick = null; resolve(v); }
+      function done(v) { KG.hideModal(m); ok.onclick = cancel.onclick = null; resolve(v); }
       ok.onclick = () => {
         const v = read();
         const e = opts.validate ? opts.validate(v) : "";

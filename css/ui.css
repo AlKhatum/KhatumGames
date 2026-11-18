@@ -1,0 +1,220 @@
+/* Оформление интерфейса: иконки, меню на телефоне, анимации страниц и окон, дерево Вики, крошки, поиск,
+   обложки и баннеры Лора, статья Механик по подразделам. Подключается после style.css и mech.css. */
+:root { --dur-page: .4s; --dur-modal: .3s; --ease: cubic-bezier(.2, .7, .2, 1); }
+
+/* ---------- иконки ---------- */
+.ico-svg { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.tabs button { display: inline-flex; align-items: center; gap: 8px; }
+.tabs button .ico-svg { width: 16px; height: 16px; }
+.tabs button.active .ico-svg { filter: drop-shadow(0 0 4px rgba(24, 217, 245, .8)); }
+
+/* ---------- меню на телефоне ---------- */
+.burger { display: none; flex: none; width: 38px; height: 38px; place-items: center; padding: 0; background: rgba(24, 217, 245, .08); border: 1px solid var(--line-dim); border-radius: 3px; color: var(--text); }
+.burger:hover { border-color: var(--line); }
+.scrim { position: fixed; inset: 0; z-index: 45; background: rgba(2, 4, 14, .55); opacity: 0; pointer-events: none; transition: opacity .3s; }
+.scrim.on { opacity: 1; pointer-events: auto; }
+.mdrawer { position: fixed; z-index: 50; top: 0; bottom: 0; left: 0; width: min(300px, 86vw); padding: 16px 12px; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; background: var(--panel-solid); border-right: 1px solid var(--line); box-shadow: 0 0 24px rgba(24, 217, 245, .25); transform: translateX(-105%); visibility: hidden; transition: transform .3s var(--ease), visibility 0s .3s; }
+.mdrawer.open { transform: none; visibility: visible; transition: transform .3s var(--ease); }
+.mdrawer .brand { margin: 4px 6px 14px; }
+.mdrawer .brand-name { display: inline !important; }
+.mdrawer .tn { flex: none; padding: 12px; font-size: 15px; text-transform: uppercase; letter-spacing: 1px; }
+@media (max-width: 700px) {
+  :root { --topbar-h: 56px; }
+  .topbar { flex-wrap: nowrap; padding: 0 8px; gap: 8px; }
+  .topbar > .tabs { display: none; }
+  .burger { display: grid; order: 0; }
+  .brand { order: 1; }
+  .site-gm { order: 2; margin-left: auto; }
+  .sound-box { order: 3; }
+  body:not(.is-gm) .sound-box { margin-left: auto; }
+}
+
+/* ---------- смена страниц ---------- */
+/* Класс снимается по окончании (js/app.js → KG.replay): пока анимация transform действует,
+   Chrome делает элемент контейнером для position: fixed, и выезжающие панели внутри встают не по экрану. */
+.enter { animation: kgIn var(--dur-page) var(--ease); }
+.enter-fade { animation: kgFade var(--dur-page) ease; }
+@keyframes kgIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes kgFade { from { opacity: 0; } to { opacity: 1; } }
+.stagger > * { animation: kgIn var(--dur-page) var(--ease) backwards; animation-delay: calc(var(--i, 0) * 45ms); }
+
+/* ---------- окна: появление и закрытие (KG.showModal / KG.hideModal) ---------- */
+.modal:not(.hidden) { animation: kgFade var(--dur-modal) ease; }
+.modal:not(.hidden) > .modal-box, .modal:not(.hidden) > figure { animation: kgBoxIn var(--dur-modal) var(--ease), kgNeon .9s ease-out; }
+.modal.closing { animation: kgFadeOut .2s ease forwards; pointer-events: none; }
+.modal.closing > .modal-box, .modal.closing > figure { animation: kgBoxOut .2s ease forwards; }
+.modal { backdrop-filter: blur(3px); }
+@keyframes kgBoxIn { from { transform: translateY(8px) scale(.95); } to { transform: none; } }
+@keyframes kgBoxOut { to { transform: translateY(6px) scale(.96); } }
+@keyframes kgFadeOut { to { opacity: 0; } }
+@keyframes kgNeon { 0% { box-shadow: 0 0 0 rgba(24, 217, 245, 0); } 30% { box-shadow: 0 0 30px rgba(24, 217, 245, .8), inset 0 0 18px rgba(24, 217, 245, .25); } 100% { box-shadow: 0 0 14px rgba(24, 217, 245, .12), inset 0 0 20px rgba(24, 217, 245, .05); } }
+.lightbox > figure { animation-name: kgBoxIn !important; }
+
+/* ---------- карта: карточки выезжают ---------- */
+.state-card:not(.hidden) { animation: kgSlideR .35s var(--ease); }
+.city-pop:not(.hidden) { animation: kgFade .2s ease; }
+.sat-panel:not(.hidden) { animation: kgSlideR .35s var(--ease); }
+@keyframes kgSlideR { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
+@keyframes kgSlideUp { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: none; } }
+@media (max-width: 900px) { .state-card:not(.hidden), .sat-panel:not(.hidden) { animation-name: kgSlideUp; } }
+
+/* ---------- Вики: дерево слева, содержимое справа ---------- */
+.wiki-layout { display: grid; grid-template-columns: 272px minmax(0, 1fr); gap: 14px; height: 100%; padding: 12px 16px; }
+.wtree { position: relative; z-index: 3; display: flex; flex-direction: column; min-height: 0; padding: 14px 10px 10px; }
+.wtree-h { margin: 2px 8px 12px; font-family: var(--font-wide); font-weight: 600; font-size: 18px; letter-spacing: 4px; text-transform: uppercase; color: var(--line); text-shadow: 0 0 14px rgba(24, 217, 245, .6); }
+.wtree-scroll { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; padding-right: 2px; }
+.wmain { min-height: 0; overflow-y: auto; scrollbar-width: thin; padding-bottom: 32px; }
+.wmain > .mech.wiki { margin: 0; max-width: 1180px; }
+.wiki-oldnav { display: none !important; }
+.trow { display: flex; align-items: center; gap: 2px; }
+.tn { position: relative; display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; padding: 9px 10px; border: 0; border-radius: 4px; background: transparent; color: var(--muted); text-align: left; font-size: 15px; transition: background .2s, color .2s; }
+.tn:hover { background: rgba(24, 217, 245, .07); color: var(--text); }
+.tn.active { color: var(--line); background: rgba(24, 217, 245, .1); }
+.tn.active::before { content: ""; position: absolute; left: 0; top: 7px; bottom: 7px; width: 2px; border-radius: 2px; background: var(--line); box-shadow: 0 0 8px var(--line); }
+.tn .lbl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tn.l2 { padding: 7px 10px; font-size: 14px; gap: 9px; }
+.tn.l2 .ico-svg { width: 16px; height: 16px; }
+.tn.l3 { padding: 5px 10px; font-size: 13px; }
+.tn.l3::after { content: ""; flex: none; order: -1; width: 4px; height: 4px; border-radius: 50%; background: currentColor; opacity: .6; }
+.cnt { flex: none; min-width: 22px; text-align: center; font-size: 11px; font-weight: 600; line-height: 16px; padding: 1px 6px; border-radius: 3px; background: rgba(255, 63, 208, .12); border: 1px solid rgba(255, 63, 208, .45); color: var(--pink-soft); }
+.cnt.zero { opacity: .45; }
+.tchev { flex: none; width: 28px; height: 32px; display: grid; place-items: center; padding: 0; background: none; border: 0; border-radius: 4px; color: var(--muted); }
+.tchev:hover { color: var(--line); background: rgba(24, 217, 245, .07); }
+.tchev .ico-svg { width: 14px; height: 14px; transition: transform .25s var(--ease); }
+.tgroup.open > .trow .tchev .ico-svg { transform: rotate(90deg); }
+.tkids { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .3s var(--ease); }
+.tgroup.open > .tkids { grid-template-rows: 1fr; }
+.tkids > div { overflow: hidden; margin-left: 19px; padding-left: 8px; border-left: 1px solid var(--line-dim); }
+.tgroup.sub > .tkids > div { margin-left: 16px; }
+.tgroup + .tgroup { margin-top: 2px; }
+
+/* крошки */
+.crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 14px; font-size: 13px; letter-spacing: .04em; color: var(--muted); }
+.crumbs:empty { display: none; }
+.crumbs a { color: inherit; text-decoration: none; cursor: pointer; transition: color .15s; }
+.crumbs a:hover { color: var(--line); text-decoration: underline; text-underline-offset: 3px; }
+.crumbs .sep { opacity: .5; }
+.crumbs .cur { color: var(--text); }
+.wtree-btn { display: none; align-items: center; gap: 6px; margin-right: 6px; padding: 5px 10px; background: rgba(24, 217, 245, .08); border: 1px solid var(--line-dim); border-radius: 3px; color: var(--text); font-size: 13px; }
+.wtree-btn .ico-svg { width: 15px; height: 15px; }
+
+/* поиск */
+.wsearch { position: relative; margin: 0 2px 12px; }
+.wsearch input { width: 100%; padding: 8px 34px 8px 32px; background: rgba(0, 0, 0, .3); border: 1px solid var(--line-dim); border-radius: 3px; color: var(--text); font: inherit; font-size: 14px; transition: border-color .15s, box-shadow .15s; }
+.wsearch input::placeholder { color: var(--muted); }
+.wsearch input:focus { outline: none; border-color: var(--line); box-shadow: 0 0 8px rgba(24, 217, 245, .35); }
+.wsearch > .ico-svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; color: var(--muted); pointer-events: none; }
+.wsearch kbd { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); font: 11px var(--font-ui); color: var(--muted); border: 1px solid var(--line-dim); border-radius: 3px; padding: 0 5px; pointer-events: none; }
+.wsearch input:focus ~ kbd, .wsearch input:not(:placeholder-shown) ~ kbd { display: none; }
+.sres { position: absolute; top: calc(100% + 6px); left: 0; z-index: 40; width: min(440px, calc(100vw - 24px)); max-height: min(70vh, 560px); overflow-y: auto; padding: 6px; background: var(--panel-solid); border: 1px solid var(--line); border-radius: 4px; box-shadow: 0 14px 34px rgba(0, 0, 0, .6), 0 0 16px rgba(24, 217, 245, .25); scrollbar-width: thin; animation: kgDrop .18s var(--ease); }
+@keyframes kgDrop { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+.sr { display: block; width: 100%; text-align: left; background: none; border: 0; border-radius: 3px; padding: 9px 10px; color: var(--text); }
+.sr:hover, .sr.active { background: rgba(24, 217, 245, .1); }
+.sr-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.sr-title { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
+.sr-tag { flex: none; font-size: 11px; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--line-dim); color: var(--line); }
+.sr-path { margin-top: 2px; font-size: 12px; color: var(--muted); }
+.sr-snip { margin-top: 5px; font-size: 12.5px; line-height: 1.5; color: #b5c6dc; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.sres mark { background: rgba(255, 63, 208, .32); color: #fff; border-radius: 2px; padding: 0 1px; }
+.sr-empty, .sr-more { padding: 12px; font-size: 13px; line-height: 1.5; color: var(--muted); }
+.sr-more { padding-top: 6px; font-size: 12px; text-align: center; }
+.search-hit { animation: kgHit 2.2s ease-out; border-radius: 3px; }
+@keyframes kgHit { 0%, 18% { background-color: rgba(255, 63, 208, .26); box-shadow: 0 0 0 5px rgba(255, 63, 208, .26); } 100% { background-color: transparent; box-shadow: 0 0 0 5px transparent; } }
+.wiki h2, .wiki h3, .wiki p, .wiki li, .wiki .event { scroll-margin-top: 20px; }
+
+/* ---------- обложки Лора ---------- */
+.cgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; margin-top: 18px; }
+.cgrid .lore-cell { gap: 6px; }
+.ccard { position: relative; isolation: isolate; display: flex; align-items: flex-end; width: 100%; height: 170px; padding: 0; overflow: hidden; text-align: left; border: 1px solid var(--line-dim); border-radius: 5px; background: #071029; color: var(--text); transition: transform .25s var(--ease), border-color .2s, box-shadow .25s; }
+.cover-img { position: absolute; inset: 0; z-index: -2; background-position: center; background-size: cover; background-repeat: no-repeat; transition: transform .6s var(--ease); }
+.ccard::after, .hero::after { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; background: linear-gradient(to top, rgba(5, 9, 26, .96) 8%, rgba(5, 9, 26, .4) 55%, rgba(5, 9, 26, .08)); }
+.ccard:hover, .ccard:focus-visible { transform: translateY(-4px); border-color: var(--line); box-shadow: 0 10px 24px rgba(0, 0, 0, .45), 0 0 14px rgba(24, 217, 245, .35); outline: none; }
+.ccard:hover .cover-img { transform: scale(1.06); }
+.ct { display: flex; flex-direction: column; gap: 4px; width: 100%; padding: 14px 16px; }
+.ct b { display: flex; align-items: center; gap: 8px; font-family: var(--font-wide); font-weight: 400; font-size: 14px; letter-spacing: .06em; color: var(--line); text-shadow: 0 0 8px rgba(0, 0, 0, .9); overflow-wrap: anywhere; }
+.ct b .ico-svg { width: 16px; height: 16px; }
+.ct span { font-size: 13px; color: #b9c9de; overflow-wrap: anywhere; }
+.ccard > .cnt { position: absolute; top: 10px; right: 10px; z-index: 1; }
+/* без обложки — неоновая сетка; подпись «место под обложку» видна только в режиме правки */
+.no-cover .cover-img { background:
+  linear-gradient(rgba(24, 217, 245, .07) 1px, transparent 1px) 0 0 / 22px 22px,
+  linear-gradient(90deg, rgba(24, 217, 245, .07) 1px, transparent 1px) 0 0 / 22px 22px,
+  radial-gradient(ellipse at 75% 0%, rgba(255, 63, 208, .2), transparent 60%),
+  radial-gradient(ellipse at 10% 100%, rgba(24, 217, 245, .14), transparent 55%), #071029; }
+.cover-ph { position: absolute; top: 12px; left: 12px; right: 52px; height: 70px; display: none; align-items: center; justify-content: center; gap: 8px; border: 1px dashed rgba(24, 217, 245, .3); border-radius: 3px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: rgba(138, 163, 194, .75); }
+.site-edit .cover-ph { display: flex; }
+.cover-ph .ico-svg { width: 16px; height: 16px; }
+
+/* баннер статьи */
+.hero { position: relative; isolation: isolate; display: flex; flex-direction: column; justify-content: flex-end; gap: 6px; min-height: 230px; margin-bottom: 18px; padding: 22px 24px; overflow: hidden; border: 1px solid var(--line-dim); border-radius: 5px; box-shadow: 0 0 16px rgba(24, 217, 245, .12); }
+.hero .cover-ph { right: 12px; left: auto; width: 230px; }
+.hero.flag-cover .cover-img { filter: blur(22px) saturate(1.3) brightness(.55); transform: scale(1.25); }
+.hero-title { display: flex; align-items: center; gap: 14px; margin: 0 !important; font-family: var(--font-wide); font-weight: 600 !important; font-size: 26px !important; letter-spacing: .08em !important; text-transform: none !important; color: #fff !important; text-shadow: 0 0 14px rgba(24, 217, 245, .6), 0 2px 6px #000; transition: transform .2s var(--ease); overflow-wrap: break-word; hyphens: auto; }
+.hero-title:has(.back:hover) { transform: translateX(-4px); }
+.hero-title > [data-edit-text] { min-width: 0; }
+.hero-sub { margin-left: 54px; font-size: 14px; color: #c7d7ec; text-shadow: 0 1px 4px #000; }
+.hero-sub:empty { display: none; }
+.site-edit .hero-sub:empty { display: block; }
+.site-edit .hero-sub:empty::before { content: attr(data-placeholder); font-style: italic; opacity: .7; }
+.back { flex: none; width: 40px; height: 40px; display: grid; place-items: center; padding: 0; border: 1px solid var(--line); border-radius: 4px; background: rgba(24, 217, 245, .15); color: var(--line); box-shadow: 0 0 10px rgba(24, 217, 245, .35); transition: background .15s; }
+.back:hover { background: rgba(24, 217, 245, .3); }
+.back .ico-svg { width: 20px; height: 20px; stroke-width: 2.2; }
+.hero-flag { flex: none; width: 54px; height: 36px; border: 1px solid rgba(255, 255, 255, .25); border-radius: 3px; background: center / cover no-repeat; box-shadow: 0 2px 8px rgba(0, 0, 0, .6); }
+.hero-flags { display: inline-flex; gap: 6px; flex: none; }
+.hero-tools { position: absolute; z-index: 2; top: 12px; right: 12px; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.hero.no-cover .hero-tools { top: 92px; }
+.hero-tools .small-btn { background: rgba(5, 9, 26, .8); }
+.hero-tools .small-btn.on { color: var(--text); border-color: var(--pink); background: rgba(255, 63, 208, .2); }
+/* сдвиг картинки в баннере (ГМ, режим правки → «⇅ Положение») */
+.hero.moving { cursor: grab; touch-action: none; outline: 1px dashed var(--pink); outline-offset: -6px; }
+.hero.moving.dragging { cursor: grabbing; }
+.hero.moving .cover-img { transition: none; }
+.hero.moving::before { content: attr(data-hint); position: absolute; z-index: 1; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 6px 12px; border-radius: 3px; background: rgba(5, 9, 26, .75); border: 1px solid var(--pink); color: var(--text); font-size: 13px; white-space: nowrap; pointer-events: none; transition: opacity .2s; }
+.hero.moving.dragging::before { opacity: 0; }
+
+/* ---------- статья Механик по подразделам ---------- */
+.mech-article .mech-toc { display: none; }
+.msec-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; margin-top: 16px; max-width: 1100px; }
+.msec-h { grid-column: 1 / -1; margin: 18px 0 2px !important; }
+.msec { display: flex; flex-direction: column; gap: 6px; text-align: left; padding: 12px 14px; background: rgba(9, 14, 36, .6); border: 1px solid var(--line-dim); border-radius: 4px; color: var(--text); transition: transform .2s var(--ease), border-color .15s, box-shadow .2s; }
+.msec:hover { transform: translateY(-3px); border-color: var(--line); box-shadow: 0 0 12px rgba(24, 217, 245, .3); }
+.msec b { display: flex; gap: 10px; font-family: var(--font-wide); font-weight: 400; font-size: 13px; letter-spacing: .06em; color: var(--line); }
+.msec b i { font-style: normal; color: var(--pink-soft); }
+.msec span { font-size: 13px; line-height: 1.45; color: var(--muted); }
+.msec small { font-size: 11.5px; color: rgba(138, 163, 194, .75); }
+.mpager { display: flex; gap: 10px; margin-top: 30px; padding-top: 14px; border-top: 1px solid var(--line-dim); max-width: 900px; }
+.mpager button { display: flex; flex-direction: column; gap: 3px; max-width: 48%; padding: 10px 14px; text-align: left; background: rgba(24, 217, 245, .05); border: 1px solid var(--line-dim); border-radius: 4px; color: var(--text); transition: border-color .15s, box-shadow .2s; }
+.mpager button.next { margin-left: auto; text-align: right; }
+.mpager button:hover { border-color: var(--line); box-shadow: 0 0 10px rgba(24, 217, 245, .3); }
+.mpager small { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.ls-union, .ls-state { transition: transform .2s var(--ease), border-color .15s, box-shadow .2s; }
+.ls-union:hover, .ls-state:hover { transform: translateY(-2px); }
+
+/* ---------- Вики на узком экране: дерево выезжает по кнопке «Разделы» ---------- */
+@media (max-width: 900px) {
+  .wiki-layout { grid-template-columns: minmax(0, 1fr); padding: 8px; }
+  .wtree { position: fixed; z-index: 50; top: 0; bottom: 0; left: 0; width: min(310px, 88vw); border-radius: 0; background: var(--panel-solid); transform: translateX(-105%); visibility: hidden; transition: transform .3s var(--ease), visibility 0s .3s; }
+  .wtree.open { transform: none; visibility: visible; transition: transform .3s var(--ease); }
+  /* дерево лежит внутри main (свой слой z-index), поэтому и затемнение для него — внутри main */
+  body.tree-open main { z-index: 46; }
+  .wiki-layout::before { content: ""; position: fixed; inset: 0; z-index: 49; background: rgba(2, 4, 14, .55); opacity: 0; pointer-events: none; transition: opacity .3s; }
+  body.tree-open .wiki-layout::before { opacity: 1; pointer-events: auto; }
+  .wtree-btn { display: inline-flex; }
+  .wmain > .mech.wiki { padding: 16px; }
+  .hero { min-height: 190px; padding: 56px 16px 16px; }
+  .hero-title { font-size: 19px !important; gap: 10px; }
+  .hero-flag { width: 40px; height: 27px; }
+  .hero-sub { margin-left: 50px; }
+  .hero .cover-ph { display: none; }
+  .hero.no-cover .hero-tools, .hero .hero-tools { top: 12px; }
+}
+@media (max-width: 700px) { .cgrid { grid-template-columns: minmax(0, 1fr); } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-delay: 0s !important; transition-duration: .01ms !important; }
+}
+/* режим «Положение» не действует вне правки */
+body:not(.site-edit) .hero.moving { cursor: auto; touch-action: auto; outline: none; }
+body:not(.site-edit) .hero.moving::before { display: none; }
+/* чужие подразделы статьи Механик: у списков и сеток статьи свой display, поэтому hidden нужно усилить */
+.mech-article > [hidden] { display: none !important; }
