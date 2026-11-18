@@ -484,9 +484,13 @@
   // ---------- лор: регионы мира ----------
   // Адреса: #wiki/lore/regions — карточки регионов; #wiki/lore/regions/<регион> — страница региона.
   // Регионы — как в «Государствах» (data/lore.json → regions, без «Держав»); державы стоят в своём регионе по полю geo.
-  // Старый Свет (Европа) — механика бесчестья союзов из Механик; у остальных регионов пока заглушка, которую ГМ правит на странице.
+  // Старый Свет (Европа) и Африка — механика регионов из Механик (угроза союзов, договор, резолюции, у Африки ещё треки);
+  // у остальных регионов пока заглушка, которую ГМ правит на странице.
   const REGION_TITLE = { eu: "Старый Свет (Европа)" };
-  const REGION_SUB = { eu: "Бесчестье союзов, Бернский договор и резолюции" };
+  const REGION_SUB = { eu: "Бесчестье союзов, Бернский договор и резолюции", af: "Угроза союзов, Яундский компромисс, Разлом, Нил и пустыня" };
+  const MECH_REGION = { eu: true, af: true };
+  // земли без государства (lore.notStates), которые лежат в регионе
+  const REGION_LANDS = { af: ["56", "59", "60", "145", "146"] };
   const REGION_STUB = "<p>Раздел заполняется по ходу кампании.</p>";
   const regionKey = (r, f) => "lore.region." + r.id + "." + f;
   const regionsOf = L => L.regions.filter(r => r.id !== "powers").map(r => ({ id: r.id, title: REGION_TITLE[r.id] || r.title }));
@@ -510,15 +514,19 @@
     const C = st.countries || {}, AL = st.alliances || {};
     art.append(h("button", { class: "lore-back", onclick: () => KG.go("wiki/lore/regions") }, "← Регионы"),
       h("h2", { "data-edit-text": regionKey(r, "title"), "data-placeholder": "Название региона…", text: r.title }),
-      h("div", { class: "rich lore-text", "data-edit": regionKey(r, "html"), "data-placeholder": r.id === "eu" ? "Вступление к региону (необязательно)…" : "О регионе…",
-        html: r.id === "eu" ? "" : REGION_STUB }));
-    if (r.id === "eu" && window.KGMech) {
+      h("div", { class: "rich lore-text", "data-edit": regionKey(r, "html"), "data-placeholder": MECH_REGION[r.id] ? "Вступление к региону (необязательно)…" : "О регионе…",
+        html: MECH_REGION[r.id] ? "" : REGION_STUB }));
+    if (MECH_REGION[r.id] && window.KGMech) {
       const ow = h("div", { class: "lore-body region-ow" }); art.append(ow);
-      Promise.resolve(window.KGMech.renderOldWorld(ow)).then(() => applyTexts(ow));
+      Promise.resolve(window.KGMech.renderRegion(ow, r.id)).then(() => applyTexts(ow));
     }
     const list = statesOf(L, r.id);
     art.append(h("h3", { class: "ls-h", "data-edit-text": "lore.region.h.states", text: "Государства региона" }),
       list.length ? h("div", { class: "ls-grid" }, list.map(s => stateCard(s, C, AL))) : h("p", { class: "empty", text: "Статей о государствах этого региона пока нет." }));
+    const lands = (REGION_LANDS[r.id] || []).filter(id => (L.notStates || {})[id] && C[id]);
+    if (lands.length) art.append(h("p", { class: "mech-note region-lands" }, "Земли без государства: ",
+      lands.map((id, i) => [i ? ", " : "", h("button", { class: "linkish", title: "Показать на карте", text: L.notStates[id], onclick: () => KG.showOnMap(id) })]).flat(),
+      " — кочевые племена Сахары без армии и правительства."));
     applyTexts(art); refreshEditable();
   }
 

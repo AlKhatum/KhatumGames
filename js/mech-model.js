@@ -140,6 +140,28 @@
       ["ow_void_stab", "Бернский договор аннулирован: стабильность Европы", -0.5, "пунктов за ход", "Всем странам Старого Света"],
       ["ow_viol_stab", "Нарушитель Бернского договора: стабильность", -1, "пунктов за ход", "Стране, которую ГМ отметил нарушителем"]
     ]],
+    ["Африка", [
+      ["af_threshold", "Порог угрозы", 10, "пунктов", "С этого значения союз — агрессор: против него вправе воевать все союзы Африки"],
+      ["af_pow", "Рост угрозы от силы союза", 0.4, "пунктов за ход", "× доля союза в военной мощи Африки"],
+      ["af_size", "Рост угрозы от размера союза", 0.05, "пунктов за ход", "За каждого члена сверх лидера"],
+      ["af_inf_access", "Агрессор: доступ к рынкам", -15, "%", "Всем членам союза с угрозой не ниже порога"],
+      ["af_inf_stab", "Агрессор: стабильность", -0.25, "пунктов за ход", ""],
+      ["af_amend_stab", "Яундский компромисс нарушен: стабильность Африки", -0.25, "пунктов за ход", "Всем государствам Африки в союзах и вне их"],
+      ["af_void_stab", "Яундский компромисс расторгнут: стабильность Африки", -0.5, "пунктов за ход", "Всем государствам Африки в союзах и вне их"],
+      ["af_viol_stab", "Нарушитель Яундского компромисса: стабильность", -1, "пунктов за ход", "Стране, которую ГМ отметил нарушителем"]
+    ]],
+    ["Государственный долг", [
+      ["debt_rate", "Базовая ставка по долгу", 3, "% годовых", "Ставка = база + надбавка × долг/ВВП (+ надбавка при низкой стабильности)"],
+      ["debt_risk", "Надбавка к ставке за 1% долга к ВВП", 0.05, "п. п.", ""],
+      ["debt_unstab", "Надбавка к ставке при низкой стабильности", 2, "п. п.", ""],
+      ["debt_unstab_lvl", "Порог низкой стабильности", 30, "0–100", "Ниже него кредиторы берут дороже"],
+      ["debt_safe", "Безопасный долг", 0.9, "доля ВВП", "Сверх него общество теряет стабильность"],
+      ["debt_stab_step", "Шаг долговой нагрузки", 0.3, "доля ВВП", ""],
+      ["debt_stab", "Штраф стабильности за шаг сверх безопасного долга", -0.25, "пунктов за ход", "Пропорционально превышению"],
+      ["debt_default", "Порог дефолта", 1.5, "доля ВВП", "Дефолт объявляется и снимается при переходе хода"],
+      ["debt_def_access", "Дефолт: доступ к рынкам", -20, "%", "Выплаты по долгу заморожены, новый перерасход невозможен"],
+      ["debt_def_stab", "Дефолт: стабильность", -1, "пунктов за ход", ""]
+    ]],
     ["Индекс национальной мощи (сумма весов = 1)", [
       ["w_gdp", "Вес ВВП", 0.3, "доля", ""],
       ["w_mil", "Вес военной мощи", 0.3, "доля", ""],
@@ -420,34 +442,69 @@
   };
   const wonderMode = target => (target === "d_stab" ? "add" : "pct");
 
-  // ---------- Старый Свет (Европа) ----------
-  // Союзы Старого Света копят бесчестье — угрозу в глазах остальных европейских держав. За ход оно растёт от доли союза в военной
-  // мощи Европы и от числа членов, скачками — от прокси-войн и резолюций. С порога союз — агрессор: против него вправе воевать
-  // все союзы Европы, его члены теряют доступ к рынкам и стабильность. Бернский договор запрещает европейцам открыто воевать друг
-  // с другом; изменённый или аннулированный договор бьёт по стабильности всей Европы. Состояние хода — mech.ow (видно всем).
-  const owBlocOpts = R => ((R.tables.bloc || []).length ? R.tables.bloc.map(s => [s.id, s.name]) : [["", "— сначала создайте союз —"]]);
-  const owCountryOpts = () => [["", "—"]].concat(Object.keys(mapCountries)
+  // ---------- Регионы: Старый Свет (Европа), Африка ----------
+  // Союзы региона копят угрозу (в Европе — бесчестье) в глазах остальных держав региона. За ход она растёт от доли союза в военной
+  // мощи региона и от числа членов, скачками — от прокси-войн и резолюций. С порога союз — агрессор: против него вправе воевать
+  // все союзы региона, его члены теряют доступ к рынкам и стабильность. Договор региона (Бернский договор, Яундский компромисс)
+  // удерживает державы от открытой войны; нарушенный или расторгнутый договор бьёт по стабильности всего региона.
+  // У Африки ещё треки: напряжение Разлома, разливы Нила, наступление пустыни — эффект на страны трека растёт с уровнем.
+  // Таблицы правил и коэффициенты региона — с префиксом p (Европа — ow, Африка — af), состояние хода — mech[p] (видно всем).
+  const REGIONS = [
+    { id: "eu", p: "ow", title: "Старый Свет", page: "Старый Свет (Европа)", whereGen: "Европы", whereAcc: "Европу", people: "европейцам",
+      meter: "Бесчестье", meterGen: "бесчестья", meterAcc: "бесчестье", aggr: "Агрессор Старого Света",
+      treaty: "Бернский договор", treatyGen: "Бернского договора", st: [["active", "Действует"], ["amended", "Изменён"], ["void", "Аннулирован"]],
+      notes: { active: "запрещает европейцам открыто воевать друг с другом ради того, что осталось от прежнего мира.",
+        amended: "Европейцам всё легче воевать друг с другом, тревога растёт по всему континенту.", void: "Ничто больше не удерживает европейские державы от открытой войны.",
+        viol: "Страна открыто воевала с европейцами вопреки договору.", aggr: "Европа видит в нём агрессора, против него вправе воевать все союзы Старого Света.",
+        united: ["Европа может объединиться", "Объединённой Европы нет"] } },
+    { id: "af", p: "af", title: "Африка", page: "Африка", whereGen: "Африки", whereAcc: "Африку", people: "африканцам",
+      meter: "Угроза", meterGen: "угрозы", meterAcc: "угрозу", aggr: "Агрессор Африки",
+      treaty: "Яундский компромисс", treatyGen: "Яундского компромисса", st: [["active", "Действует"], ["amended", "Нарушен"], ["void", "Расторгнут"]],
+      notes: { active: "Федерация отказалась от военного вмешательства в Западной Африке, и державы континента не вводят войска к соседям открыто.",
+        amended: "Федерация вошла с войсками в Западную Африку вопреки компромиссу: тревога растёт по всему континенту.",
+        void: "Компромисс расторгнут: ничто не удерживает державы Африки от вмешательства у соседей.",
+        viol: "Страна открыто ввела войска к соседям вопреки компромиссу.", aggr: "Африка видит в нём агрессора, против него вправе воевать все союзы Африки.",
+        united: ["Африка может объединиться", "Единой Африки нет"] }, tracks: true }
+  ];
+  const REG = {};
+  REGIONS.forEach(d => (REG[d.id] = REG[d.p] = d));
+  const rgBlocOpts = R => ((R.tables.bloc || []).length ? R.tables.bloc.map(s => [s.id, s.name]) : [["", "— сначала создайте союз —"]]);
+  const rgCountryOpts = () => [["", "—"]].concat(Object.keys(mapCountries)
     .map(id => [id, String(mapCountries[id].name || id).replace(/\n/g, " ")]).sort((a, b) => a[1].localeCompare(b[1], "ru")));
-  TABLES.owbloc = {
-    title: "Старый Свет: союзы", note: "Союзы Европы, которые копят бесчестье. Бесчестье на старте — значение до первого хода ГМа; дальше его ведёт калькулятор (вкладка «Старый Свет»).",
-    fields: [["bloc", "Союз", "sel", owBlocOpts], ["start", "Бесчестье на старте", "num"], ["note", "Чем союз пугает Европу", "text"]],
-    rows: [["ow_slav", "al_sov_slavic_federation", 4, "Евразийская реформация превратила Россию в нечто зловещее; Балканы ушли в союз с изолированной Евразией."],
+  function regionTables(d, blocs, land, res, tracks, tland) {
+    const p = d.p;
+    TABLES[p + "bloc"] = {
+      title: d.title + ": союзы", note: "Союзы " + d.whereGen + ", которые копят " + d.meterAcc + ". " + d.meter + " на старте — значение до первого хода ГМа; дальше его ведёт калькулятор (вкладка «" + d.title + "»).",
+      fields: [["bloc", "Союз", "sel", rgBlocOpts], ["start", d.meter + " на старте", "num"], ["note", "Чем союз пугает " + d.whereAcc, "text"]], rows: blocs };
+    TABLES[p + "land"] = {
+      title: d.title + ": страны вне союзов", note: "Государства " + d.whereGen + ", не входящие в союзы региона. На них тоже действует " + d.treaty + (d.tracks ? " и треки региона" : "") + ".",
+      fields: [["country", "Страна", "sel", rgCountryOpts]], rows: land };
+    TABLES[p + "res"] = {
+      title: d.title + ": резолюции союзов", note: "Внутренние и дипломатические резолюции. Принятую резолюцию ГМ отмечает во вкладке «" + d.title + "»: " + d.meterAcc + " прибавляется сразу" +
+        (d.tracks ? ", трек сдвигается сразу" : "") + ", эффекты действуют, пока резолюция в силе. «Эффект членам» — всем членам, кроме лидера; % к показателю, у стабильности — пункты за ход.",
+      fields: [["name", "Резолюция", "text"], ["bloc", "Союз", "sel", R => [["", "Любой союз региона"]].concat(rgBlocOpts(R))],
+        ["who", "Принимает", "sel", [["leader", "Только лидер союза"], ["any", "Любой член союза"]]], ["dis", d.meter + " при принятии", "num"],
+        ["t1", "Эффект членам", "sel", wonderTargets], ["v1", "Величина членам", "num"], ["t2", "Эффект лидеру", "sel", wonderTargets], ["v2", "Величина лидеру", "num"]]
+        .concat(d.tracks ? [["track", "Трек", "sel", R => [["", "—"]].concat((R.tables[p + "track"] || []).map(t => [t.id, t.name]))], ["dt", "Сдвиг трека", "num"]] : [])
+        .concat([["desc", "Описание", "text"]]),
+      rows: res };
+    if (!d.tracks) return;
+    TABLES[p + "track"] = {
+      title: d.title + ": треки", note: "Общие беды региона по уровням от 0 до предела. Эффекты — на каждую страну трека, умноженные на уровень (% к показателю, у стабильности — пункты за ход). «Рост за ход» прибавляет «Следующий ход»; сдвигают трек резолюции и ГМ.",
+      fields: [["name", "Трек", "text"], ["start", "На старте", "num"], ["max", "Предел", "num"], ["grow", "Рост за ход", "num"],
+        ["t1", "Эффект за уровень", "sel", wonderTargets], ["v1", "Величина за уровень", "num"], ["t2", "Второй эффект за уровень", "sel", wonderTargets], ["v2", "Величина за уровень", "num"], ["desc", "Описание", "text"]],
+      rows: tracks };
+    TABLES[p + "tland"] = {
+      title: d.title + ": страны треков", note: "Кого задевает трек. Страна может быть в нескольких треках.",
+      fields: [["track", "Трек", "sel", R => (R.tables[p + "track"] || []).map(t => [t.id, t.name])], ["country", "Страна", "sel", rgCountryOpts]], rows: tland };
+  }
+  regionTables(REG.eu,
+    [["ow_slav", "al_sov_slavic_federation", 4, "Евразийская реформация превратила Россию в нечто зловещее; Балканы ушли в союз с изолированной Евразией."],
       ["ow_med", "al_fra_mediterranean_bloc", 3, "Флот Франко-Иберии хозяйничает в Средиземном море от Лиссабона до Леванта."],
       ["ow_nsa", "al_sco_nsa", 2, "Мания величия в Абердине и Бирмингеме и самый большой союз Европы."],
-      ["ow_integr", "al_ger_integr", 1, "Сила в договорах, а не в пушках; соседи пока больше смеются, чем боятся."]]
-  };
-  TABLES.owland = {
-    title: "Старый Свет: страны вне союзов", note: "Европейские государства, не входящие в союзы Старого Света. На них тоже действует Бернский договор.",
-    fields: [["country", "Страна", "sel", owCountryOpts]],
-    rows: [["owl_tur", "7"], ["owl_pad", "17"], ["owl_ita", "16"], ["owl_hun", "140"], ["owl_rom", "144"], ["owl_kar", "9"], ["owl_lat", "11"], ["owl_swe", "20"], ["owl_fin", "22"], ["owl_gre", "26"]]
-  };
-  TABLES.owres = {
-    title: "Старый Свет: резолюции союзов", note: "Внутренние и дипломатические резолюции. Принятую резолюцию ГМ отмечает во вкладке «Старый Свет»: бесчестье прибавляется сразу, эффекты действуют, пока резолюция в силе. «Эффект членам» — всем членам, кроме лидера; % к показателю, у стабильности — пункты за ход.",
-    fields: [["name", "Резолюция", "text"], ["bloc", "Союз", "sel", R => [["", "Любой союз Старого Света"]].concat(owBlocOpts(R))],
-      ["who", "Принимает", "sel", [["leader", "Только лидер союза"], ["any", "Любой член союза"]]], ["dis", "Бесчестье при принятии", "num"],
-      ["t1", "Эффект членам", "sel", wonderTargets], ["v1", "Величина членам", "num"], ["t2", "Эффект лидеру", "sel", wonderTargets], ["v2", "Величина лидеру", "num"],
-      ["desc", "Описание", "text"]],
-    rows: [
+      ["ow_integr", "al_ger_integr", 1, "Сила в договорах, а не в пушках; соседи пока больше смеются, чем боятся."]],
+    [["owl_tur", "7"], ["owl_pad", "17"], ["owl_ita", "16"], ["owl_hun", "140"], ["owl_rom", "144"], ["owl_kar", "9"], ["owl_lat", "11"], ["owl_swe", "20"], ["owl_fin", "22"], ["owl_gre", "26"]],
+    [
       ["ow_integr_green", "Зелёные инвестиции", "al_ger_integr", "leader", 0, "pm_eff", 5, "budget", -3, "Германия вкладывает в «зелёную» промышленность союзников: их заводы растут, казна лидера платит."],
       ["ow_integr_tech", "Технократический совет", "al_ger_integr", "any", 0, "d_tech", 5, "d_tech", 5, "Общие лаборатории и обмен специалистами вместо пушек."],
       ["ow_integr_def", "Общая оборона", "al_ger_integr", "leader", 1, "readiness", 10, "budget", -2, "Армии, которые давно не воевали, учатся вместе. Соседи видят в этом угрозу."],
@@ -467,9 +524,55 @@
       ["ow_slav_fold", "Назад в лоно", "al_sov_slavic_federation", "leader", 4, "", 0, "", 0, "Москва силой возвращает отколовшихся. Войну ведёт ГМ."],
       ["ow_slav_baltic", "Единый Балтийский союз", "al_sov_slavic_federation", "leader", 4, "", 0, "", 0, "Претензия на Балтийскую Федерацию. Войну ведёт ГМ."],
       ["ow_bern_conf", "Бернская конференция", "", "leader", -1, "", 0, "", 0, "Редкий случай, когда бесчестье снижается: союз идёт на уступки соседям в Берне."],
-      ["ow_bern_amend", "Пересмотр Бернского договора", "", "leader", 2, "", 0, "", 0, "Союз добивается изменения договора. Если Европа согласится, ГМ ставит договору статус «Изменён»."]]
-  };
-  const OW_TREATY = [["active", "Действует"], ["amended", "Изменён"], ["void", "Аннулирован"]];
+      ["ow_bern_amend", "Пересмотр Бернского договора", "", "leader", 2, "", 0, "", 0, "Союз добивается изменения договора. Если Европа согласится, ГМ ставит договору статус «Изменён»."]]);
+  // Африка: пять союзов, страны вне союзов (с возвращёнными на карту государствами), резолюции по фокусам Федерации и Morgan Industries,
+  // треки Разлома Мвитанзиге, Нила и Сахеля. Номера стран — как на карте (Лор/возврат_африки.py).
+  regionTables(REG.af,
+    [["af_tzn", "al_tzn_united", 4, "Крупнейшая промышленность континента и вторая армия мира — и мечта объединить Африку под одним флагом."],
+      ["af_mor", "al_eqg_morgan", 3, "Корпорация, которая скупает страны, и наёмники Morgan Security, которые соперничают с армиями."],
+      ["af_uaa", "al_united_arab_alliance", 2, "Людские волны, отточенные в войнах с Магрибом, Эфиопией и ВАФ, и рука Каира в Судане и Оромии."],
+      ["af_bam", "al_bamako_compact", 2, "Учёные Исполнительного совета открыто называют Моргана угрозой и готовы ударить первыми."],
+      ["af_kim", "al_cog_kimpwanza_league", 1, "Союз ушедших от Найроби: защищается, а не нападает."]],
+    [["afl_civ", "63"], ["afl_gha", "65"], ["afl_mar", "46"], ["afl_trp", "45"], ["afl_som", "52"], ["afl_sok", "57"], ["afl_tsa", "69"], ["afl_mbu", "70"],
+      ["afl_wau", "71"], ["afl_nue", "72"], ["afl_eth", "79"], ["afl_qaf", "80"], ["afl_kiv", "75"], ["afl_war", "76"], ["afl_msa", "54"], ["afl_buk", "77"], ["afl_kwa", "78"], ["afl_mag", "147"], ["afl_mrt", "148"]],
+    [
+      ["af_tzn_line", "Панафриканская линия", "al_tzn_united", "leader", 0, "access", 5, "budget", -2, "", 0, "Железные дороги от Аддис-Абебы до Кигали и линия Конго — ЮАР связывают союзников с Федерацией."],
+      ["af_tzn_acalan", "Расширение ACALAN", "al_tzn_united", "any", 0, "d_stab", 0.1, "d_stab", 0.1, "", 0, "Академия языков и культур Африки уважает три тысячи народов континента — и отнимает у нативистов их лозунги."],
+      ["af_tzn_trade", "Африканский торговый союз", "al_tzn_united", "leader", 1, "export", 5, "export", 5, "", 0, "Общий рынок для угасающей Западной Африки. Соседи видят в нём первый шаг к поглощению."],
+      ["af_tzn_recog", "Ограниченное признание", "al_tzn_united", "leader", 0, "", 0, "", 0, "", 0, "Федерация обещает автономию тем, кто вступит в Союз. Вступление на карте оформляет ГМ."],
+      ["af_tzn_panaf", "Монополизация панафриканизма", "al_tzn_united", "leader", 2, "", 0, "morale", 5, "", 0, "Пропаганда объявляет Федерацию единственной наследницей панафриканской мечты."],
+      ["af_tzn_mpla", "Помощь МПЛА", "al_tzn_united", "leader", 1, "", 0, "", 0, "", 0, "Деньги и оружие старейшей партии Анголы против проконголезских нативистов. Прокси-войну ведёт ГМ."],
+      ["af_tzn_proxy", "Возобновление прокси-войны", "al_tzn_united", "leader", 2, "", 0, "budget", -1, "af_rift", 2, "Тайные поставки оружия командирам Мвитанзиге, чтобы те ударили по Конго."],
+      ["af_tzn_rift", "Стабилизация разлома Мвитанзиге", "al_tzn_united", "leader", 0, "", 0, "budget", -2, "af_rift", -1, "Федерация усмиряет командиров Разлома, чтобы буфер не стал фронтом."],
+      ["af_tzn_yaounde", "Нарушить Яундский компромисс", "al_tzn_united", "leader", 4, "", 0, "", 0, "", 0, "Федерация готова ввести войска в Западную Африку. ГМ ставит компромиссу статус «Нарушен»."],
+      ["af_tzn_nb", "Линия Нигер — Бенин", "al_tzn_united", "leader", 1, "", 0, "readiness", 10, "", 0, "Цепь укреплённых баз снабжения для западноафриканских операций."],
+      ["af_mor_aec", "Африканское экономическое сообщество", "al_eqg_morgan", "leader", 1, "access", 5, "export", 5, "", 0, "Форум и общий рынок Западной Африки под председательством Моргана."],
+      ["af_mor_security", "Morgan Security", "al_eqg_morgan", "leader", 0, "security", 5, "budget", -2, "", 0, "Наёмники корпорации охраняют города союзников лучше их собственной полиции."],
+      ["af_mor_safehaven", "Отели-крепости SafeHaven", "al_eqg_morgan", "any", 0, "gdp", 3, "gdp", 3, "", 0, "Укреплённые отели для руководителей становятся центрами деловой жизни."],
+      ["af_mor_nile", "Обуздать Нил", "al_eqg_morgan", "leader", 1, "", 0, "en_supply", 5, "af_nile", -1, "Плотины и гидростанции на Ниле: меньше наводнений, а энергия — у Моргана."],
+      ["af_mor_kimp", "Перетянуть Кимпванзу", "al_eqg_morgan", "leader", 1, "", 0, "", 0, "", 0, "Морган напоминает о лицемерии Лиги и переманивает её членов. Итог решает ГМ."],
+      ["af_mor_bamako", "Профиль угрозы: Бамако", "al_eqg_morgan", "leader", 1, "", 0, "readiness", 5, "", 0, "Вербовка против технократов Сахеля, пока они не ударили первыми."],
+      ["af_mor_sokoto", "Профиль угрозы: Сокото", "al_eqg_morgan", "leader", 2, "", 0, "", 0, "", 0, "Реванш за провал в Сокото. Войну ведёт ГМ."],
+      ["af_kim_power", "Энергия рек Конго", "al_cog_kimpwanza_league", "leader", 0, "en_supply", 5, "budget", -2, "", 0, "ГЭС на реках Конго дают свет союзникам по Лиге."],
+      ["af_kim_freedom", "День свободы", "al_cog_kimpwanza_league", "any", 0, "d_stab", 0.1, "d_stab", 0.1, "", 0, "«Лумбу я кимпванза» празднуют от Киншасы до Нгаундере: свобода от Найроби сплачивает."],
+      ["af_kim_rift", "Западный берег Разлома", "al_cog_kimpwanza_league", "leader", 1, "", 0, "readiness", 5, "af_rift", -1, "Конго строит линию застав против командиров Мвитанзиге."],
+      ["af_uaa_waves", "Людские волны", "al_united_arab_alliance", "leader", 1, "morale", 5, "morale", 5, "", 0, "Египетская тактика массового натиска для армий союзников."],
+      ["af_uaa_nile", "Защита Нила", "al_united_arab_alliance", "leader", 0, "food_prod", 3, "budget", -2, "af_nile", -1, "Каир строит дамбы от Хартума до дельты."],
+      ["af_uaa_west", "Защита запада", "al_united_arab_alliance", "leader", 1, "", 0, "readiness", 5, "", 0, "Египет укрепляет пустынную границу с Магрибом и Триполитанией."],
+      ["af_bam_eco", "Экоинженерия Сахеля", "al_bamako_compact", "leader", 0, "food_prod", 3, "budget", -3, "af_sahel", -1, "Исполнительный совет останавливает пустыню лесополосами и опреснителями."],
+      ["af_bam_aug", "Программа аугментации", "al_bamako_compact", "any", 1, "d_tech", 5, "d_tech", 5, "", 0, "Люди, перестроенные под новый климат. Соседи видят в этом армию будущего."],
+      ["af_bam_pact", "Оборонный пакт против Моргана", "al_bamako_compact", "leader", 1, "readiness", 10, "budget", -2, "", 0, "Сахель готовится встретить наёмников Morgan Security."],
+      ["af_yaounde_conf", "Конференция в Яунде", "", "leader", -1, "", 0, "", 0, "", 0, "Союз идёт на уступки соседям, и угроза снижается."],
+      ["af_sudan_conf", "Суданская конференция", "", "leader", -1, "", 0, "", 0, "", 0, "Малые страны Африки получают голос, а созвавший конференцию союз выглядит миротворцем."],
+      ["af_yaounde_amend", "Пересмотр Яундского компромисса", "", "leader", 2, "", 0, "", 0, "", 0, "Если Африка согласится, ГМ ставит компромиссу статус «Нарушен» или «Расторгнут»."]],
+    [["af_rift", "Напряжение Разлома Мвитанзиге", 2, 5, 0, "d_stab", -0.05, "security", -2, "Командиры Разлома — буфер между Федерацией и Конго. Прокси-поставки поднимают напряжение, стабилизация снижает. На пределе — открытая война Конго и Федерации (решает ГМ)."],
+      ["af_nile", "Разливы Нила", 2, 5, 0.03, "food_prod", -2, "d_stab", -0.025, "Вырубленный бассейн Нила разливается всё чаще: первый великий разлив смыл Хартум. Растёт сам, снижают плотины и защита Нила."],
+      ["af_sahel", "Наступление пустыни", 3, 5, 0.05, "food_prod", -2, "water_sup", -2, "Сахара каждый год отвоёвывает поля Сахеля. Растёт сама, снижают экоинженерия и засухоустойчивые культуры."]],
+    [["aft_rift_cog", "af_rift", "74"], ["aft_rift_tzn", "af_rift", "53"], ["aft_rift_kiv", "af_rift", "75"], ["aft_rift_war", "af_rift", "76"], ["aft_rift_msa", "af_rift", "54"],
+      ["aft_rift_buk", "af_rift", "77"], ["aft_rift_kwa", "af_rift", "78"],
+      ["aft_nile_egy", "af_nile", "44"], ["aft_nile_sud", "af_nile", "55"], ["aft_nile_wau", "af_nile", "71"], ["aft_nile_nue", "af_nile", "72"], ["aft_nile_eth", "af_nile", "79"], ["aft_nile_oro", "af_nile", "81"],
+      ["aft_sahel_mli", "af_sahel", "58"], ["aft_sahel_bfa", "af_sahel", "62"], ["aft_sahel_sok", "af_sahel", "57"], ["aft_sahel_tsa", "af_sahel", "69"], ["aft_sahel_sud", "af_sahel", "55"], ["aft_sahel_mrt", "af_sahel", "148"]]);
+  const OW_TREATY = REG.eu.st;
   // эффекты чудес, которыми владеет страна с номером карты id
   function wonderMods(rules, id) {
     if (id == null) return [];
@@ -707,8 +810,16 @@
     gdp_raw: ["Сырьевой сектор", "млрд кр./год", "d1"], gdp_svc: ["Сектор услуг", "млрд кр./год", "d1"],
     gdp: ["ВВП", "млрд кр./год", "d1", "res", "Сектора + экспорт − импорт"], gdp_pc: ["ВВП на душу населения", "тыс. кр.", "d1", "res"],
     econ_level: ["Уровень экономики", "", "txt", "res"], ind_share: ["Доля промышленности в ВВП", "%", "pct"],
-    budget: ["Доходы бюджета", "млрд кр./год", "d1", "res", "ВВП × налоги × (1 − потери от коррупции)"],
-    b_other: ["Прочее / резерв", "% бюджета", "pct", "neg", "Отрицательное значение — перерасход"],
+    revenue: ["Доходы бюджета", "млрд кр./год", "d1", "", "ВВП × налоги × (1 − потери от коррупции)"],
+    budget: ["Бюджет к распределению", "млрд кр./год", "d1", "res", "Доходы − обслуживание долга + заём этого хода × 4 (бюджет годовой, а заём тратится за один ход)"],
+    b_other: ["Прочее / резерв", "% бюджета", "pct", "neg", "Резерв гасит долг; отрицательное значение — перерасход, он уходит в долг"],
+    debt_total: ["Государственный долг", "млрд кр.", "d1", "res"], debt_gdp: ["Долг к ВВП", "%", "pct", "debt"],
+    debt_rate: ["Ставка по долгу", "годовых", "pct", "", "База + надбавка за долг/ВВП + надбавка при низкой стабильности"],
+    debt_service: ["Обслуживание долга", "млрд кр./год", "d1", "", "Проценты; в дефолте выплаты заморожены"],
+    debt_fresh: ["Заём, выданный в этот ход", "млрд кр.", "d1"],
+    debt_new: ["Новый долг за ход (перерасход)", "млрд кр./ход", "d1"], debt_repay: ["Погашение из резерва за ход", "млрд кр./ход", "d1"],
+    debt_stab: ["Долговая нагрузка: стабильность", "пунктов за ход", "d2", "neg", "Сверх безопасного долга, плюс штраф дефолта"],
+    debt_status: ["Положение по долгу", "", "txt", "res"],
     def_budget: ["Военный бюджет", "млрд кр./год", "d1"], space_budget: ["Космический бюджет", "млрд кр./год", "d1"], sci_budget: ["Научный бюджет", "млрд кр./год", "d1"],
     soc_budget: ["Социальный бюджет", "млрд кр./год", "d1"], infra_budget: ["Инфраструктурный бюджет", "млрд кр./год", "d1"],
     d_tech: ["Прирост уровня технологий", "за ход", "d3", "", "Наука / (K × уровень) × (1 + научные спутники)"],
@@ -820,63 +931,82 @@
     return out.sort((x, y) => (y.leader - x.leader) || 0);
   }
 
-  // ---------- Старый Свет: состояние, эффекты, бесчестье ----------
-  // ow (mech.ow, публичное): { treaty, dis: { союз: бесчестье }, res: { союз: [id резолюций] }, viol: [страны-нарушители],
-  //   log: [{ turn, bloc, d, why }], growth / share: снимок прироста и доли силы на момент публикации }
-  const owBlocs = R => ((R.tables.owbloc || []).filter(b => b && b.bloc && (R.tables.bloc || []).some(x => x.id === b.bloc)));
-  const owLand = R => (R.tables.owland || []).map(x => String((x && x.country) || "")).filter(Boolean);
-  const owLeader = blocId => (mapAlliances[blocId] && mapAlliances[blocId].leader != null ? String(mapAlliances[blocId].leader) : "");
-  function owState(rules, ow) {
-    const R = normalizeRules(rules), o = ow && typeof ow === "object" ? ow : {};
+  // ---------- Регионы: состояние, эффекты, угроза ----------
+  // st (mech[p], публичное): { treaty, dis: { союз: угроза }, res: { союз: [id резолюций] }, viol: [страны-нарушители],
+  //   tr: { трек: уровень } (у регионов с треками), log: [{ turn, bloc, d, why }], growth / share: снимок прироста и доли силы на момент публикации }
+  const rgDef = rid => REG[rid] || REG.eu;
+  const rgT = (R, d, t) => R.tables[d.p + t] || [];
+  const rgBlocs = (R, d) => rgT(R, d, "bloc").filter(b => b && b.bloc && (R.tables.bloc || []).some(x => x.id === b.bloc));
+  const rgLand = (R, d) => rgT(R, d, "land").map(x => String((x && x.country) || "")).filter(Boolean);
+  const rgLeader = blocId => (mapAlliances[blocId] && mapAlliances[blocId].leader != null ? String(mapAlliances[blocId].leader) : "");
+  function rgState(rules, rid, st) {
+    const d = rgDef(rid), R = normalizeRules(rules), o = st && typeof st === "object" ? st : {};
     const dis = {}, src = o.dis && typeof o.dis === "object" ? o.dis : {};
-    for (const b of owBlocs(R)) dis[b.bloc] = src[b.bloc] != null && isFinite(+src[b.bloc]) ? +src[b.bloc] : num(b.start);
+    for (const b of rgBlocs(R, d)) dis[b.bloc] = src[b.bloc] != null && isFinite(+src[b.bloc]) ? +src[b.bloc] : num(b.start);
     const res = {};
     if (o.res && typeof o.res === "object") for (const k in o.res) if (Array.isArray(o.res[k])) res[k] = o.res[k].map(String);
-    return {
-      treaty: OW_TREATY.some(t => t[0] === o.treaty) ? o.treaty : "active", dis, res,
+    const out = {
+      treaty: d.st.some(t => t[0] === o.treaty) ? o.treaty : "active", dis, res,
       viol: Array.isArray(o.viol) ? o.viol.map(String) : [], log: Array.isArray(o.log) ? o.log.slice(-60) : [],
       growth: o.growth && typeof o.growth === "object" ? o.growth : {}, share: o.share && typeof o.share === "object" ? o.share : {}
     };
-  }
-  // эффекты Старого Света на страну id (как особые эффекты ГМа)
-  function owMods(rules, ow, c, id) {
-    const out = [];
-    if (id == null) return out;
-    const R = normalizeRules(rules), K = R.K, T = R.tables, S = owState(R, ow);
-    id = String(id);
-    const my = blocsOf(R, c, id), mine = owBlocs(R).filter(b => my.includes(b.bloc));
-    if (!mine.length && !owLand(R).includes(id)) return out;
-    const put = (key, name, note, target, value) => {
-      if (!target || !num(value)) return;
-      out.push({ id: "ow:" + key + ":" + target, ow: true, name, note, target, mode: wonderMode(target), value: num(value) });
-    };
-    const blocName = b => ((T.bloc || []).find(x => x.id === b) || { name: b }).name;
-    if (S.treaty === "amended") put("treaty", "Бернский договор изменён", "Европейцам всё легче воевать друг с другом, тревога растёт по всему континенту.", "d_stab", K.ow_amend_stab);
-    if (S.treaty === "void") put("treaty", "Бернский договор аннулирован", "Ничто больше не удерживает европейские державы от открытой войны.", "d_stab", K.ow_void_stab);
-    if (S.viol.includes(id)) put("viol", "Нарушитель Бернского договора", "Страна открыто воевала с европейцами вопреки договору.", "d_stab", K.ow_viol_stab);
-    for (const b of mine) {
-      const nm = blocName(b.bloc), lead = owLeader(b.bloc) === id;
-      if (S.dis[b.bloc] >= num(K.ow_threshold)) {
-        const why = "Бесчестье союза «" + nm + "» достигло порога: Европа видит в нём агрессора, против него вправе воевать все союзы Старого Света.";
-        put("inf:" + b.bloc, "Агрессор Старого Света", why, "access", K.ow_inf_access);
-        put("inf:" + b.bloc, "Агрессор Старого Света", why, "d_stab", K.ow_inf_stab);
-      }
-      for (const rid of S.res[b.bloc] || []) {
-        const x = (T.owres || []).find(r => r.id === rid);
-        if (!x) continue;
-        const note = "Резолюция союза «" + nm + "»." + (x.desc ? " " + x.desc : "");
-        if (lead) put("res:" + b.bloc + ":" + rid + ":l", "Резолюция: " + x.name, note, x.t2, x.v2);
-        else put("res:" + b.bloc + ":" + rid, "Резолюция: " + x.name, note, x.t1, x.v1);
-      }
+    if (d.tracks) {
+      const tr = {}, ts = o.tr && typeof o.tr === "object" ? o.tr : {};
+      for (const t of rgT(R, d, "track")) tr[t.id] = Math.max(0, Math.min(num(t.max) || 5, ts[t.id] != null && isFinite(+ts[t.id]) ? +ts[t.id] : num(t.start)));
+      out.tr = tr;
     }
     return out;
   }
-  // сводка по союзам Старого Света. results — расчёт стран (у ГМа); без него доля и прирост берутся из снимка публикации
-  function owReport(rules, ow, results, countries) {
-    const R = normalizeRules(rules), K = R.K, T = R.tables, S = owState(R, ow);
-    const land = new Set(owLand(R));
-    const blocs = owBlocs(R).map(b => ({ id: b.bloc, row: b, name: ((T.bloc || []).find(x => x.id === b.bloc) || { name: b.bloc }).name,
-      members: blocMembers(R, b.bloc, countries).map(x => x.id), leader: owLeader(b.bloc) }));
+  // эффекты региона на страну id (как особые эффекты ГМа)
+  function rgMods(rules, rid, st, c, id) {
+    const out = [];
+    if (id == null) return out;
+    const d = rgDef(rid), R = normalizeRules(rules), K = R.K, T = R.tables, S = rgState(R, d.id, st), p = d.p;
+    id = String(id);
+    const my = blocsOf(R, c, id), mine = rgBlocs(R, d).filter(b => my.includes(b.bloc));
+    const tracks = d.tracks ? rgT(R, d, "track").filter(t => rgT(R, d, "tland").some(x => x.track === t.id && String(x.country) === id)) : [];
+    if (!mine.length && !rgLand(R, d).includes(id) && !tracks.length) return out;
+    const put = (key, name, note, target, value) => {
+      if (!target || !num(value)) return;
+      out.push({ id: p + ":" + key + ":" + target, ow: true, rg: d.id, name, note, target, mode: wonderMode(target), value: num(value) });
+    };
+    if (mine.length || rgLand(R, d).includes(id)) {
+      const stName = k => (d.st.find(t => t[0] === k) || [, k])[1].toLowerCase();
+      if (S.treaty === "amended") put("treaty", d.treaty + " " + stName("amended"), d.notes.amended, "d_stab", K[p + "_amend_stab"]);
+      if (S.treaty === "void") put("treaty", d.treaty + " " + stName("void"), d.notes.void, "d_stab", K[p + "_void_stab"]);
+      if (S.viol.includes(id)) put("viol", "Нарушитель " + d.treatyGen, d.notes.viol, "d_stab", K[p + "_viol_stab"]);
+    }
+    const blocName = b => ((T.bloc || []).find(x => x.id === b) || { name: b }).name;
+    for (const b of mine) {
+      const nm = blocName(b.bloc), lead = rgLeader(b.bloc) === id;
+      if (S.dis[b.bloc] >= num(K[p + "_threshold"])) {
+        const why = d.meter + " союза «" + nm + "» достигл" + (d.meter === "Угроза" ? "а" : "о") + " порога: " + d.notes.aggr;
+        put("inf:" + b.bloc, d.aggr, why, "access", K[p + "_inf_access"]);
+        put("inf:" + b.bloc, d.aggr, why, "d_stab", K[p + "_inf_stab"]);
+      }
+      for (const rid2 of S.res[b.bloc] || []) {
+        const x = rgT(R, d, "res").find(r => r.id === rid2);
+        if (!x) continue;
+        const note = "Резолюция союза «" + nm + "»." + (x.desc ? " " + x.desc : "");
+        if (lead) put("res:" + b.bloc + ":" + rid2 + ":l", "Резолюция: " + x.name, note, x.t2, x.v2);
+        else put("res:" + b.bloc + ":" + rid2, "Резолюция: " + x.name, note, x.t1, x.v1);
+      }
+    }
+    for (const t of tracks) {
+      const lv = num(S.tr && S.tr[t.id]);
+      if (!lv) continue;
+      const note = (t.desc ? t.desc + " " : "") + "Уровень " + (+lv.toFixed(2)) + " из " + num(t.max) + ".";
+      put("tr:" + t.id, t.name, note, t.t1, num(t.v1) * lv);
+      put("tr:" + t.id + ":2", t.name, note, t.t2, num(t.v2) * lv);
+    }
+    return out;
+  }
+  // сводка по региону. results — расчёт стран (у ГМа); без него доля и прирост берутся из снимка публикации
+  function rgReport(rules, rid, st, results, countries) {
+    const d = rgDef(rid), R = normalizeRules(rules), K = R.K, T = R.tables, S = rgState(R, d.id, st), p = d.p;
+    const land = new Set(rgLand(R, d));
+    const blocs = rgBlocs(R, d).map(b => ({ id: b.bloc, row: b, name: ((T.bloc || []).find(x => x.id === b.bloc) || { name: b.bloc }).name,
+      members: blocMembers(R, b.bloc, countries).map(x => x.id), leader: rgLeader(b.bloc) }));
     blocs.forEach(b => b.members.forEach(id => land.add(id)));
     const pow = id => num(results && results[id] && results[id].total_power);
     const total = [...land].reduce((s, id) => s + pow(id), 0);
@@ -884,27 +1014,111 @@
       b.power = b.members.reduce((s, id) => s + pow(id), 0);
       // без расчёта стран — снимок с последней публикации; до первой публикации null («—»)
       b.share = results ? dv(b.power, total) : S.share[b.id] != null ? num(S.share[b.id]) : null;
-      b.growth = results ? num(K.ow_pow) * b.share + num(K.ow_size) * max(0, b.members.length - 1) : S.growth[b.id] != null ? num(S.growth[b.id]) : null;
+      b.growth = results ? num(K[p + "_pow"]) * b.share + num(K[p + "_size"]) * max(0, b.members.length - 1) : S.growth[b.id] != null ? num(S.growth[b.id]) : null;
       b.dis = S.dis[b.id];
-      b.infamous = b.dis >= num(K.ow_threshold);
-      b.res = (S.res[b.id] || []).map(rid => (T.owres || []).find(r => r.id === rid)).filter(Boolean);
+      b.infamous = b.dis >= num(K[p + "_threshold"]);
+      b.res = (S.res[b.id] || []).map(x => rgT(R, d, "res").find(r => r.id === x)).filter(Boolean);
     }
+    const tracks = d.tracks ? rgT(R, d, "track").map(t => ({ id: t.id, name: t.name, row: t, v: num(S.tr[t.id]), max: num(t.max) || 5, grow: num(t.grow),
+      countries: rgT(R, d, "tland").filter(x => x.track === t.id).map(x => String(x.country)).filter(id => mapCountries[id]) })) : [];
     const alive = blocs.filter(b => b.members.length);
-    return { blocs, treaty: S.treaty, viol: S.viol, log: S.log, europe: [...land], threshold: num(K.ow_threshold),
+    return { def: d, blocs, treaty: S.treaty, viol: S.viol, log: S.log, land: [...land], europe: [...land], threshold: num(K[p + "_threshold"]), tracks,
       united: alive.length === 1 ? alive[0] : null, infamous: blocs.filter(b => b.infamous) };
   }
-  // ход: бесчестье каждого союза растёт на прирост от силы и размера (ow меняется на месте)
-  function owNextTurn(rules, ow, results, countries, turn) {
-    const S = owState(rules, ow), rep = owReport(rules, S, results, countries);
+  // ход: угроза каждого союза растёт на прирост от силы и размера, треки — на свой рост за ход (st меняется на месте)
+  function rgNextTurn(rules, rid, st, results, countries, turn) {
+    const d = rgDef(rid), S = rgState(rules, d.id, st), rep = rgReport(rules, d.id, S, results, countries);
     for (const b of rep.blocs) {
-      const d = +b.growth.toFixed(3);
-      S.dis[b.id] = +(S.dis[b.id] + d).toFixed(3);
-      if (d) S.log.push({ turn, bloc: b.id, d, why: "Рост за ход: сила и размер союза" });
+      const dd = +b.growth.toFixed(3);
+      S.dis[b.id] = +(S.dis[b.id] + dd).toFixed(3);
+      if (dd) S.log.push({ turn, bloc: b.id, d: dd, why: "Рост за ход: сила и размер союза" });
+    }
+    for (const t of rep.tracks) if (t.grow && t.v < t.max) {
+      const v = +Math.min(t.max, t.v + t.grow).toFixed(3);
+      S.tr[t.id] = v;
+      S.log.push({ turn, bloc: "", d: 0, why: t.name + ": уровень " + String(v).replace(".", ",") });
     }
     S.log = S.log.slice(-60);
-    Object.assign(ow, S);
-    return ow;
+    Object.assign(st, S);
+    return st;
   }
+  // состояние всех регионов: { ow: …, af: … }. Старый вызов с одним состоянием Европы (mech.ow) тоже понимается
+  function rgAll(x) {
+    if (!x || typeof x !== "object") return {};
+    if (!REGIONS.some(d => x[d.p] && typeof x[d.p] === "object") && (x.treaty || x.dis || x.res || x.viol || x.log)) return { ow: x };
+    return x;
+  }
+  const regionMods = (rules, rg, c, id) => { const a = rgAll(rg); return REGIONS.flatMap(d => rgMods(rules, d.id, a[d.p], c, id)); };
+  // Старый Свет — прежние имена (Европа)
+  const owState = (rules, ow) => rgState(rules, "eu", ow);
+  const owMods = (rules, ow, c, id) => rgMods(rules, "eu", ow, c, id);
+  const owReport = (rules, ow, results, countries) => rgReport(rules, "eu", ow, results, countries);
+  const owNextTurn = (rules, ow, results, countries, turn) => rgNextTurn(rules, "eu", ow, results, countries, turn);
+  // ---------- государственный долг ----------
+  // c.debt = { def: дефолт (объявляется и снимается при переходе хода), loans: [{ id, cr, amt, fresh, note }] }
+  //  cr: "market" — перерасход бюджета; "c:<id>" — страна-кредитор (получает проценты); "k:<id>" — корпорация (проценты уходят из экономики)
+  //  amt — долг, млрд кр.; fresh — сколько из него выдано в этот ход (разовая прибавка к бюджету; при переходе хода обнуляется)
+  const DEBT_MIN = 0.05;
+  const mapName = id => (mapCountries[id] ? String(mapCountries[id].name || "").replace(/\n/g, " ") : "Страна " + id);
+  function debtState(c) {
+    const d = c && c.debt && typeof c.debt === "object" ? c.debt : {};
+    const seen = new Set();
+    const loans = (Array.isArray(d.loans) ? d.loans : []).filter(x => x && num(x.amt) > 0).map((x, i) => {
+      let id = String(x.id || "").replace(/[^\w-]/g, "").slice(0, 40) || "loan" + i;
+      while (seen.has(id)) id += "_";
+      seen.add(id);
+      return { id, cr: /^(market|c:\w+|k:[\w-]+)$/.test(String(x.cr)) ? String(x.cr) : "market", amt: num(x.amt), fresh: max(0, min(num(x.amt), num(x.fresh))), note: String(x.note || "").slice(0, 500) };
+    });
+    return { def: !!d.def, loans };
+  }
+  // кто кредитор: «Рынок», страна карты или корпорация справочника
+  function debtCreditor(rules, cr) {
+    cr = String(cr || "market");
+    if (cr === "market") return "Рынок (перерасход бюджета)";
+    if (cr.startsWith("c:")) return mapName(cr.slice(2));
+    if (cr.startsWith("k:")) return (((rules && rules.tables && rules.tables.corp) || []).find(x => x.id === cr.slice(2)) || { name: cr.slice(2) }).name;
+    return cr;
+  }
+  // эффекты долгов на страны-кредиторы: проценты от должников и разовая выдача займа. R — расчёт стран (ставка должника)
+  function debtMods(rules, countries, R) {
+    const out = {}, push = (id, m) => (out[id] = out[id] || []).push(m);
+    const f1 = v => String(+(+v).toFixed(1)).replace(".", ",");
+    for (const id in countries) {
+      const D = debtState(countries[id]), r = R && R[id];
+      if (!r) continue;
+      for (const L of D.loans) {
+        const to = L.cr.startsWith("c:") ? L.cr.slice(2) : "";
+        if (!to || !countries[to] || to === String(id)) continue;
+        const who = mapName(id), base = "debt:" + id + ":" + L.id;
+        push(to, { id: base + ":int", debt: true, name: "Проценты по займу: " + who, target: "budget", mode: "add", value: D.def ? 0 : +(L.amt * r.debt_rate).toFixed(3),
+          note: "Долг: " + f1(L.amt) + " млрд кр." + (D.def ? " Должник в дефолте — выплаты заморожены." : " под " + f1(r.debt_rate * 100) + "% годовых.") });
+        if (L.fresh > 0) push(to, { id: base + ":out", debt: true, name: "Выдан заём: " + who, target: "budget", mode: "add", value: -+(L.fresh * TURNS_YEAR).toFixed(3),
+          note: "Разовый расход в этот ход: " + f1(L.fresh) + " млрд кр. (бюджет годовой, поэтому × 4)." });
+      }
+    }
+    return out;
+  }
+  // переход хода: перерасход → долг «Рынку», резерв гасит сначала его, затем остальные займы пропорционально; дефолт по порогу
+  function debtNextTurn(rules, c, r) {
+    const K = normalizeRules(rules).K, D = debtState(c);
+    for (const L of D.loans) L.fresh = 0;
+    let m = D.loans.find(L => L.cr === "market");
+    if (num(r.debt_new) > 0) {
+      if (!m) D.loans.unshift(m = { id: "market", cr: "market", amt: 0, fresh: 0, note: "" });
+      m.amt += num(r.debt_new);
+    }
+    let pay = num(r.debt_repay);
+    if (m && pay > 0) { const x = min(pay, m.amt); m.amt -= x; pay -= x; }
+    const rest = D.loans.filter(L => L.cr !== "market"), tot = rest.reduce((s, L) => s + L.amt, 0);
+    if (pay > 0 && tot > 0) { const k = min(1, pay / tot); for (const L of rest) L.amt -= L.amt * k; }
+    D.loans = D.loans.filter(L => L.amt >= DEBT_MIN);
+    for (const L of D.loans) L.amt = +L.amt.toFixed(3);
+    const total = D.loans.reduce((s, L) => s + L.amt, 0);
+    D.def = total > 0 && (num(r.gdp) > 0 ? total / num(r.gdp) : Infinity) >= num(K.debt_default);
+    c.debt = D;
+    return D;
+  }
+
   function corpPresence(rules, c, id) {
     const K = rules.K, T = rules.tables;
     const own = (c && c.corp) || {};
@@ -1042,9 +1256,15 @@
     // связи стран и обстоятельства (таблица ГМа)
     r.link_mods = (world && Array.isArray(world.links)) ? world.links : [];
     mods = mods.concat(r.link_mods);
-    // Старый Свет: бесчестье союза, Бернский договор, резолюции (готовые эффекты считает computeAll / публикация)
+    // регионы (Старый Свет, Африка): угроза союза, договор, резолюции, треки (готовые эффекты считает computeAll / публикация)
     r.ow_mods = (world && Array.isArray(world.ow)) ? world.ow : [];
     mods = mods.concat(r.ow_mods);
+    // государственный долг: дефолт (статус с прошлого перехода хода); проценты от должников и выданные займы считает computeAll
+    const D = debtState(c);
+    r.debt_loans = D.loans; r.debt_def = D.def;
+    r.debt_mods = (world && Array.isArray(world.debt)) ? world.debt : [];
+    mods = mods.concat(r.debt_mods);
+    if (D.def) mods = mods.concat([{ id: "debt:def:access", name: "Дефолт по долгу", target: "access", mode: "pct", value: num(K.debt_def_access) }]);
     r.health = mod("health", r.health);
 
     // личный состав и юниты
@@ -1139,13 +1359,29 @@
     // бюджет
     const taxable = r.gdp * I.tax * (1 - r.corruption_eff / 100 * K.corr_loss);
     r.corp_tax_loss = taxable * r.corp_share * K.corp_tax;
-    r.budget = mod("budget", taxable - r.corp_tax_loss);
+    r.revenue = mod("budget", taxable - r.corp_tax_loss);
     // выручка корпораций: их доля ВВП страны
     r.corp_rev = 0;
     for (const x of r.corp_rows) { x.rev = r.gdp * x.share; r.corp_rev += x.rev; }
-    r.b_other = 1 - (I.b_def + I.b_space + I.b_sci + I.b_soc + I.b_infra);
-    r.def_budget = r.budget * I.b_def; r.space_budget = r.budget * I.b_space; r.sci_budget = r.budget * I.b_sci;
-    r.soc_budget = r.budget * I.b_soc; r.infra_budget = r.budget * I.b_infra;
+    // долг: проценты вычитаются из доходов до раздела по статьям; заём, выданный в этот ход, тратится за ход (бюджет годовой — × 4)
+    r.debt_total = D.loans.reduce((s, x) => s + x.amt, 0);
+    r.debt_gdp = r.debt_total > 0 ? (r.gdp > 0 ? r.debt_total / r.gdp : 9.99) : 0;
+    r.debt_rate = (num(K.debt_rate) + num(K.debt_risk) * r.debt_gdp * 100 + (I.stability < num(K.debt_unstab_lvl) ? num(K.debt_unstab) : 0)) / 100;
+    r.debt_service = D.def ? 0 : r.debt_total * r.debt_rate;
+    r.debt_fresh = D.loans.reduce((s, x) => s + x.fresh, 0);
+    r.budget = max(0, r.revenue - r.debt_service + r.debt_fresh * TURNS_YEAR);
+    // в дефолте занять негде: статьи сверх 100% срезаются пропорционально
+    const bSum = I.b_def + I.b_space + I.b_sci + I.b_soc + I.b_infra, bCut = D.def && bSum > 1 ? 1 / bSum : 1;
+    const bs = { def: I.b_def * bCut, space: I.b_space * bCut, sci: I.b_sci * bCut, soc: I.b_soc * bCut, infra: I.b_infra * bCut };
+    r.b_other = 1 - bSum * bCut;
+    r.def_budget = r.budget * bs.def; r.space_budget = r.budget * bs.space; r.sci_budget = r.budget * bs.sci;
+    r.soc_budget = r.budget * bs.soc; r.infra_budget = r.budget * bs.infra;
+    // перерасход за ход уходит в долг «Рынку»; резерв гасит долг (деньги займа этого хода в резерв не идут)
+    const ownBudget = max(0, r.budget - r.debt_fresh * TURNS_YEAR);
+    r.debt_new = D.def ? 0 : max(0, -r.b_other) * r.budget / TURNS_YEAR;
+    r.debt_repay = min(r.debt_total, max(0, r.b_other) * ownBudget / TURNS_YEAR);
+    r.debt_stab = (r.debt_gdp > num(K.debt_safe) && num(K.debt_stab_step) > 0 ? (r.debt_gdp - num(K.debt_safe)) / num(K.debt_stab_step) * num(K.debt_stab) : 0) + (D.def ? num(K.debt_def_stab) : 0);
+    r.debt_status = D.def ? "Дефолт: выплаты заморожены" : r.debt_total <= 0 ? "Долга нет" : r.debt_gdp >= num(K.debt_default) ? "На грани дефолта" : r.debt_gdp > num(K.debt_safe) ? "Тяжёлый долг" : "Обслуживается";
     r.coverage = r.sat_upkeep > 0 ? min(1, r.space_budget / r.sat_upkeep) : 1;
     r.sat_loss = r.coverage < 1 ? Math.ceil(r.sat_total * (1 - r.coverage) * K.sat_decay - 1e-9) : 0;
 
@@ -1197,10 +1433,10 @@
 
     // прогноз на следующий ход
     r.d_tech = mod("d_tech", dv(r.sci_budget, K.tech_cost * I.tech) * (1 + r.b_sci));
-    r.d_stab = mod("d_stab", (I.b_soc - K.soc_norm) * K.soc_eff + min(0, r.food_coef - 1) * K.food_stab + min(0, r.water_coef - 1) * K.food_stab +
-      min(0, r.en_coef - 1) * K.en_stab + (min(1.2, r.security) - 1) * K.sec_stab + (I.support - 50) * K.support_stab - num(law.stab) - r.corp_sov_pen);
+    r.d_stab = mod("d_stab", (bs.soc - K.soc_norm) * K.soc_eff + min(0, r.food_coef - 1) * K.food_stab + min(0, r.water_coef - 1) * K.food_stab +
+      min(0, r.en_coef - 1) * K.en_stab + (min(1.2, r.security) - 1) * K.sec_stab + (I.support - 50) * K.support_stab - num(law.stab) - r.corp_sov_pen + r.debt_stab);
     r.d_pop = mod("d_pop", K.pop_growth * min(1.2, r.food_coef) * min(1, r.water_coef) - I.radiation * K.rad_mort);
-    r.d_gdp = mod("d_gdp", K.growth_base + I.b_infra * K.infra_growth + (I.stability - 50) * K.stab_growth + r.b_nav_trade * K.nav_growth -
+    r.d_gdp = mod("d_gdp", K.growth_base + bs.infra * K.infra_growth + (I.stability - 50) * K.stab_growth + r.b_nav_trade * K.nav_growth -
       max(0, r.mop_load - K.mop_safe) * K.mop_pen);
     r.next_tech = min(10, I.tech + r.d_tech);
     r.next_stab = max(0, min(100, I.stability + r.d_stab));
@@ -1241,20 +1477,31 @@
   // все страны сразу (для ГМа): { id: country } → { results, ctx }
   // links — таблица связей ГМа. Сначала страны считаются с обстоятельствами, по этим результатам — доли, взаимозависимость,
   // помощь и отзвук кризиса, затем всё считается ещё раз. ctx[id].links — итоговые эффекты страны (уходят игроку с публикацией).
-  // ow — состояние Старого Света (mech.ow); его эффекты от расчёта стран не зависят и идут в оба прохода
-  function computeAll(rules, countries, links, ow) {
+  // rg — состояние регионов { ow: Старый Свет, af: Африка } (или, по-старому, одно mech.ow); эффекты регионов от расчёта стран
+  // не зависят и идут в оба прохода, игроку уходят в world.ow
+  function computeAll(rules, countries, links, rg) {
     const results = {}, ctx = {}, om = {};
-    for (const id in countries) om[id] = owMods(rules, ow, countries[id], id);
+    for (const id in countries) om[id] = regionMods(rules, rg, countries[id], id);
     const L = Array.isArray(links) ? links.filter(x => x && !x.off) : [];
-    let lm = {};
-    if (L.length) {
-      const fixed = linkMods(L, countries, null, ["fixed"]);
+    // займы у стран: проценты и выдача займа меняют бюджет кредитора — нужна ставка должника из первого прохода
+    const lend = Object.keys(countries).some(id => debtState(countries[id]).loans.some(x => x.cr.startsWith("c:")));
+    let lm = {}, dm = {};
+    if (L.length || lend) {
+      const fixed = L.length ? linkMods(L, countries, null, ["fixed"]) : {};
       for (const id in countries) results[id] = compute(rules, countries[id], id, { links: fixed[id] || [], ow: om[id] });
-      const live = linkMods(L, countries, results, ["share", "sync", "aid", "echo"]);
-      for (const id in countries) lm[id] = (fixed[id] || []).concat(live[id] || []);
+      if (L.length) {
+        const live = linkMods(L, countries, results, ["share", "sync", "aid", "echo"]);
+        for (const id in countries) lm[id] = (fixed[id] || []).concat(live[id] || []);
+      }
+      if (lend) dm = debtMods(rules, countries, results);
     }
-    for (const id in countries) results[id] = compute(rules, countries[id], id, { links: lm[id] || [], ow: om[id] });
-    for (const id in countries) { ctx[id] = worldCtx(results, id); ctx[id].links = lm[id] || []; ctx[id].ow = om[id]; }
+    for (const id in countries) results[id] = compute(rules, countries[id], id, { links: lm[id] || [], ow: om[id], debt: dm[id] || [] });
+    // проценты — по окончательной ставке должника (в первом проходе ещё нет живых связей): пересчитываем только кредиторов
+    if (lend) {
+      dm = debtMods(rules, countries, results);
+      for (const id in dm) results[id] = compute(rules, countries[id], id, { links: lm[id] || [], ow: om[id], debt: dm[id] });
+    }
+    for (const id in countries) { ctx[id] = worldCtx(results, id); ctx[id].links = lm[id] || []; ctx[id].ow = om[id]; ctx[id].debt = dm[id] || []; }
     for (const id in countries) applyWorld(rules, countries[id], results[id], ctx[id]);
     for (const id in countries) ctx[id].inms = Object.keys(results).filter(x => x !== id).map(x => results[x].inm);
     for (const id in countries) results[id].rank = 1 + ctx[id].inms.filter(x => x > results[id].inm + 1e-9).length;
@@ -1330,6 +1577,9 @@
     c.mods = (Array.isArray(rec && rec.mods) ? rec.mods : []).filter(m => m && targets.has(m.target) && (m.mode === "add" || m.mode === "pct") && isFinite(+m.value))
       .map((m, i) => ({ id: "imp_" + String(m.id || i).replace(/[^\w-]/g, "").slice(0, 40), name: String(m.name || "Эффект").slice(0, 120), target: m.target, mode: m.mode, value: +m.value, note: String(m.note || "").slice(0, 500) }));
     c.dossier = String((rec && rec.notes) || "").slice(0, 8000);
+    // госдолг (стартовый — по летописи): займы с кредиторами
+    c.debt = debtState(rec);
+    for (const L of c.debt.loans) { L.id = "imp_" + L.id.replace(/^imp_/, ""); L.fresh = 0; }
     // корпорации в стране: только существующие, присутствие 0–10, отношения −100…100, анклавы 0–20
     const corpIds = new Set((T.corp || []).map(x => x.id)), src2 = (rec && rec.corp) || {};
     for (const id in src2) {
@@ -1344,7 +1594,7 @@
     for (const k in INPUTS) c.in[k] = INPUTS[k][2] === "txt" ? "" : 0;
     Object.assign(c.in, { mob_law: 1, tech: 1, stability: 50, support: 50, working_share: 0.55, mob_share: 0.18, tax: 0.25 });
     COUNT_TABLES.forEach(t => (c.cnt[t] = {}));
-    c.corp = {}; c.blocs = [];
+    c.corp = {}; c.blocs = []; c.debt = { def: false, loans: [] };
     return c;
   }
 
@@ -1352,6 +1602,7 @@
     K_GROUPS, K_META, TABLES, COUNT_TABLES, INPUTS, OUT, MOD_TARGETS, SAMPLES, CORP_CH, IDEO_FX, ideologyOf, ideoMods,
     defaultRules, normalizeRules, compute, worldCtx, applyWorld, computeAll, emptyCountry, corpPresence, setMap, wonderMods, wonderMode, LINK_KINDS, linkMods, linkIds, normLinks, paramLore, loreDesc, blocLinks, blocsOf, blocMembers, OLD_BLOCS, corpWorld, corpClass, parseImport, importCountry,
     TURN_MONTHS, TURNS_YEAR, turnYear, firstYear, turnMonths, turnLabel, isOldTurn, quarterRules, quarterMods, quarterLinks,
-    OW_TREATY, owState, owMods, owReport, owNextTurn
+    debtState, debtCreditor, debtMods, debtNextTurn,
+    OW_TREATY, owState, owMods, owReport, owNextTurn, REGIONS, rgState, rgMods, rgReport, rgNextTurn, rgAll, regionMods
   };
 })();

@@ -332,6 +332,14 @@
 .ow-res li.on b { color: var(--line); }
 .ow-res .hint { color: var(--muted); font-size: 12px; }
 .bloc-ow { font-size: 12px; color: var(--muted); margin: -4px 0 8px; }
+.ow h3 { margin: 14px 0 6px; font-size: 14px; }
+.rg-tracks { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 8px; }
+.rg-track { font-size: 13px; padding: 6px 10px; border-left: 3px solid var(--line-dim); background: rgba(24, 217, 245, .04); }
+.rg-track.bad { border-color: var(--danger); }
+.rg-track-h { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px; }
+.rg-track .bar { display: block; height: 6px; margin: 5px 0; background: rgba(24, 217, 245, .12); border-radius: 3px; overflow: hidden; }
+.rg-track .bar i { display: block; height: 100%; background: linear-gradient(90deg, #e2a35e, var(--danger)); }
+.rg-track .hint { color: var(--muted); font-size: 12px; }
 .gm-ow { display: flex; flex-direction: column; gap: 10px; }
 .ow-gm-card { border: 1px solid var(--line-dim); border-radius: 3px; padding: 10px 12px; }
 .ow-gm-card.bad { border-color: var(--danger); }
@@ -340,3 +348,12 @@
 .ow-gm-row input.num { width: 80px; }
 .ow-gm-row input, .ow-gm-row select { background: rgba(0, 0, 0, .35); border: 1px solid var(--line-dim); border-radius: 3px; color: var(--text); font: inherit; font-size: 13px; padding: 4px 6px; }
 .ow-gm-row .small-btn { margin: 0; }
+
+/* государственный долг */
+.loans { margin: 6px 0 4px; }
+.loans .debt-def { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; margin: 0 0 8px; cursor: pointer; }
+.loans-t td.btns { white-space: nowrap; text-align: right; }
+.loans-t td small.sub { display: block; color: var(--muted); font-size: 12px; }
+.loans .small-btn { margin-top: 6px; }
+.debt-defs { list-style: none; padding: 0; margin: 6px 0 16px; display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.debt-defs li { display: inline-flex; align-items: center; gap: 4px; color: var(--danger); }

@@ -24,7 +24,7 @@
 <script src="../js/moon-names.js?v=20261115a"></script>
 <script src="../js/wrap.js?v=20261115a"></script>
 <script src="../js/mech-lore.js?v=20261117q"></script>
-<script src="../js/mech-model.js?v=20261117u"></script>
+<script src="../js/mech-model.js?v=20261118d"></script>
 <script src="../js/mech-crypto.js?v=20261115a"></script>
 <script>
 (async function () {
@@ -943,7 +943,7 @@
   await test("Вики → События", () => go("wiki/events", () => visible(D.getElementById("wikiEvents")), "события"));
   await test("Вики → Лор: пять разделов", () => go("wiki/lore", () => D.querySelectorAll("#loreGrid .lore-card").length === 5 &&
     [...D.querySelectorAll("#loreGrid .lore-card b")].map(b => b.textContent).join("|") === "Идеологии 23-го века|Корпорации|Хронология|Государства|Регионы", "разделы"));
-  await test("Лор → Регионы: шесть регионов, у каждого страница с государствами; Европа — Старый Свет, остальные — заглушка", async () => {
+  await test("Лор → Регионы: шесть регионов, у каждого страница с государствами; Европа — Старый Свет, Африка — механика Африки, остальные — заглушка", async () => {
     const regs = lore.regions.filter(r => r.id !== "powers");
     await go("wiki/lore/regions", () => D.querySelectorAll("#loreArticle .regions-grid .lore-card").length === regs.length, "регионы");
     const titles = [...D.querySelectorAll("#loreArticle .regions-grid .lore-card b")].map(b => b.textContent);
@@ -955,6 +955,7 @@
       total += want;
       const txt = text("#loreArticle .lore-text");
       if (r.id === "eu") await go("wiki/lore/regions/eu", () => D.querySelector("#loreArticle #ow .ow-t tbody tr"), "Старый Свет");
+      else if (r.id === "af") await go("wiki/lore/regions/af", () => D.querySelector("#loreArticle #rg-af .ow-t tbody tr") && D.querySelector("#loreArticle #rg-af .rg-track"), "Африка");
       else assert(/заполняется по ходу кампании/.test(txt) || W.KGSite.data.texts["lore.region." + r.id + ".html"] != null, r.id + ": заглушка");
     }
     assert(total === lore.states.length, "все государства по регионам: " + total);
@@ -1090,6 +1091,68 @@
     D.querySelector("#mechBlocs .ow-link button").click();
     await waitFor(() => W.location.hash === "#wiki/lore/regions/eu" && D.querySelector("#loreArticle #ow"), "переход по ссылке");
   });
+
+  group("Африка");
+  const AFB = rulesLive.tables.afbloc.map(b => b.bloc);
+  const AFL = rulesLive.tables.afland.map(x => String(x.country));
+  await test("Союзы Африки — 5 союзов, страны вне союзов на карте и ни в одном из них, Египет в Африке", () => {
+    assert(AFB.slice().sort().join() === ["al_bamako_compact", "al_cog_kimpwanza_league", "al_eqg_morgan", "al_tzn_united", "al_united_arab_alliance"].sort().join(), AFB.join());
+    assert(AFB.every(b => Bid.has(b)), "союз не из таблицы «Союзы и блоки»");
+    const bad = AFL.filter(id => !MC[id] || AFB.includes(MC[id].alliance) || OWB.includes(MC[id].alliance));
+    assert(!bad.length && new Set(AFL).size === AFL.length, "страны: " + bad.map(nm).join(", "));
+    assert(!AFL.some(id => rulesLive.tables.owland.some(x => String(x.country) === id)), "страна в двух регионах");
+    const res = rulesLive.tables.afres, tr = new Set(rulesLive.tables.aftrack.map(t => t.id)), tg = new Set(MM.MOD_TARGETS.map(t => t[0]));
+    assert(res.every(x => !x.bloc || AFB.includes(x.bloc)) && AFB.every(b => res.some(x => x.bloc === b)), "у каждого союза свои резолюции");
+    assert(res.every(x => (!x.t1 || tg.has(x.t1)) && (!x.t2 || tg.has(x.t2)) && (!x.track || tr.has(x.track))), "показатели и треки резолюций");
+    assert(rulesLive.tables.aftland.every(x => tr.has(x.track) && MC[x.country]), "страны треков");
+    const egy = lore.states.find(s => s.id === "egy");
+    assert(egy && egy.geo === "af" && MC["44"].alliance === "al_united_arab_alliance" && MC["55"].alliance === "al_united_arab_alliance" && MC["81"].alliance === "al_united_arab_alliance", "Египет, Судан и Оромия");
+    assert(MC["73"].alliance === "al_cog_kimpwanza_league", "Адамава в Лиге Кимпванза");
+    return AFB.length + " союзов, " + AFL.length + " стран вне союзов, " + res.length + " резолюций, " + tr.size + " трека";
+  });
+  await test("Возвращённая Африка: 16 государств и 5 кочевых земель на карте, Анархии в Африке нет", () => {
+    const states = ["52", "54", "55", "57", "69", "70", "71", "72", "73", "75", "76", "77", "78", "79", "80", "81"], lands = ["56", "59", "60", "145", "146"];
+    const miss = states.concat(lands).filter(id => !MC[id] || !T8.bbox[+id]);
+    assert(!miss.length, "нет на карте: " + miss.join(", "));
+    assert(lands.every(id => (lore.notStates || {})[id]) && states.every(id => lore.states.some(s => s.map.includes(id) && s.geo === "af")), "статьи и земли без государства");
+    const af = Object.values(map.provinces).filter(p => p.c === "61" && p.label && p.label[0] > 1880 && p.label[0] < 2650 && p.label[1] > 1700 && p.label[1] < 2700 &&
+      !(p.label[0] > 2440 && p.label[1] < 1960));   // без Аравии
+    assert(!af.length, "провинции Анархии в Африке: " + af.map(p => p.name).join(", "));
+    // Союз Магриба разделён: Марокко (№ 46, Идрис IV), Союз Магриба (№ 147), Мавритания (№ 148), все вне союзов
+    const realOf = id => new Set(Object.values(map.provinces).filter(p => p.c === id).map(p => p.real));
+    assert(nm("46") === "Королевство Марокко" && nm("147") === "Союз Магриба" && nm("148") === "Мавритания", "названия");
+    assert(!realOf("46").has("Algeria") && !realOf("46").has("Mauritania") && realOf("147").has("Algeria") && realOf("148").has("Mauritania"), "провинции");
+    assert(["46", "147", "148"].every(id => !MC[id].alliance && T8.bbox[+id] && AFL.includes(id)), "вне союзов, на карте, в Африке");
+    return states.length + " государств, " + lands.length + " земель; Магриб разделён на три страны";
+  });
+  await test("Угроза и треки Африки: старт по лору, рост за ход, эффекты на страны треков, нарушенный компромисс", () => {
+    const S = MM.rgState(rulesLive, "af", null);
+    assert(S.dis.al_tzn_united === 4 && S.dis.al_eqg_morgan === 3 && S.dis.al_cog_kimpwanza_league === 1 && S.treaty === "active", JSON.stringify(S.dis));
+    assert(S.tr.af_rift === 2 && S.tr.af_nile === 2 && S.tr.af_sahel === 3, JSON.stringify(S.tr));
+    const land = MM.rgReport(rulesLive, "af", null, null).land, res = {};
+    land.forEach((id, i) => (res[id] = { total_power: 100 + i }));
+    const st = {}; MM.rgNextTurn(rulesLive, "af", st, res, null, 3);
+    near(st.tr.af_sahel, 3.05, 1e-9, "пустыня растёт сама"); near(st.tr.af_nile, 2.03, 1e-9, "Нил растёт сам"); near(st.tr.af_rift, 2, 1e-9, "Разлом сам не растёт");
+    assert(st.dis.al_tzn_united > 4, "угроза растёт");
+    const e = MM.emptyCountry(), ids = x => x.map(m => m.target + ":" + +m.value.toFixed(4)).sort().join();
+    assert(ids(MM.rgMods(rulesLive, "af", null, e, "55")) === "d_stab:-0.05,food_prod:-4,food_prod:-6,water_sup:-6", "Судан: " + ids(MM.rgMods(rulesLive, "af", null, e, "55")));
+    assert(ids(MM.rgMods(rulesLive, "af", { treaty: "amended" }, e, "52")) === "d_stab:-0.25", "Сомали при нарушенном компромиссе");
+    assert(!MM.rgMods(rulesLive, "af", { treaty: "void" }, e, "19").length, "Германия вне Африки");
+    assert(!MM.owMods(rulesLive, { treaty: "void" }, e, "52").length, "Сомали вне Европы");
+    const both = MM.regionMods(rulesLive, { ow: { treaty: "void" }, af: { treaty: "void" } }, e, "52");
+    assert(both.every(m => m.rg === "af"), "только африканские эффекты");
+    const cs = { "55": MM.SAMPLES[1].make() }, r = MM.computeAll(rulesLive, cs, [], { af: null });
+    assert(r.ctx["55"].ow.length === 4 && r.ctx["55"].ow.every(m => m.rg === "af"), "эффекты уходят игроку в world.ow");
+  });
+  await test("Лор → Регионы → Африка: угроза союзов, Яундский компромисс, треки и кочевые земли", async () => {
+    await go("wiki/lore/regions/af", () => D.querySelector("#loreArticle #rg-af .ow-t tbody tr") && D.querySelector("#loreArticle .region-lands"), "Африка");
+    const rows = [...D.querySelectorAll("#loreArticle #rg-af .ow-t tbody tr")];
+    assert(rows.length === AFB.length, "строк: " + rows.length);
+    assert(/Яундский компромисс/.test(D.querySelector("#loreArticle #rg-af .ow-status").textContent), "статус компромисса");
+    assert(D.querySelectorAll("#loreArticle #rg-af .rg-track").length === 3, "треки");
+    assert(!/(^|[^а-яё])мод(а|е|ом|у)?([^а-яё]|$)|Beyond/i.test(D.querySelector("#loreArticle").textContent), "без упоминаний мода");
+    assert(/Тибести/.test(text("#loreArticle .region-lands")), "кочевые земли");
+  });
   await test("Механики → Союзы: состав каждого блока как на карте, лидер помечен, фильтр по виду", async () => {
     await go("wiki/mech/blocs", () => D.querySelectorAll("#mechBlocs .bloc-card").length === B.length, "союзы");
     const bad = [];
@@ -1211,6 +1274,77 @@
       assert([...box.querySelectorAll(".mrow .l")].some(x => x.textContent === "Чудеса страны"), "строка «Чудеса страны»");
       return keys.size + " строк с описанием";
     } finally { box.remove(); }
+  });
+  group("Государственный долг");
+  await test("Госдолг: ставка, обслуживание до раздела бюджета, перерасход и погашение из резерва", () => {
+    const K = rulesM.K, c = MM.SAMPLES[1].make(), base = MM.compute(rulesM, c, "x");
+    assert(base.debt_total === 0 && base.debt_service === 0 && base.budget === base.revenue && base.debt_status === "Долга нет", "без долга бюджет не меняется");
+    const amt = base.gdp * 0.6;
+    c.debt = { def: false, loans: [{ id: "a", cr: "market", amt }] };
+    const r = MM.compute(rulesM, c, "x");
+    near(r.debt_gdp, 0.6, 1e-9, "долг/ВВП");
+    near(r.debt_rate, (K.debt_rate + K.debt_risk * 60 + (c.in.stability < K.debt_unstab_lvl ? K.debt_unstab : 0)) / 100, 1e-12, "ставка");
+    near(r.debt_service, amt * r.debt_rate, 1e-9, "проценты");
+    near(r.budget, base.revenue - r.debt_service, 1e-9, "бюджет = доходы − проценты");
+    near(r.def_budget, r.budget * c.in.b_def, 1e-9, "статьи — от бюджета после процентов");
+    assert(r.debt_stab === 0 && r.debt_status === "Обслуживается", "60% ВВП — без штрафа");
+    // резерв гасит долг
+    near(r.debt_repay, r.b_other * r.budget / 4, 1e-9, "погашение за ход");
+    const D = MM.debtNextTurn(rulesM, c, r);
+    near(D.loans[0].amt, amt - r.debt_repay, 1e-3, "долг после хода");
+    // перерасход уходит в долг «Рынку»
+    const o = MM.SAMPLES[1].make(); o.in.b_soc += 0.3;
+    const ro = MM.compute(rulesM, o, "x");
+    near(ro.debt_new, -ro.b_other * ro.budget / 4, 1e-9, "новый долг за ход");
+    MM.debtNextTurn(rulesM, o, ro);
+    assert(o.debt.loans.length === 1 && o.debt.loans[0].cr === "market" && Math.abs(o.debt.loans[0].amt - ro.debt_new) < 1e-3, "долг рынку");
+    // тяжёлый долг: штраф стабильности пропорционально превышению
+    c.debt = { def: false, loans: [{ id: "a", cr: "market", amt: base.gdp * 1.2 }] };
+    const h = MM.compute(rulesM, c, "x");
+    near(h.debt_stab, (1.2 - K.debt_safe) / K.debt_stab_step * K.debt_stab, 1e-9, "штраф стабильности");
+    near(h.d_stab - base.d_stab, h.debt_stab, 1e-9, "штраф входит в изменение стабильности");
+    return "ставка " + (r.debt_rate * 100).toFixed(1) + "%, проценты " + r.debt_service.toFixed(1) + " млрд/год";
+  });
+  await test("Госдолг: проценты стране-кредитору, выдача займа, дефолт", () => {
+    const K = rulesM.K, a = MM.SAMPLES[2].make(), b = MM.SAMPLES[0].make();
+    const base = MM.computeAll(rulesM, { "1": a, "2": b }).results;
+    a.debt = { def: false, loans: [{ id: "x", cr: "c:2", amt: 200, fresh: 20 }, { id: "y", cr: "k:maf", amt: 50 }] };
+    const all = MM.computeAll(rulesM, { "1": a, "2": b }), R = all.results;
+    const int = all.ctx["2"].debt.find(m => /^Проценты/.test(m.name)), out = all.ctx["2"].debt.find(m => /^Выдан/.test(m.name));
+    near(int.value, 200 * R["1"].debt_rate, 1e-3, "проценты кредитору по окончательной ставке");
+    near(out.value, -80, 1e-9, "выдача займа — расход кредитора × 4");
+    near(R["2"].revenue, base["2"].revenue + int.value - 80, 1e-6, "доходы кредитора");
+    near(R["1"].budget, R["1"].revenue - R["1"].debt_service + 80, 1e-6, "заём этого хода — в бюджет должника × 4");
+    assert(!all.ctx["1"].debt.length, "корпорация-кредитор эффектов на страны не даёт");
+    // дефолт: выплаты заморожены, рынки и стабильность падают, перерасход срезан
+    a.debt.def = true; a.in.b_soc += 0.3;
+    const d = MM.computeAll(rulesM, { "1": a, "2": b }), r = d.results["1"];
+    assert(r.debt_service === 0 && d.ctx["2"].debt.find(m => /^Проценты/.test(m.name)).value === 0, "выплаты заморожены");
+    near(r.access, base["1"].access * (1 + K.debt_def_access / 100), 1e-9, "доступ к рынкам");
+    assert(Math.abs(r.b_other) < 1e-12 && r.debt_new === 0, "статьи срезаны до 100%, нового долга нет");
+    assert(r.debt_stab <= K.debt_def_stab && r.debt_status.startsWith("Дефолт"), "штраф стабильности дефолта");
+    // дефолт объявляется и снимается при переходе хода
+    const c = MM.SAMPLES[2].make(), g = MM.compute(rulesM, c, "x").gdp;
+    c.debt = { loans: [{ id: "m", cr: "market", amt: g * 1.6 }] };
+    MM.debtNextTurn(rulesM, c, MM.compute(rulesM, c, "x"));
+    assert(c.debt.def === true, "дефолт объявлен");
+    c.debt.loans[0].amt = g * 0.5;
+    MM.debtNextTurn(rulesM, c, MM.compute(rulesM, c, "x"));
+    assert(c.debt.def === false, "дефолт снят");
+  });
+  await test("Госдолг на сайте: блок в карточке страны, показатель в обзоре, дефолты в рейтинге", async () => {
+    const rl = W.KGMechModel, c = rl.SAMPLES[0].make();
+    c.debt = { def: false, loans: [{ id: "x", cr: "c:18", amt: 120, note: "проверка" }] };
+    const box = W.KGMech.countryView({ id: "8", c, world: null, editable: false });
+    D.body.append(box);
+    try {
+      const t = box.textContent;
+      assert(/Государственный долг/.test(t) && /Ставка по долгу/.test(t) && /Обслуживание долга/.test(t), "блок долга");
+      assert(box.querySelector(".loans-t") && /Франко-Иберийская Федерация/.test(box.querySelector(".loans-t").textContent), "займ с кредитором");
+      assert(/Госдолг, % ВВП/.test(t), "показатель в обзоре");
+      assert(!box.querySelector(".loans button"), "игрок займы не правит");
+    } finally { box.remove(); }
+    await go("wiki/mech/rating", () => /Дефолты/.test(text("#mechRating")), "рейтинг");
   });
   await test("Ни одной ошибки JavaScript за весь прогон", () => {
     const e = errs.filter(x => !/youtube|ytimg|ERR_BLOCKED|Failed to load resource/i.test(x));
