@@ -52,10 +52,11 @@
     if (l.kind === "img") {
       el = document.createElement("img"); el.alt = ""; el.draggable = false; el.decoding = "async";
       el.dataset.src = l.src; // выключенные слои грузятся при включении, включённые — после показа карты (loadLayers)
+      el.dataset.lo = l.src.replace(/\.webp$/, "_lo.webp"); // половинный размер — для общего вида
     } else if (l.kind === "div") {
       el = document.createElement("div");
     } else if (l.kind === "canvas") {
-      el = document.createElement("canvas"); el.width = W; el.height = H;
+      el = document.createElement("canvas"); el.width = 1; el.height = 1; // полный размер — при первом мазке ГМа (pctx)
     } else {
       el = document.createElementNS(NS, "svg");
       el.setAttribute("viewBox", `0 0 ${W} ${H}`); el.setAttribute("width", W); el.setAttribute("height", H);
@@ -68,7 +69,12 @@
     world.appendChild(el);
     L[l.id] = el;
   });
-  const paintCtx = L.paint.getContext("2d", { willReadFrequently: true });
+  // холст предпросмотра кисти (W×H×4 байт) создаётся при первом мазке ГМа, у игроков его нет
+  let paintCtx = null;
+  function pctx() {
+    if (!paintCtx) { L.paint.width = W; L.paint.height = H; paintCtx = L.paint.getContext("2d", { willReadFrequently: true }); }
+    return paintCtx;
+  }
   // Бесшовная карта: картинки повторяются по краям сразу (это дёшево), векторные слои —
   // после загрузки, по одному в свободное время, чтобы не тормозить первую отрисовку.
   const WR = window.KGWrap.create(world, W, H);
@@ -83,21 +89,46 @@
   }
 
   const isVisible = l => (ui.vis[l.id] != null ? ui.vis[l.id] : l.vis);
-  function ensureSrc(img) { if (img && img.tagName === "IMG" && !img.getAttribute("src") && img.dataset.src) img.src = img.dataset.src; }
+  // Рисунок слоя: на общем виде — половинного размера (_lo.webp, в 3 раза легче), полный — когда карту приблизили
+  // настолько, что половинного не хватает (hiNeeded), или его просит глобус. Полный сначала грузится и раскодируется
+  // в стороне, потом подменяет половинный — без мигания и без долгого кадра.
+  let hiOn = false;
+  const hiNeeded = () => s * (window.devicePixelRatio || 1) > 0.6;
+  function ensureSrc(img) {
+    if (img && img.tagName === "IMG" && !img.getAttribute("src") && img.dataset.src) img.src = hiOn || !img.dataset.lo ? img.dataset.src : img.dataset.lo;
+  }
+  async function toFull(img) {
+    if (!img || img.tagName !== "IMG" || !img.dataset.src) return;
+    const full = img.dataset.src;
+    if (img.getAttribute("src") !== full) {
+      const pre = new Image(); pre.src = full;
+      try { await pre.decode(); } catch (e) { /* не раскодировалось — подставим как есть */ }
+      img.src = full;
+      if (img === L.relief) L.landDark.src = full; // подложка суши — тот же рисунок
+    }
+    await whenLoaded(img);
+  }
+  const LAYER_ORDER = ["relief", "hydro", "road_major", "road_secondary", "citiesFill", "road_road", "rail"];
+  const imgLayers = () => flat.filter(l => l.kind === "img" && l.id !== "landDark")
+    .sort((a, b) => (LAYER_ORDER.indexOf(a.id) + 1 || 99) - (LAYER_ORDER.indexOf(b.id) + 1 || 99));
+  async function upgradeLayers() {
+    if (hiOn) return; hiOn = true;
+    for (const l of imgLayers()) if (L[l.id].getAttribute("src")) await toFull(L[l.id]);
+  }
   // Рисунки слоёв (рельеф, реки, дороги) весят мегабайты. На медленном канале они отнимали скорость у данных границ,
   // поэтому грузятся после показа карты и по одному: сначала рельеф, затем реки, дороги, городские зоны.
   let layersGo = false; // до показа карты включённые слои рисунков не грузим
   async function loadLayers() {
     layersGo = true;
-    const order = ["relief", "hydro", "road_major", "road_secondary", "citiesFill", "road_road", "rail"];
-    const list = flat.filter(l => l.kind === "img").sort((a, b) => (order.indexOf(a.id) + 1 || 99) - (order.indexOf(b.id) + 1 || 99));
-    for (const l of list) {
+    if (hiNeeded()) hiOn = true; // карту открыли сразу приближенной (страна из адреса) — полные рисунки
+    for (const l of imgLayers()) {
       const el = L[l.id];
-      if (!(l.internal || isVisible(l)) || el.getAttribute("src")) continue;
+      if (!isVisible(l) || el.getAttribute("src")) continue;
       el.fetchPriority = "low"; ensureSrc(el);
-      if (l.id === "relief") L.landDark.src = el.src; // подложка суши — тот же рисунок
+      if (l.id === "relief") L.landDark.src = el.getAttribute("src"); // подложка суши — тот же рисунок
       await whenLoaded(el);
     }
+    if (!L.landDark.getAttribute("src")) { ensureSrc(L.landDark); } // рельеф выключен — подложке нужен свой
   }
   function applyLayer(l) {
     const el = L[l.id]; if (!el || l.internal) return;
@@ -266,11 +297,20 @@
   }
   const fmtPop = p => (p >= 1e6 ? (p / 1e6).toFixed(p >= 1e7 ? 1 : 2).replace(/\.?0+$/, "").replace(".", ",") + " млн"
     : p >= 1e4 ? Math.round(p / 1e3).toLocaleString("ru-RU") + " тыс." : Math.round(p).toLocaleString("ru-RU")) + " жителей";
+  // Значки городов — по 6 элементов на город. На общем виде видны только столицы и города от миллиона, остальные ярусы
+  // (CSS: #mapFrame[data-cz]) создаются при первом приближении до их масштаба.
+  let cityZ = 0;
+  function showCityTier(z) {
+    if (z <= cityZ) return;
+    cityZ = z;
+    if (state && state.cities) for (const id in state.cities) if (!els.cities[id]) renderCity(id);
+  }
   function renderCity(id) {
     const c = state.cities[id];
     let g = els.cities[id];
     if (!c) { if (g) { g.remove(); delete els.cities[id]; } if (popCity === id) closeCityPop(); return; }
     if (!g) {
+      if (!c.capital && cityType(c).z > cityZ) return; // ярус скрыт на этом масштабе — создадим при приближении (showCityTier)
       g = svgEl("g", { "data-col": "cities", "data-id": id }, L.cities);
       const ci = svgEl("g", { class: "ci" }, g);
       svgEl("circle", { class: "c-ring", r: 0 }, ci);
@@ -554,6 +594,7 @@
     const cz = String(s >= 1.8 ? 3 : s >= 1.1 ? 2 : s >= 0.6 ? 1 : 0);
     const ck = s > 1.8 ? (Math.round(1.8 / s * 20) / 20).toFixed(2) : "1"; // значки не раздуваются при приближении
     if (frame.dataset.cz !== cz) frame.dataset.cz = cz;
+    showCityTier(+cz);
     // переменные — на world, а не на слоях: правка слоя заставила бы пересобрать его копии по краям
     if (world.style.getPropertyValue("--ck") !== ck) world.style.setProperty("--ck", ck);
     const lod = s < 0.5 ? "far" : "near"; // издалека границы провинций не читаются, а рисовать их дорого
@@ -565,6 +606,8 @@
     if (typeof renderMeasure === "function") renderMeasure();
     if (typeof popCity !== "undefined" && popCity && !popAt) placeCityPop();
     afterView.forEach(f => f());
+    if (layersGo && !hiOn && hiNeeded()) upgradeLayers(); // приблизили — полные рисунки слоёв
+    if (lod === "near" && !provP) ensureProvinces(); // приблизили — границы и подписи провинций
   }
   // экранная x точки карты — на той копии, что ближе к центру окна
   function screenX(x) {
@@ -1042,6 +1085,7 @@
     let d = null;
     try { d = await DB.get("draft"); } catch (e) { return; }
     if (!d) return;
+    await ensureProvinces();
     const when = new Date(d.time).toLocaleString("ru-RU");
     const note = d.base === loadedStamp ? "Черновик от " + when + "." : "Черновик от " + when + " сделан для более старой версии карты.";
     const ok = await ask("Восстановить неопубликованный черновик?", "", { confirm: true, note });
@@ -1097,6 +1141,7 @@
     try { refreshSats(); } catch (e) { /* */ }
     if (window.KGMoon) window.KGMoon.onGmChange();
     window.dispatchEvent(new CustomEvent("gmchange", { detail: gm }));
+    if (gm) ensureProvinces(); // правка провинций, черновик
   }
   $("gmLoginBtn").onclick = login;
   $("logoutBtn").onclick = logout;
@@ -1334,7 +1379,7 @@
     x1 = Math.min(W, Math.ceil(x1)); y1 = Math.min(H, Math.ceil(y1));
     const bw = x1 - x0, bh = y1 - y0;
     if (bw <= 0 || bh <= 0) return;
-    const img = paintCtx.getImageData(x0, y0, bw, bh), d = img.data;
+    const img = pctx().getImageData(x0, y0, bw, bh), d = img.data;
     for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
       const i = (y0 + y) * W + (x0 + x);
       if (E.mark[i] !== E.strokeNo) continue;
@@ -1342,7 +1387,7 @@
       const c = !v ? [16, 24, 46] : E === P ? [120, 235, 255] : rgbOf(v);
       d[o] = c[0]; d[o + 1] = c[1]; d[o + 2] = c[2]; d[o + 3] = E === P ? 150 : 235;
     }
-    paintCtx.putImageData(img, x0, y0);
+    pctx().putImageData(img, x0, y0);
   }
   const rgbCache = {};
   function rgbOf(v) {
@@ -1355,7 +1400,7 @@
   function paintValue() {
     if (tool === "eraser") return 0;
     if (provMode()) {
-      if (!provReady) { toast("Провинции ещё загружаются, подождите пару секунд"); return null; }
+      if (!provReady) { ensureProvinces(); toast("Провинции ещё загружаются, подождите пару секунд"); return null; }
       if (!brushProv || !state.provinces[brushProv]) { toast("Возьмите провинцию пипеткой (Alt+клик) или создайте новую"); return null; }
       return +brushProv;
     }
@@ -1367,7 +1412,7 @@
     const v = paintValue(); if (v == null) return false;
     const E = eng();
     if (eraseProv()) {
-      if (!provReady) { toast("Провинции ещё загружаются, подождите пару секунд"); return false; }
+      if (!provReady) { ensureProvinces(); toast("Провинции ещё загружаются, подождите пару секунд"); return false; }
       // «Не трогать соседей» (режим «Страны»): стираем только страну, с которой начали;
       // 0 — начали с ничьей земли, тогда страну берём первую, на которую попадёт курсор
       const only = E === T && paintOpts().keep ? T.at(p[0], p[1]) : null;
@@ -1420,7 +1465,7 @@
   function endStroke() {
     const st = stroke; stroke = null;
     const E = st.E, res = E.endStroke(st.ch);
-    paintCtx.clearRect(0, 0, W, H);
+    pctx().clearRect(0, 0, W, H);
     if (!res.idx.length) return;
     recomputeAny(res);
     pushUndo({ kind: "paint", stroke: res });
@@ -1861,8 +1906,7 @@
   function whenLoaded(img) { return img.complete && img.naturalWidth ? Promise.resolve() : new Promise(r => { img.addEventListener("load", r, { once: true }); img.addEventListener("error", r, { once: true }); }); }
   async function buildGlobeTextures() {
     const imgs = [L.relief, L.road_major, L.road_secondary, L.road_road, L.rail, L.hydro, L.citiesFill];
-    imgs.forEach(ensureSrc);
-    await Promise.all(imgs.map(whenLoaded));
+    await Promise.all(imgs.map(toFull)); // глобусу — полные рисунки (половинные он растянул бы)
     globe.setLand(L.relief);
     const N = W * H, lines = new Uint8Array(N * 4);
     [L.road_major, L.road_secondary, L.road_road, L.rail].forEach((img, ch) => {
@@ -1898,6 +1942,7 @@
       $("globeLoading").classList.remove("hidden");
       globeReady = buildGlobeTextures().then(() => $("globeLoading").classList.add("hidden"));
     }
+    if (mode === "globe") ensureProvinces(); // подсветка провинций на глобусе
     viewMode = mode;
     frame.classList.toggle("globe-mode", mode === "globe");
     $("globeWrap").classList.toggle("hidden", mode !== "globe");
@@ -2415,6 +2460,7 @@
   // ---------- загрузка ----------
   function rebuildAll(keepPaths) {
     for (const col of COLS) {
+      if (col === "provinces" && !provWanted) continue; // провинции строит ensureProvinces, когда они понадобятся
       const map = col === "countries" ? els.clabel : col === "provinces" ? provLbl : els[col];
       for (const id of Object.keys(map)) if (!state[col][id]) RENDER[col](id);
       for (const id in state[col]) RENDER[col](id);
@@ -2478,6 +2524,44 @@
     try { await M.load("data/" + name + ".ids" + ver, land); }
     catch (e) { console.warn(name + ".ids:", e.message, "— читаю PNG"); await M.load("data/" + name + ".png" + ver, land); }
   }
+  // Провинции: растр (provinces.ids), 3656 контуров и подписей — это ~0,7 с работы и тысячи элементов.
+  // На общем виде их не видно, поэтому строим один раз, когда они понадобились.
+  let rasterVer = "", pathsCache = null, provP = null, provWanted = false;
+  function savePaths(patch) { pathsCache = Object.assign({}, pathsCache, patch); DB.set("paths", pathsCache).catch(() => {}); }
+  // данные провинций (растр, контуры из кэша или из фонового потока) — без элементов страницы; заранее, в свободное время
+  let provDataP = null;
+  function prepareProvinces() {
+    if (provDataP || !rasterVer) return provDataP || Promise.reject(new Error("карта ещё не загружена"));
+    provDataP = (async () => {
+      await loadIds(P, "provinces", rasterVer, T.land);
+      const kp = PATHS_VER + "|" + idsHash(P.ids);
+      const hitP = !!(pathsCache && pathsCache.kp === kp && pathsCache.p);
+      const pp = hitP ? pathsCache.p : await computePaths(P, true, false);
+      if (!hitP) savePaths({ kp, p: { paths: pp.paths } });
+      return { pp, hitP };
+    })();
+    provDataP.catch(() => { provDataP = null; });
+    return provDataP;
+  }
+  // элементы провинций (подписи и контуры) — когда понадобились; порциями, чтобы не было долгого кадра
+  function ensureProvinces() {
+    if (provP || !rasterVer) return provP || Promise.resolve();
+    provWanted = true;
+    provP = (async () => {
+      const t1 = performance.now(), ids = Object.keys(state.provinces);
+      for (let i = 0; i < ids.length; i += 400) {
+        for (const id of ids.slice(i, i + 400)) renderProvince(id);
+        await new Promise(r => setTimeout(r, 0));
+      }
+      const { pp, hitP } = await prepareProvinces();
+      await applyProvPaths(pp.paths);
+      provReady = true;
+      console.info("провинции " + (hitP ? "из кэша" : "построены") + " за", Math.round(performance.now() - t1), "мс");
+      if (globe) syncGlobe(true); // глобус уже открыт — передаём ему растр провинций
+    })();
+    provP.catch(e => { console.error("провинции:", e); provP = null; });
+    return provP;
+  }
   async function load() {
     // «no-cache» — браузер каждый раз спрашивает сервер (по ETag), но если файл не менялся, берёт его из кэша (ответ 304 без тела)
     try {
@@ -2498,6 +2582,7 @@
       ]);
       // ключ кэша — содержимое растра, а не время публикации: правка городов или текстов не заставляет пересчитывать контуры
       const kc = PATHS_VER + "|" + idsHash(T.ids);
+      rasterVer = ver; pathsCache = cache;
       const hit = !!(cache && cache.kc === kc && cache.c);
       const cp = hit ? cache.c : await computePaths(T, false, true);
       for (const [id, d] of cp.paths) if (state.countries[String(id)]) setCountryPath(id, d);
@@ -2513,19 +2598,12 @@
       $("mapLoading").classList.add("hidden");
       requestAnimationFrame(refit);
       mapReadyResolve();
-      loadLayers();
-      // провинции — уже после показа карты
-      const t1 = performance.now();
-      await loadIds(P, "provinces", ver, T.land);
-      const kp = PATHS_VER + "|" + idsHash(P.ids);
-      const hitP = !!(cache && cache.kp === kp && cache.p);
-      const pp = hitP ? cache.p : await computePaths(P, true, false);
-      await applyProvPaths(pp.paths);
-      provReady = true;
-      wrapVectorLayers(); // копии векторных слоёв по краям — когда всё построено
-      console.info("провинции " + (hitP ? "из кэша" : "построены") + " за", Math.round(performance.now() - t1), "мс");
-      if (!hit || !hitP) DB.set("paths", { kc, c: { paths: cp.paths, coast: cp.coast }, kp, p: { paths: pp.paths } }).catch(() => {});
-      if (gm) offerDraft();
+      loadLayers().then(() => (window.requestIdleCallback || setTimeout)(() => prepareProvinces().catch(() => {}))); // данные провинций — заранее
+      wrapVectorLayers(); // копии векторных слоёв по краям (<use> покажет и то, что достроится позже)
+      if (!hit) savePaths({ kc, c: { paths: cp.paths, coast: cp.coast } });
+      // провинции — когда понадобятся: приближение (их границы видны с масштаба 0,5), ГМ, глобус
+      if (gm) { await ensureProvinces(); offerDraft(); }
+      else if (frame.dataset.lod === "near") ensureProvinces();
     } catch (err) {
       console.error(err);
       $("mapLoading").textContent = "Не удалось загрузить карту: " + err.message;

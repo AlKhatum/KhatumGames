@@ -193,7 +193,7 @@
         T.land = new Uint8Array(N);
         if (b.w === a.w && b.h === a.h) for (let i = 0; i < N; i++) T.land[i] = b.data[i * 4 + 3] >= 128 ? 1 : 0;
       }
-      T.mark = new Uint32Array(N);
+      T.mark = null; // метки мазка (4 байта на пиксель) — только когда ГМ рисует: у игроков не занимают память
       T.strokeNo = 0;
       T.computeBBoxes();
     },
@@ -271,7 +271,7 @@
     },
 
     // ---------- рисование ----------
-    beginStroke() { T.strokeNo++; return { idx: [], old: [], val: [], labels: new Set(), x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }; },
+    beginStroke() { if (!T.mark || T.mark.length !== T.W * T.H) T.mark = new Uint32Array(T.W * T.H); T.strokeNo++; return { idx: [], old: [], val: [], labels: new Set(), x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }; },
     _set(i, v, ch) {
       const old = T.ids[i];
       if (old === v) return;

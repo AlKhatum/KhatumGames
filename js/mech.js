@@ -145,12 +145,11 @@
     const t = document.getElementById((a.getAttribute("href") || "").replace(/^#/, ""));
     if (t) t.scrollIntoView({ behavior: "smooth", block: "start" });
   });
-  // данные нужны и Главной (вход), и Вики — грузим сразу. Если сайт открыт на карте — после её показа:
-  // большой mech.json иначе отнимает канал у map.json и растров, и карта появляется заметно позже.
-  if (/^#map(\/|$)/.test(location.hash) && window.KGMap && window.KGMap.ready) {
-    Promise.race([window.KGMap.ready(), new Promise(r => setTimeout(r, 15000))]).then(init);
-    window.addEventListener("routechange", e => { if (e.detail.tab !== "map") init(); });
-  } else init();
+  // Данные механик нужны Главной (вход) и Вики — там грузим сразу. Карте они не нужны: если сайт открыт на карте,
+  // большой mech.json и расчёты рейтинга, справочника и союзов ждут, пока человек не уйдёт с карты.
+  // Что механикам нужно и на карте (смена пароля ГМа, статьи лора), само вызывает init().
+  if (/^#map(\/|$)/.test(location.hash)) window.addEventListener("routechange", e => { if (e.detail.tab !== "map") init(); });
+  else init();
 
   function fillArticleLists() {
     const law = document.querySelector('[data-mech-list="law"]'), tier = document.querySelector('[data-mech-list="tier"]');
