@@ -185,6 +185,39 @@
           h("p", { class: "unit-desc", "data-rule-desc": "wonder:" + w.id, "data-placeholder": "Данные недоступны", text: w.desc || "" })));
       }
     }
+    // уровни технологий: десять карточек с двумя рамками для картинок и галерея примеров (данные — js/mech-tech.js, тексты правит ГМ)
+    const TT = window.KGMechTech, tlv = document.querySelector('[data-mech-list="techlevels"]'), tga = document.querySelector('[data-mech-list="techgallery"]');
+    if (TT && tlv) {
+      tlv.innerHTML = "";
+      const mult = n => (+rules.K.tech_base || 0) + (+rules.K.tech_step || 0) * n;
+      const field = (key, label, text, tag, cls) => h(tag || "span", { class: cls || null, "data-edit-text": key, "data-label": label, "data-placeholder": "Текст…", text });
+      for (const L of TT.levels) {
+        const k = "mech.tech." + L.n, lab = "Уровень " + L.n + ": ";
+        const col = (side, title) => h("div", { class: "tl-col tl-" + side },
+          h("div", { class: "tl-sub", text: title }),
+          slot(k + ".img." + side, lab + title.toLowerCase()),
+          field(k + "." + (side === "civ" ? "civil" : "mil"), lab + title.toLowerCase(), L[side === "civ" ? "civil" : "mil"], "p", "tl-text"),
+          h("div", { class: "tl-ex" }, h("b", { text: "Примеры: " }), field(k + "." + (side === "civ" ? "civEx" : "milEx"), lab + "примеры, " + title.toLowerCase(), L[side === "civ" ? "civEx" : "milEx"])));
+        tlv.append(h("article", { class: "tech-lv", id: "m-tech-" + L.n, "data-tech": L.n, style: "--lv:" + (L.n - 1) },
+          h("div", { class: "tl-n" }, h("b", { text: String(L.n) }), h("small", { text: "× " + fmt(mult(L.n), "d2") })),
+          h("div", { class: "tl-body" },
+            h("h4", null, field(k + ".name", lab + "название", L.name), " ", field(k + ".era", lab + "эпоха", L.era, "small")),
+            h("div", { class: "tl-cols" }, col("civ", "Гражданская сфера"), col("mil", "Военная сфера")),
+            h("div", { class: "tl-ref" }, h("b", { text: "Из справочника: " }), field(k + ".ref", lab + "из справочника", L.ref)))));
+      }
+    }
+    if (TT && tga) {
+      tga.innerHTML = "";
+      const SIDE = { civil: "гражданская", mil: "военная", both: "двойного назначения" };
+      for (const g of TT.gallery) {
+        const k = "mech.tech.gal." + g.id;
+        tga.append(h("article", { class: "unit-card tech-ex", "data-tech-ex": g.id },
+          slot(k, g.name),
+          h("h4", null, h("span", { "data-edit-text": k + ".name", "data-label": "Пример: " + g.name, text: g.name })),
+          h("div", { class: "unit-stats" }, "Уровни ", h("span", { "data-edit-text": k + ".lv", "data-label": "Пример: " + g.name + ", уровни", text: g.lv }), " · " + (SIDE[g.side] || "")),
+          h("p", { class: "unit-desc", "data-edit-text": k + ".text", "data-label": "Пример: " + g.name + ", описание", "data-placeholder": "Описание…", text: g.text })));
+      }
+    }
     // словарь показателей: запись летописи → строки калькулятора
     const pl = document.querySelector('[data-mech-list="params"]'), L = window.KGMechLore;
     if (pl && L) {
@@ -205,7 +238,7 @@
         h("div", { class: "pd", "data-edit-text": "mech.ref." + n, "data-placeholder": "Описание…", text: x.text }))); }
     });
     // правки ГМа к текстам словаря и справочных записей; описания карточек — из правил
-    document.querySelectorAll('[data-mech-list="params"], [data-mech-list="ref"]').forEach(el => { if (window.KGSite && window.KGSite.applyTexts) window.KGSite.applyTexts(el); });
+    document.querySelectorAll('[data-mech-list="params"], [data-mech-list="ref"], [data-mech-list="techlevels"], [data-mech-list="techgallery"]').forEach(el => { if (window.KGSite && window.KGSite.applyTexts) window.KGSite.applyTexts(el); });
     markRuleDescs();
   }
   // описание показателя для подсказки: правка ГМа из словаря (site.json → texts["mech.param.<первый ключ группы>"]) или летопись
