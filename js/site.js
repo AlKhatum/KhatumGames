@@ -498,6 +498,7 @@
     const art = $("loreArticle"); art.classList.remove("hidden"); art.innerHTML = "";
     if (specialOf(a) === "states" && sub) { renderStatePage(art, sub); return; }
     if (specialOf(a) === "regions" && sub) { renderRegionPage(art, sub); return; }
+    if (specialOf(a) === "corporations" && sub) { renderCorpPage(art, sub); return; }
     const k = f => "list:lore:" + a.id + ":" + f;
     art.append(hero("lore/" + a.id, { back: "wiki/lore", titleKey: k("title"), title: a.title || "", subKey: k("sub"), sub: a.sub || "" }),
       h("div", { class: "rich lore-text" + (specialOf(a) ? " special" : ""), "data-edit": k("html"), "data-placeholder": specialOf(a) ? "Вступление к разделу (необязательно)…" : "Раздел в разработке. Скоро здесь появятся статьи — а пока лор живёт в головах игроков и ГМа.", html: a.html || "" }));
@@ -675,6 +676,22 @@
     applyTexts(art);
     livePassport(art.querySelector(".ls-passport"), s);
     wikiToc(art);
+  }
+  // Статья о корпорации: #wiki/lore/corporations/<id>; подразделения ведут на статью родителя
+  const corpKey = (c, f) => "lore.corp." + c.id + "." + f;
+  async function renderCorpPage(art, sub) {
+    const L = await KG.lore(), list = L.corps || [];
+    const c = list.find(x => x.id === sub || (x.kids || []).includes(sub));
+    if (!c) { KG.go("wiki/lore/corporations", true); return; }
+    if (c.id !== sub) { KG.go("wiki/lore/corporations/" + c.id, true); return; }
+    const i = list.indexOf(c), prev = list[i - 1], next = list[i + 1];
+    const pas = h("div", { class: "rich ls-passport", "data-edit": corpKey(c, "passport"), "data-placeholder": "Паспорт корпорации…" }, Object.entries(c.passport || {}).map(([k, v]) => h("span", null, k + " ", h("b", { text: v }))));
+    art.append(hero("corp/" + c.id, { back: "wiki/lore/corporations", titleKey: corpKey(c, "title"), title: c.title }),
+      h("div", { class: "lore-body ls-text" }, pas,
+        h("div", { class: "rich", "data-edit": corpKey(c, "html"), "data-placeholder": "Статья о корпорации…", html: c.html.replace(/<div class="passport">[\s\S]*?<\/div>/, "") })));
+    art.append(h("div", { class: "ls-pager" }, prev ? h("button", { class: "small-btn", onclick: () => KG.go("wiki/lore/corporations/" + prev.id) }, "← " + tx(corpKey(prev, "title"), prev.title)) : h("span"),
+      next ? h("button", { class: "small-btn", onclick: () => KG.go("wiki/lore/corporations/" + next.id) }, tx(corpKey(next, "title"), next.title) + " →") : h("span")));
+    applyTexts(art); wikiToc(art);
   }
   // Оглавление статьи в стиле вики: по заголовкам h2/h3 (вне правимого блока, поэтому в правки ГМа не попадает)
   function wikiToc(art) {

@@ -759,6 +759,8 @@
     el.append(h("p", { class: "mech-note", text: "Загрузка…" }));
     await init();
     el.innerHTML = "";
+    const artIds = new Set();
+    try { const LL = await window.KG.lore(); for (const x of LL.corps || []) { artIds.add(x.id); (x.kids || []).forEach(k => artIds.add(k)); } } catch (e) { /* статей нет */ }
     corpLoreEl = el;
     const corps = rules.tables.corp, ed = canEditRules();
     // вступление правит ГМ (Режим ГМа → «✎ Правка»), карточки — из справочника корпораций
@@ -783,7 +785,7 @@
     }
     function corpCard(x, wide) {
       const par = isChild(x) ? corpById(x.parent).name : "";
-      return h("article", { class: "corp-card" + (wide ? " wide" : "") }, ed ? h("div", { class: "corp-tools" }, corpTools(x)) : null, h("h3", { text: x.name }),
+      return h("article", { class: "corp-card" + (wide ? " wide" : "") }, ed ? h("div", { class: "corp-tools" }, corpTools(x)) : null, h("h3", null, artIds.has(x.id) ? h("a", { href: "#wiki/lore/corporations/" + x.id, title: "Статья Тулузского института", text: x.name, onclick: ev => { ev.preventDefault(); window.KG.go("wiki/lore/corporations/" + x.id); } }) : x.name),
         h("div", { class: "corp-meta", text: [M.corpClass(x.scale), sectorName(x.sector), x.hq, par ? "входит в " + par : "", +x.cap ? "капитализация " + fmt(+x.cap, "int") + " млрд кр." : ""].filter(Boolean).join(" · ") }),
         x.desc ? h("p", { text: x.desc }) : null);
     }
