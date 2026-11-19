@@ -1344,7 +1344,7 @@
     const h2 = [...A.querySelectorAll("h2")].map(x => x.id);
     assert(h2.every(id => toc.includes(id)), "разделы без оглавления: " + h2.filter(id => !toc.includes(id)));
     // раздел (h2) или подраздел (h3) с текстом «в мире» и «в расчётах» до следующего заголовка
-    const NO_WORLD = new Set(["m-chains", "m-params", "m-res", "m-laws", "Что корпорации дают", "Чем страна платит", "Союзы и договоры", "Ресурсы", "Здания"]);
+    const NO_WORLD = new Set(["m-chains", "m-params", "m-res", "m-laws", "Что корпорации дают", "Чем страна платит", "Союзы и договоры", "Ресурсы", "Здания", "Лестница уровней", "Примеры техники"]);
     const errs = [];
     for (const hd of A.querySelectorAll("h2, h3")) {
       const key = hd.id || hd.textContent.trim();
@@ -1361,6 +1361,25 @@
     }
     assert(!errs.length, errs.join("; "));
     return A.querySelectorAll(".m-world").length + " описаний «В мире 2200»";
+  });
+  await test("Статья: «Уровни технологий» — 10 карточек с множителем из справочника, рамки для картинок, галерея примеров", async () => {
+    await go("wiki/mech/article", () => visible(D.getElementById("mechArticle")) && D.querySelectorAll("#mechArticle .tech-lv").length > 0, "статья", 30000);
+    const A = D.getElementById("mechArticle"), cards = [...A.querySelectorAll(".tech-lv")];
+    assert(cards.length === 10, "карточек уровней " + cards.length);
+    const errs = [];
+    cards.forEach((c, i) => {
+      const n = i + 1, m = +(rulesLive.K.tech_base + rulesLive.K.tech_step * n).toFixed(2);
+      if (c.dataset.tech !== String(n)) errs.push("порядок " + n);
+      if (c.querySelector(".tl-n small").textContent.replace(/\s/g, "") !== "×" + String(m.toFixed(2)).replace(".", ",")) errs.push(n + ": множитель " + c.querySelector(".tl-n small").textContent);
+      for (const s of ["civ", "mil"]) if (!c.querySelector('[data-edit-img="mech.tech.' + n + ".img." + s + '"]')) errs.push(n + ": нет рамки " + s);
+      for (const f of ["name", "civil", "mil", "civEx", "milEx", "ref"]) { const e = c.querySelector('[data-edit-text="mech.tech.' + n + "." + f + '"]'); if (!e || !e.textContent.trim()) errs.push(n + ": пустое поле " + f); }
+    });
+    const gal = [...A.querySelectorAll(".tech-ex")];
+    assert(gal.length >= 10, "галерея примеров: " + gal.length);
+    for (const g of gal) if (!g.querySelector('[data-edit-img="mech.tech.gal.' + g.dataset.techEx + '"]')) errs.push("галерея " + g.dataset.techEx + ": нет рамки");
+    for (const id of ["tank", "walker", "exo", "module"]) if (!A.querySelector('[data-tech-ex="' + id + '"]')) errs.push("нет примера " + id);
+    assert(!errs.length, errs.join("; "));
+    return cards.length + " уровней, " + gal.length + " примеров";
   });
   await test("Статья: карточка на каждый тип юнита, энергии, еды и отрасли — с шапкой 1280×720, характеристиками и описанием", () => {
     const errs = [];
@@ -1385,7 +1404,8 @@
     const el = D.querySelector('#mechArticle [data-edit-img="mech.unit.div.walker"]');
     assert(visible(el) && el.classList.contains("img-default") && /assets\/mech\/div\/walker\.svg/.test(el.style.backgroundImage), "нет рисунка по умолчанию");
     const art = W.KGMechArt.keys, slots = [...D.querySelectorAll("#mechArticle [data-edit-img]")].map(x => x.getAttribute("data-edit-img"));
-    assert(slots.every(k => art.includes(k)), "без рисунка: " + slots.filter(k => !art.includes(k)).join(", "));
+    const noArt = slots.filter(k => !art.includes(k) && !k.startsWith("mech.tech.")); // рамки уровней технологий и галереи примеров — без рисунка по умолчанию
+    assert(!noArt.length, "без рисунка: " + noArt.join(", "));
     const key = "img:mech.unit.div.walker", T0 = W.KGSite.data.texts;
     T0[key] = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
     try {

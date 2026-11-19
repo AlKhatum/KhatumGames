@@ -294,6 +294,31 @@
 .param-row .pt small { display: block; font-weight: 400; font-size: 11.5px; color: var(--muted); }
 .param-row .pd { color: #c7d7ec; font-size: 13.5px; line-height: 1.55; }
 .param-row .pd small { display: block; margin-top: 3px; font-size: 11.5px; color: var(--muted); }
+/* уровни технологий: лестница из 10 карточек (гражданская и военная сфера, по рамке для картинки) и галерея примеров */
+.tech-levels { display: flex; flex-direction: column; gap: 14px; margin: 10px 0 18px; }
+.tech-lv { --lvc: hsl(calc(195 + var(--lv, 0) * 15) 90% 62%); display: grid; grid-template-columns: 84px minmax(0, 1fr); border: 1px solid var(--line-dim); border-left: 3px solid var(--lvc); border-radius: 3px; background: rgba(9, 14, 36, .55); }
+.tl-n { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 12px 6px; background: rgba(255, 255, 255, .03); border-right: 1px solid var(--line-dim); }
+.tl-n b { font: 600 34px/1 var(--font-wide); color: var(--lvc); }
+.tl-n small { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+.tl-body { padding: 12px 14px 14px; min-width: 0; }
+.tl-body h4 { margin: 0 0 10px; font-size: 16px; color: var(--text); display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; }
+.tl-body h4 small { font-size: 12px; font-weight: 400; color: var(--muted); }
+.tl-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.tl-col { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.tl-sub { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--line); }
+.tl-mil .tl-sub { color: var(--pink-soft); }
+.tl-text { margin: 0; font-size: 13.5px; line-height: 1.55; color: #c7d7ec; }
+.tl-ex { font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+.tl-ex b { font-weight: 600; color: var(--text); }
+.tl-ref { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--line-dim); font-size: 12px; line-height: 1.5; color: var(--muted); }
+.tl-ref b { font-weight: 600; color: var(--text); }
+.tech-ex .unit-stats { color: var(--muted); }
+.site-edit .tech-lv [data-edit-text]:empty::before, .site-edit .tech-ex [data-edit-text]:empty::before { content: attr(data-placeholder); font-style: italic; opacity: .6; }
+@media (max-width: 760px) { .tl-cols { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 520px) {
+  .tech-lv { grid-template-columns: minmax(0, 1fr); }
+  .tl-n { flex-direction: row; align-items: baseline; gap: 10px; padding: 8px 12px; border-right: 0; border-bottom: 1px solid var(--line-dim); }
+}
 .law-desc { color: var(--muted); }
 .mrow .l.lored, td.lored { text-decoration: underline dotted rgba(24, 217, 245, .5); text-underline-offset: 3px; cursor: help; }
 @media (max-width: 640px) { .param-row { grid-template-columns: minmax(0, 1fr); } }
