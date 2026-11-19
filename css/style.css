@@ -970,3 +970,26 @@ body:not(.site-edit) .ev-img figcaption:empty { display: none; }
 .site-edit .ev-img figcaption:empty::before { content: attr(data-placeholder); font-style: italic; opacity: .7; }
 .site-edit .ev-img img { cursor: default; }
 .ev-add { align-self: center; }
+
+/* ---- вики-вёрстка статьи: инфобокс справа, оглавление, заголовки ---- */
+.ls-text::after { content: ""; display: block; clear: both; }
+.ls-text .ls-passport { float: right; clear: right; width: 290px; max-width: 100%; margin: 4px 0 14px 18px; padding: 8px 12px; flex-direction: column; gap: 0; font-size: 13px; border: 1px solid var(--line-dim); border-radius: 3px; background: rgba(24, 217, 245, .04); }
+.ls-text .ls-passport span { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; border-bottom: 1px solid rgba(255, 255, 255, .06); }
+.ls-text .ls-passport span:last-child { border-bottom: 0; }
+.ls-text .ls-passport b { text-align: right; }
+.ls-text h2 { margin: 26px 0 8px; padding-bottom: 4px; font-size: 20px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--text); border-bottom: 1px solid var(--line-dim); clear: none; }
+.ls-text h3 { margin: 16px 0 6px; font-size: 15px; font-weight: 600; color: var(--text); }
+.ls-text .rich > .lead:first-child, .ls-text .lead { font-size: 15.5px; line-height: 1.65; }
+.ls-text .wk-toc { display: table; margin: 4px 0 14px; padding: 8px 16px 10px 14px; border: 1px solid var(--line-dim); border-radius: 3px; background: rgba(255, 255, 255, .03); font-size: 13.5px; }
+.wk-toc-h { font-weight: 600; margin-bottom: 4px; }
+.wk-toc-list a { display: block; color: var(--line); text-decoration: none; padding: 1px 0; }
+.wk-toc-list a span { color: var(--muted); }
+.wk-toc-list a.sub { padding-left: 18px; }
+.wk-toc-list a:hover { text-decoration: underline; }
+.ls-text sup.need { color: var(--pink-soft); font-size: 10.5px; margin-left: 1px; white-space: nowrap; }
+.ls-text .wk-cats { margin: 20px 0 6px; padding: 6px 10px; border: 1px solid var(--line-dim); border-radius: 3px; font-size: 13px; color: var(--muted); }
+.ls-text .wk-foot { font-size: 12px; color: var(--muted); }
+@media (max-width: 700px) { .ls-text .ls-passport { float: none; width: auto; margin: 4px 0 14px; } }
+.wk-toc-list { columns: 2 210px; column-gap: 26px; }
+.wk-toc-list a { break-inside: avoid; }
+.ls-text .wk-toc { max-width: 100%; }

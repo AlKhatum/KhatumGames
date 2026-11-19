@@ -602,7 +602,7 @@
   const REGION_LANDS = { af: ["56", "59", "60", "145", "146"] };
   const REGION_STUB = "<p>Раздел заполняется по ходу кампании.</p>";
   const regionKey = (r, f) => "lore.region." + r.id + "." + f;
-  const regionsOf = L => L.regions.filter(r => r.id !== "powers").map(r => ({ id: r.id, title: REGION_TITLE[r.id] || r.title }));
+  const regionsOf = L => L.regions.filter(r => r.id !== "powers").map(r => ({ id: r.id, title: REGION_TITLE[r.id] || r.title, html: r.html }));
   const statesOf = (L, id) => L.states.filter(s => (s.geo || s.region) === id);
   async function renderRegionsIndex(body) {
     const L = await KG.lore();
@@ -625,7 +625,7 @@
     const C = st.countries || {}, AL = st.alliances || {};
     art.append(hero("region/" + r.id, { back: "wiki/lore/regions", titleKey: regionKey(r, "title"), title: r.title, titlePh: "Название региона…" }),
       h("div", { class: "rich lore-text", "data-edit": regionKey(r, "html"), "data-placeholder": MECH_REGION[r.id] ? "Вступление к региону (необязательно)…" : "О регионе…",
-        html: MECH_REGION[r.id] ? "" : REGION_STUB }));
+        html: r.html || (MECH_REGION[r.id] ? "" : REGION_STUB) }));
     if (MECH_REGION[r.id] && window.KGMech) {
       const ow = h("div", { class: "lore-body region-ow" }); art.append(ow);
       Promise.resolve(window.KGMech.renderRegion(ow, r.id)).then(() => applyTexts(ow));
@@ -674,6 +674,26 @@
       next ? h("button", { class: "small-btn", onclick: () => KG.go("wiki/lore/states/" + next.id) }, tx(stateKey(next, "title"), next.title) + " →") : h("span")));
     applyTexts(art);
     livePassport(art.querySelector(".ls-passport"), s);
+    wikiToc(art);
+  }
+  // Оглавление статьи в стиле вики: по заголовкам h2/h3 (вне правимого блока, поэтому в правки ГМа не попадает)
+  function wikiToc(art) {
+    const text = art.querySelector(".ls-text"), body = text && text.querySelector(".rich:not(.ls-passport)");
+    if (!body) return;
+    const hs = [...body.querySelectorAll("h2")]; // в оглавлении только крупные разделы; подзаголовки h3 остаются в тексте
+    if (hs.filter(x => x.tagName === "H2").length < 3) return;
+    let n1 = 0, n2 = 0;
+    const list = h("div", { class: "wk-toc-list" });
+    hs.forEach((x, i) => {
+      x.id = "wk-" + i;
+      if (x.tagName === "H2") { n1++; n2 = 0; } else n2++;
+      list.append(h("a", { class: x.tagName === "H3" ? "sub" : "", href: "#wk-" + i, onclick: ev => { ev.preventDefault(); x.scrollIntoView({ behavior: "smooth", block: "start" }); } },
+        h("span", { text: x.tagName === "H2" ? n1 + "" : n1 + "." + n2 }), " " + x.textContent));
+    });
+    text.querySelectorAll(".wk-toc").forEach(x => x.remove());
+    const box = h("div", { class: "wk-toc" }, h("div", { class: "wk-toc-h", text: "Содержание" }), list);
+    const pas = text.querySelector(".ls-passport");
+    (pas || text).after(box);
   }
   // Паспорт статьи: население (города страны на карте + пустоши), язык и валюта (карточка страны на карте) —
   // всегда живые: перекрывают и текст летописи, и правку ГМа в паспорте.
