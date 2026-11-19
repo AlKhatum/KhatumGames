@@ -993,3 +993,8 @@ body:not(.site-edit) .ev-img figcaption:empty { display: none; }
 .wk-toc-list { columns: 2 210px; column-gap: 26px; }
 .wk-toc-list a { break-inside: avoid; }
 .ls-text .wk-toc { max-width: 100%; }
+/* ссылки-кнопки и названия корпораций: цвет акцента вместо синего браузерного */
+a.small-btn { color: var(--line); text-decoration: none; }
+a.small-btn:hover { background: rgba(24, 217, 245, .1); }
+.corp-card h3 a { color: var(--line); text-decoration: none; }
+.corp-card h3 a:hover { text-decoration: underline; }
