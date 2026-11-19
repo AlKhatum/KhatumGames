@@ -17,7 +17,8 @@
         "X-GitHub-Api-Version": "2022-11-28",
         ...(body ? { "Content-Type": "application/json" } : {})
       },
-      body: body ? JSON.stringify(body) : undefined
+      body: body ? JSON.stringify(body) : undefined,
+      cache: "no-store" // ответы GitHub кешируются браузером на минуту: без этого ветка читалась устаревшей и PATCH давал «not a fast forward»
     });
     if (!res.ok) {
       let msg = "";
@@ -59,7 +60,7 @@
   async function commit(repo, files, message, onStep) {
     const step = onStep || (() => {});
     const base = `/repos/${repo.owner}/${repo.name}`;
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < 3; attempt++) {
       try {
         step("Получаю состояние ветки…");
         const ref = await api("GET", `${base}/git/ref/heads/${repo.branch}`);
@@ -77,7 +78,7 @@
         await api("PATCH", `${base}/git/refs/heads/${repo.branch}`, { sha: c.sha });
         return c;
       } catch (e) {
-        if (attempt === 0 && (e.status === 409 || e.status === 422)) continue; // ветка ушла вперёд — повторяем
+        if (attempt < 2 && (e.status === 409 || e.status === 422)) continue; // ветка ушла вперёд — повторяем
         throw e;
       }
     }
