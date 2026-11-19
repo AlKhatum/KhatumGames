@@ -1,6 +1,6 @@
 {
  "v": 1,
- "updated": "2026-11-19T14:03:43.230Z",
+ "updated": "2026-11-19T14:07:39.927Z",
  "texts": {
   "lore.state.ins.title": "Нусантарийская ассоциация",
   "lore.state.bra.title": "федеративная республика Бразилия",
@@ -11,7 +11,9 @@
   "wiki.lore.intro": "<p>Разделы заполняются по ходу кампании.</p>",
   "img:mech.tech.gal.fighter": "assets/site/7984f4aa0de16a58.jpg",
   "img:mech.tech.gal.exo": "assets/site/758a43cc3049ef12.jpg",
-  "img:mech.tech.gal.tank": "assets/site/a61a4ed7d9205a76.jpg"
+  "img:mech.tech.gal.tank": "assets/site/a61a4ed7d9205a76.jpg",
+  "cover:lore/states": "assets/site/0e4ab6b96b5abc1b.jpg",
+  "coverpos:lore/states": "19.7"
  },
  "media": {
   "bg": {
