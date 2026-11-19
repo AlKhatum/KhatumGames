@@ -865,7 +865,8 @@ body.moon-mode #stateCard, body.moon-mode #sizeBar { display: none; }
 body:not(.site-edit) .lore-text.special:empty { display: none; }
 /* шапки 1280×720 (внешний вид войск, флота и т.д.): у посетителя — только загруженные */
 .img-slot { position: relative; display: none; width: 100%; aspect-ratio: 16 / 9; border-radius: 3px; overflow: hidden; background: rgba(255, 255, 255, .03) center / cover no-repeat; }
-.img-slot.has-img { display: block; }
+.img-slot.has-img { display: block; cursor: zoom-in; }
+.img-slot.has-img:focus-visible { outline: 2px solid var(--accent, #3ee); outline-offset: 2px; }
 .site-edit .img-slot { display: block; border: 1px dashed var(--line-dim); cursor: pointer; }
 .site-edit .img-slot.has-img { cursor: default; }
 .img-slot-ph { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 8px; text-align: center; color: var(--muted); font-size: 12px; }

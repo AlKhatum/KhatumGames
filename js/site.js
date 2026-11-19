@@ -144,6 +144,7 @@
     el.classList.toggle("has-img", !!v);
     el.classList.toggle("img-default", !!v && !own);
     el.classList.toggle("img-reset", !!own && !!defaultImg(key));
+    el._full = v || "";
     el.style.backgroundImage = v ? 'url("' + String(v).replace(/"/g, "%22") + '")' : "";
   }
   // картинка → ровно 1280×720 (обрезка по центру, как background-size: cover)
@@ -162,13 +163,17 @@
     catch (e) { toast("Не удалось прочитать картинку: " + e.message); }
   }
   function imgSlot(key, label) {
-    const el = h("div", { class: "img-slot", "data-edit-img": key, role: "img", "aria-label": label, title: editing ? "Шапка 1280×720: " + label : null },
+    const el = h("div", { class: "img-slot", "data-edit-img": key, role: "img", tabindex: "0", "aria-label": label, title: editing ? "Шапка 1280×720: " + label : null },
       h("span", { class: "img-slot-ph" }, h("b", { text: "Шапка 1280 × 720" }), h("small", { text: label })),
       h("span", { class: "img-slot-tools edit-only" },
         h("button", { type: "button", class: "small-btn", text: "Картинка", title: "Загрузить картинку (обрежется до 1280×720)", onclick: e => { e.stopPropagation(); uploadSlot(el); } }),
         h("button", { type: "button", class: "small-btn img-back", text: "↺", title: "Вернуть рисунок по умолчанию", onclick: e => { e.stopPropagation(); setVal(imgKey(key), undefined); paintSlot(el); } }),
         h("button", { type: "button", class: "small-btn danger", text: "✕", title: "Убрать картинку", onclick: e => { e.stopPropagation(); setVal(imgKey(key), defaultImg(key) ? "none" : undefined); paintSlot(el); } })));
-    el.addEventListener("click", () => { if (editing && !el.classList.contains("has-img")) uploadSlot(el); });
+    el.addEventListener("click", () => {
+      if (editing) { if (!el.classList.contains("has-img")) uploadSlot(el); return; }
+      if (el._full) showImage({ img: el._full, title: label });
+    });
+    el.addEventListener("keydown", e => { if (!editing && el._full && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); showImage({ img: el._full, title: label }); } });
     paintSlot(el);
     return el;
   }
