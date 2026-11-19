@@ -998,3 +998,9 @@ a.small-btn { color: var(--line); text-decoration: none; }
 a.small-btn:hover { background: rgba(24, 217, 245, .1); }
 .corp-card h3 a { color: var(--line); text-decoration: none; }
 .corp-card h3 a:hover { text-decoration: underline; }
+.corp-list td { vertical-align: top; }
+.corp-list td:first-child a, .corp-list td:first-child > span { font-weight: 600; color: var(--line); text-decoration: none; }
+.corp-list td:first-child a:hover { text-decoration: underline; }
+.corp-kids { margin-top: 3px; font-size: 12px; }
+.corp-kids summary { cursor: pointer; color: var(--muted); }
+.corp-kids ul { margin: 4px 0 2px; padding-left: 16px; }

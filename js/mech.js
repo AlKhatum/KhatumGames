@@ -772,23 +772,22 @@
     if (ed) el.append(h("div", { class: "corp-lore-tools" }, h("button", { class: "small-btn", text: "+ Корпорация", onclick: () => editCorp(null) }),
       h("button", { class: "small-btn", text: "+ Отрасль", onclick: addSector })));
     const isChild = x => x.parent && corpById(x.parent) && x.parent !== x.id;
-    const arc = corps.filter(x => !isChild(x) && corps.some(y => y.parent === x.id && y.id !== x.id));
-    for (const g of arc) {
-      const kids = corps.filter(y => y.parent === g.id && y.id !== g.id);
-      el.append(h("section", { class: "corp-group" }, h("h2", { text: g.name }), corpCard(g, true), h("div", { class: "corp-cards" }, kids.map(k => corpCard(k)))));
-    }
-    for (const s of rules.tables.csector) {
-      const list = corps.filter(x => x.sector === s.id && !isChild(x) && !arc.includes(x));
-      if (list.length || ed) el.append(h("section", { class: "corp-group" }, h("h2", null, s.name,
-        ed ? h("button", { class: "small-btn", title: "Переименовать отрасль", text: "✎", onclick: () => renameSector(s) }) : null),
-        list.length ? h("div", { class: "corp-cards" }, list.map(x => corpCard(x))) : h("p", { class: "empty", text: "В этой отрасли пока нет корпораций." })));
-    }
-    function corpCard(x, wide) {
-      const par = isChild(x) ? corpById(x.parent).name : "";
-      return h("article", { class: "corp-card" + (wide ? " wide" : "") }, ed ? h("div", { class: "corp-tools" }, corpTools(x)) : null, h("h3", null, artIds.has(x.id) ? h("a", { href: "#wiki/lore/corporations/" + x.id, title: "Статья Тулузского института", text: x.name, onclick: ev => { ev.preventDefault(); window.KG.go("wiki/lore/corporations/" + x.id); } }) : x.name),
-        h("div", { class: "corp-meta", text: [M.corpClass(x.scale), sectorName(x.sector), x.hq, par ? "входит в " + par : "", +x.cap ? "капитализация " + fmt(+x.cap, "int") + " млрд кр." : ""].filter(Boolean).join(" · ") }),
-        x.desc ? h("p", { text: x.desc }) : null);
-    }
+    // компактный список: одна строка на корпорацию, подразделения — под спойлером у родителя
+    const kidsOf = id => corps.filter(y => y.parent === id && y.id !== id);
+    const nameEl = x => (artIds.has(x.id)
+      ? h("a", { href: "#wiki/lore/corporations/" + x.id, title: "Статья Тулузского института", text: x.name, onclick: ev => { ev.preventDefault(); window.KG.go("wiki/lore/corporations/" + x.id); } })
+      : h("span", { text: x.name }));
+    const top = corps.filter(x => !isChild(x)).sort((a, b) => (+b.cap || 0) - (+a.cap || 0));
+    const tbl = h("table", { class: "mt corp-list" }, h("thead", null, h("tr", null, h("th", { text: "Корпорация" }), h("th", { text: "Отрасль" }), h("th", { text: "Класс" }), h("th", { text: "Штаб-квартира" }), ed ? h("th") : null)));
+    tbl.append(h("tbody", null, top.map(x => {
+      const kids = kidsOf(x.id);
+      return h("tr", null,
+        h("td", null, nameEl(x), kids.length ? h("details", { class: "corp-kids" }, h("summary", { text: "подразделения: " + kids.length }),
+          h("ul", null, kids.map(k => h("li", null, nameEl(k), ed ? h("span", { class: "row-tools" }, corpTools(k)) : null)))) : null),
+        h("td", { class: "tag", text: sectorName(x.sector) }), h("td", { class: "tag", text: M.corpClass(x.scale) }), h("td", { class: "tag", text: x.hq || "—" }),
+        ed ? h("td", { class: "row-tools" }, corpTools(x)) : null);
+    })));
+    el.append(h("div", { class: "mt-scroll" }, tbl));
   }
 
   // ---------- лор: идеологии ----------
