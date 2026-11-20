@@ -15,6 +15,13 @@
   let mk = null, gmPw = null, dks = {}, gmData = {}, gmSel = null, gmView = "countries", gmDirty = false, gmBase = {}, gmLinks = [];
   // игрок
   let player = null, sandbox = false;
+  // зоны боёв (data/zones.json): укрупнённые регионы вместо мелких провинций; id → { name, c, k, label }
+  let zoneMap = {};
+  function zonesOf(j) {
+    const out = {};
+    for (const id in (j && j.zones) || {}) { const z = j.zones[id]; out[id] = { id, name: z.name, c: z.c == null ? null : String(z.c), k: z.k, label: z.label }; }
+    return out;
+  }
 
   // ---------- мелочи ----------
   function h(tag, props, ...kids) {
@@ -73,18 +80,20 @@
       }
       return fetchJSON("data/map.json");
     };
-    const [cfg, mj, mp] = await Promise.all([
+    const [cfg, mj, mp, zj] = await Promise.all([
       fetchJSON("data/config.json"),
       fetchJSON("data/mech.json").catch(e => (e.status === 404 ? null : Promise.reject(e))),
-      mapState()
+      mapState(),
+      fetchJSON("data/zones.json").catch(() => null)
     ]);
+    zoneMap = zonesOf(zj);
     config = cfg;
     mech = mj || { v: 1, updated: null, turn: 1, year: 2200, turn_months: M.TURN_MONTHS, rules: null, gm: null, countries: {} };
     mech.countries = mech.countries || {};
     mechPub = clone(mech);
     rules = pubRules(mech);
     mapCountries = (mp && mp.countries) || {};
-    M.setMap(mapCountries, (mp && mp.alliances) || {}); // союзы карты = союзы механик
+    M.setMap(mapCountries, (mp && mp.alliances) || {}, zoneMap); // союзы карты = союзы механик; зоны боёв — места армий и флотов
     syncCityPop(mp);
   }
   // население стран — из городов карты (страна города — по растру карты, без него — поле cc города)
@@ -98,7 +107,7 @@
     const KM = window.KGMap;
     if (!mech || !KM || !KM.state) return;
     mapCountries = KM.state.countries || mapCountries;
-    M.setMap(mapCountries, KM.state.alliances || {});
+    M.setMap(mapCountries, KM.state.alliances || {}, zoneMap);
     syncCityPop(KM.state);
     if (pane === "calc" && isGm()) renderGm();
     if (pane === "my") renderMy();
@@ -145,12 +154,11 @@
     const t = document.getElementById((a.getAttribute("href") || "").replace(/^#/, ""));
     if (t) t.scrollIntoView({ behavior: "smooth", block: "start" });
   });
-  // данные нужны и Главной (вход), и Вики — грузим сразу. Если сайт открыт на карте — после её показа:
-  // большой mech.json иначе отнимает канал у map.json и растров, и карта появляется заметно позже.
-  if (/^#map(\/|$)/.test(location.hash) && window.KGMap && window.KGMap.ready) {
-    Promise.race([window.KGMap.ready(), new Promise(r => setTimeout(r, 15000))]).then(init);
-    window.addEventListener("routechange", e => { if (e.detail.tab !== "map") init(); });
-  } else init();
+  // Данные механик нужны Главной (вход) и Вики — там грузим сразу. Карте они не нужны: если сайт открыт на карте,
+  // большой mech.json и расчёты рейтинга, справочника и союзов ждут, пока человек не уйдёт с карты.
+  // Что механикам нужно и на карте (смена пароля ГМа, статьи лора), само вызывает init().
+  if (/^#map(\/|$)/.test(location.hash)) window.addEventListener("routechange", e => { if (e.detail.tab !== "map") init(); });
+  else init();
 
   function fillArticleLists() {
     const law = document.querySelector('[data-mech-list="law"]'), tier = document.querySelector('[data-mech-list="tier"]');
@@ -293,6 +301,7 @@
   const n2 = v => fmt(+v, Math.abs(+v) < 1 && +v !== 0 ? "d3" : "d2").replace(/,?0+$/, "");
   const UNIT_STATS = {
     div: r => "Л/с " + n2(r.pers) + " тыс. · мощь " + n2(r.power) + " · содержание " + n2(r.upkeep) + " млрд/год · постройка " + n2(r.cost) + " ОВП",
+    sup: r => "Л/с " + n2(r.pers) + " тыс. · содержание " + n2(r.upkeep) + " млрд/год · постройка " + n2(r.cost) + " ОВП",
     ac: r => "Мощь " + n2(r.power) + " · содержание " + n2(r.upkeep) + " млрд/год · постройка " + n2(r.cost) + " ОВП" + (+r.wh ? " · боеголовок " + n2(r.wh) : ""),
     ship: r => "Экипаж " + n2(r.pers) + " тыс. · мощь " + n2(r.power) + " · " + n2(r.ton) + " тыс. т · постройка " + n2(r.cost) + " ОВП" + (+r.wh ? " · боеголовок " + n2(r.wh) : ""),
     sat: r => "Запуск " + n2(r.cost) + " млрд кр. · содержание " + n2(r.upkeep) + " млрд/год",
@@ -308,7 +317,7 @@
   function rulesView(editable, onChange, rerender) {
     const root = h("div", { class: "rules" });
     const changed = () => { fillArticleLists(); if (onChange) onChange(); };
-    const order = ["div", "ac", "ship", "sat", "industry", "energy", "food", "law", "tier", "wonder", "ideo", "csector", "corp", "bloc", "bkind", "cdeal"]
+    const order = ["div", "sup", "ac", "ship", "sat", "industry", "energy", "food", "law", "tier", "wonder", "ideo", "csector", "corp", "bloc", "bkind", "cdeal"]
       .concat(...M.REGIONS.map(d => ["bloc", "land", "fac", "loy", "res", "track", "tland"].map(x => d.p + x).filter(t => M.TABLES[t])));
     for (const t of order) {
       const meta = M.TABLES[t], rows = rules.tables[t];
@@ -760,6 +769,8 @@
     el.append(h("p", { class: "mech-note", text: "Загрузка…" }));
     await init();
     el.innerHTML = "";
+    const artIds = new Set();
+    try { const LL = await window.KG.lore(); for (const x of LL.corps || []) { artIds.add(x.id); (x.kids || []).forEach(k => artIds.add(k)); } } catch (e) { /* статей нет */ }
     corpLoreEl = el;
     const corps = rules.tables.corp, ed = canEditRules();
     // вступление правит ГМ (Режим ГМа → «✎ Правка»), карточки — из справочника корпораций
@@ -771,23 +782,22 @@
     if (ed) el.append(h("div", { class: "corp-lore-tools" }, h("button", { class: "small-btn", text: "+ Корпорация", onclick: () => editCorp(null) }),
       h("button", { class: "small-btn", text: "+ Отрасль", onclick: addSector })));
     const isChild = x => x.parent && corpById(x.parent) && x.parent !== x.id;
-    const arc = corps.filter(x => !isChild(x) && corps.some(y => y.parent === x.id && y.id !== x.id));
-    for (const g of arc) {
-      const kids = corps.filter(y => y.parent === g.id && y.id !== g.id);
-      el.append(h("section", { class: "corp-group" }, h("h2", { text: g.name }), corpCard(g, true), h("div", { class: "corp-cards" }, kids.map(k => corpCard(k)))));
-    }
-    for (const s of rules.tables.csector) {
-      const list = corps.filter(x => x.sector === s.id && !isChild(x) && !arc.includes(x));
-      if (list.length || ed) el.append(h("section", { class: "corp-group" }, h("h2", null, s.name,
-        ed ? h("button", { class: "small-btn", title: "Переименовать отрасль", text: "✎", onclick: () => renameSector(s) }) : null),
-        list.length ? h("div", { class: "corp-cards" }, list.map(x => corpCard(x))) : h("p", { class: "empty", text: "В этой отрасли пока нет корпораций." })));
-    }
-    function corpCard(x, wide) {
-      const par = isChild(x) ? corpById(x.parent).name : "";
-      return h("article", { class: "corp-card" + (wide ? " wide" : "") }, ed ? h("div", { class: "corp-tools" }, corpTools(x)) : null, h("h3", { text: x.name }),
-        h("div", { class: "corp-meta", text: [M.corpClass(x.scale), sectorName(x.sector), x.hq, par ? "входит в " + par : "", +x.cap ? "капитализация " + fmt(+x.cap, "int") + " млрд кр." : ""].filter(Boolean).join(" · ") }),
-        x.desc ? h("p", { text: x.desc }) : null);
-    }
+    // компактный список: одна строка на корпорацию, подразделения — под спойлером у родителя
+    const kidsOf = id => corps.filter(y => y.parent === id && y.id !== id);
+    const nameEl = x => (artIds.has(x.id)
+      ? h("a", { href: "#wiki/lore/corporations/" + x.id, title: "Статья Тулузского института", text: x.name, onclick: ev => { ev.preventDefault(); window.KG.go("wiki/lore/corporations/" + x.id); } })
+      : h("span", { text: x.name }));
+    const top = corps.filter(x => !isChild(x)).sort((a, b) => (+b.cap || 0) - (+a.cap || 0));
+    const tbl = h("table", { class: "mt corp-list" }, h("thead", null, h("tr", null, h("th", { text: "Корпорация" }), h("th", { text: "Отрасль" }), h("th", { text: "Класс" }), h("th", { text: "Штаб-квартира" }), ed ? h("th") : null)));
+    tbl.append(h("tbody", null, top.map(x => {
+      const kids = kidsOf(x.id);
+      return h("tr", null,
+        h("td", null, nameEl(x), kids.length ? h("details", { class: "corp-kids" }, h("summary", { text: "подразделения: " + kids.length }),
+          h("ul", null, kids.map(k => h("li", null, nameEl(k), ed ? h("span", { class: "row-tools" }, corpTools(k)) : null)))) : null),
+        h("td", { class: "tag", text: sectorName(x.sector) }), h("td", { class: "tag", text: M.corpClass(x.scale) }), h("td", { class: "tag", text: x.hq || "—" }),
+        ed ? h("td", { class: "row-tools" }, corpTools(x)) : null);
+    })));
+    el.append(h("div", { class: "mt-scroll" }, tbl));
   }
 
   // ---------- лор: идеологии ----------
@@ -904,20 +914,29 @@
       ["Сырьё, продовольствие, вода", ["in:raw", "out:raw_need", "out:raw_bal", "tab:food", "out:field_yield", "out:food_prod", "out:food_need", "out:food_coef", "in:water", "out:water_sup", "out:water_need", "out:water_coef"]],
       ["Внешняя торговля", ["in:routes", "in:exp_share", "out:access", "out:export", "out:import", "out:trade_bal", "out:world_share"]],
       ["ВВП", ["out:gdp_ind", "out:gdp_agro", "out:gdp_raw", "out:gdp_svc", "out:gdp", "out:gdp_pc", "out:econ_level", "out:ind_share"]],
-      ["Бюджет", ["in:tax", "out:revenue", "out:debt_service", "out:budget", "in:b_def", "in:b_space", "in:b_sci", "in:b_soc", "in:b_infra", "out:b_other", "out:def_budget", "out:space_budget", "out:sci_budget", "out:soc_budget", "out:infra_budget"]],
+      ["Бюджет", ["in:tax", "out:tax_stab", "out:tax_gdp", "out:revenue", "out:debt_service", "out:budget", "in:b_def", "in:b_space", "in:b_sci", "in:b_soc", "in:b_infra", "out:b_other", "out:def_budget", "out:space_budget", "out:sci_budget", "out:soc_budget", "out:infra_budget"]],
       ["Государственный долг", ["out:debt_status", "out:debt_total", "out:debt_gdp", "out:debt_rate", "out:debt_service", "out:debt_new", "out:debt_repay", "out:debt_stab", "debt:loans"]],
-      ["Прогноз на следующий ход", ["out:d_tech", "out:next_tech", "out:d_stab", "out:next_stab", "out:d_pop", "out:next_pop", "out:d_gdp", "out:next_gdp"]]] },
+      ["Казна", ["out:tre_bal", "out:tre_in", "out:tre_cover", "out:tre_spent", "out:tre_lost", "out:tre_cap", "out:tre_next", "out:tre_ovp", "out:tre_ready", "out:tre_stab", "treas:spend"]],
+      ["Прогноз на следующий ход", ["out:d_tech", "out:next_tech", "out:d_stab", "out:next_stab", "out:d_support", "out:next_support", "out:d_pop", "out:next_pop", "out:d_gdp", "out:next_gdp"]]] },
     { id: "army", title: "Армия", blocks: [
       ["Мобилизационный ресурс", ["out:mop_total", "out:mob_law_name", "out:mop_share", "out:mop_avail", "out:active", "out:mop_load", "out:staffing", "out:reserve"]],
-      ["Сухопутные войска", ["tab:div", "out:div_total", "out:pers_ground", "in:eq_tank", "out:need_tank", "in:eq_ifv", "out:need_ifv", "in:eq_art", "out:need_art", "out:equip", "out:ground_power", "out:ground_upkeep"]],
-      ["Гарнизоны и безопасность", ["out:garr_need", "out:garr_have", "out:security"]],
-      ["ПВО и стратегические силы", ["in:sam", "out:ad_power", "in:icbm", "in:warheads", "out:nuke_cap", "out:nuke_deliv", "out:nuke_power", "out:rod_power", "out:strat_power", "out:pers_strat", "out:strat_upkeep"]],
+      ["Сухопутные войска", ["tab:div@sv", "in:eq_tank", "out:need_tank", "in:eq_ifv", "out:need_ifv", "in:eq_art", "out:need_art", "out:equip", "out:ew_bonus"]],
+      ["Отдельные рода войск: ВДВ, Национальная гвардия, Пограничные войска", ["tab:div@vdv,ng,pv"]],
+      ["Иррегулярные формирования", ["tab:div@irr", "out:div_total", "out:pers_ground", "out:ground_power", "out:ground_upkeep"]],
+      ["Специальные войска и войска тыла", ["tab:sup", "out:sup_total", "out:pers_sup", "out:sup_upkeep", "out:sig_cov", "out:eng_cov", "out:road_cov", "out:chem_cov", "out:pipe_cov", "out:base_bonus"]],
+      ["Армии", ["force:armies", "out:army_n", "out:army_div", "out:sup_need", "out:sup_cap", "out:sup_cov"]],
+      ["Гарнизоны и безопасность", ["out:garr_need", "out:garr_have", "out:eng_sec", "out:security"]],
+      ["Войска ПВО", ["tab:ac@pvo", "in:sam", "in:rtv", "out:rtv_cov", "out:ad_power"]],
+      ["Ракетные войска стратегического назначения", ["in:icbm", "in:icbm_mob", "in:warheads", "out:nuke_cap", "out:nuke_deliv", "out:nuke_power", "out:strat_power", "out:pers_strat", "out:strat_upkeep"]],
+      ["Военно-космические войска", ["vkv:sats", "out:b_recon", "out:b_warn", "out:rod_strikes", "out:rod_power", "out:asat_cap"]],
       ["Обеспечение и боеготовность", ["out:upkeep_total", "out:def_budget", "out:mil_bal", "out:readiness", "out:morale", "out:sat_mult"]],
       ["Военное производство (за ход)", ["out:ovp", "out:ship_ton", "out:ac_prod"]],
       ["Итог", ["out:conv_power", "out:total_power", "out:world_mil_share", "out:power_pc"]]] },
     { id: "fleet", title: "ВВС и флот", blocks: [
-      ["Военно-воздушные силы", ["tab:ac", "out:ac_total", "in:airbases", "out:ac_base_coef", "out:pers_air", "out:air_power", "out:air_upkeep"]],
-      ["Военно-морской флот", ["tab:ship", "out:ships_total", "out:ships_combat", "in:navbases", "out:tonnage", "out:deck_ac", "out:nav_base_coef", "out:nav_supply", "out:pers_navy", "out:navy_power", "out:navy_upkeep"]]] },
+      ["Военно-воздушные силы", ["tab:ac@vvs", "out:ac_total", "in:airbases", "out:base_bonus", "out:ac_base_coef", "out:pipe_cov", "out:pers_air", "out:air_power", "out:air_upkeep"]],
+      ["Военно-морской флот: корабли", ["tab:ship", "out:ships_total", "out:ships_combat", "out:ships_mine", "in:navbases", "out:mine_cov", "out:tonnage", "out:deck_ac", "out:nav_base_coef", "out:nav_supply", "out:pers_navy", "out:navy_upkeep"]],
+      ["Морская авиация, береговые войска, морская пехота", ["tab:ac@vmf", "tab:div@vmf", "out:coast_total"]],
+      ["Флоты и эскадры", ["force:fleets", "out:fleet_n", "out:fleet_ships", "out:navy_power"]]] },
     { id: "space", title: "Космос", blocks: [
       ["Инфраструктура и группировка", ["in:pads", "out:launch_cap", "tab:sat", "out:sat_total", "out:sat_pers", "out:sat_upkeep", "out:space_budget", "out:coverage", "out:sat_loss"]],
       ["Влияние спутников", ["out:b_sci", "out:b_nav_trade", "out:b_nav_mil", "out:b_comm_econ", "out:b_c2", "out:b_recon", "out:b_warn", "out:rod_strikes", "out:rod_tension", "out:asat_cap"]],
@@ -927,6 +946,7 @@
   ];
   const TAB_INFO = {
     div: [["pers", "тыс. л/с", "d1"], ["power", "мощь", "d1"], ["upkeep", "млрд/ход", "d2"]],
+    sup: [["pers", "тыс. л/с", "d1"], ["upkeep", "млрд/ход", "d2"]],
     ac: [["pers", "тыс. л/с", "d2"], ["power", "мощь", "d1"], ["upkeep", "млрд/ход", "d2"]],
     ship: [["pers", "тыс. экипаж", "d2"], ["power", "мощь", "d1"], ["upkeep", "млрд/ход", "d2"]],
     sat: [["upkeep", "млрд/ход", "d2"]]
@@ -938,14 +958,20 @@
     if (r.food_coef < 0.999) w.push("Не хватает продовольствия (" + fmt(r.food_coef, "pct") + "): импорт, падение стабильности и прироста.");
     if (r.water_coef < 0.999) w.push("Не хватает пресной воды (" + fmt(r.water_coef, "pct") + ").");
     if (r.debt_def) w.push("Дефолт по госдолгу: выплаты заморожены, доступ к рынкам и стабильность падают, занять нельзя — статьи сверх 100% срезаны. Выход — погасить долг ниже " + fmt(+rules.K.debt_default, "pct") + " ВВП или договориться с кредиторами.");
-    else if (r.b_other < -1e-9) w.push("Перерасход бюджета: статьи в сумме превышают 100%. За ход в долг уйдёт " + fmt(r.debt_new, "d1") + " млрд кр.");
+    else if (r.b_other < -1e-9) w.push("Перерасход бюджета: статьи в сумме превышают 100%. За ход в долг уйдёт " + fmt(r.debt_new, "d1") + " млрд кр." + (r.tre_cover > 0 ? " Ещё " + fmt(r.tre_cover, "d1") + " млрд кр. покроет казна." : ""));
     if (!r.debt_def && r.debt_gdp >= +rules.K.debt_default) w.push("Госдолг " + fmt(r.debt_gdp, "pct") + " ВВП — при переходе хода будет объявлен дефолт.");
     else if (!r.debt_def && r.debt_gdp > +rules.K.debt_safe) w.push("Тяжёлый госдолг: " + fmt(r.debt_gdp, "pct") + " ВВП, стабильность " + fmt(r.debt_stab, "d2") + " за ход.");
+    if (r.tax_stab < -0.2) w.push("Налог " + fmt(+c.in.tax, "pct") + " выше нормы " + fmt(+rules.K.tax_norm, "pct") + ": стабильность " + fmt(r.tax_stab, "d2") + " и рост ВВП " + fmt(r.tax_gdp, "pct") + " за ход, поддержка власти падает.");
     if (r.readiness < 0.999) w.push("Военный бюджет не покрывает содержание: боеготовность " + fmt(r.readiness, "pct") + ".");
     if (r.staffing < 0.999) w.push("Армия больше доступного МОП: укомплектованность " + fmt(r.staffing, "pct") + ". Ужесточите закон о мобилизации или сократите войска.");
     if (r.mop_load > +rules.K.mop_safe) w.push("Нагрузка на МОП " + fmt(r.mop_load, "pct") + " годных к службе — экономика теряет рост.");
     if (r.security < 0.999) w.push("Не хватает гарнизонов: безопасность " + fmt(r.security, "pct") + ". Страдают пустоши и стабильность.");
     if (r.equip < 0.9) w.push("Дивизиям не хватает техники: оснащённость " + fmt(r.equip, "pct") + ".");
+    if (r.army_n && r.sup_cov < 0.999) w.push("Армиям не хватает снабжения: обеспеченность " + fmt(r.sup_cov, "pct") + ". Нужны автомобильные бригады, а на своей земле — и железнодорожные.");
+    if (r.army_n && r.army_div > 1 && r.sig_cov < 0.999) w.push("Не хватает войск связи: бонус сосредоточения армий работает на " + fmt(r.sig_cov, "pct") + ".");
+    for (const a of (r.armies || []).concat(r.fleets || [])) if (a.short > 0) w.push("«" + a.name + "»: в составе указано больше, чем есть в стране или чем можно придать, — " + a.short + " ед. не учтены.");
+    for (const f of r.fleets || []) if (f.supply < 0.999) w.push("Флоту «" + f.name + "» не хватает судов снабжения: " + fmt(f.supply, "pct") + ".");
+    if (+I.navbases > 0 && r.mine_cov < 0.999) w.push("Не хватает тральщиков: базы вмещают меньше кораблей (нужен 1 тральщик на ВМБ).");
     if (r.ac_base_coef < 0.999) w.push("Аэродромов не хватает на всю авиацию.");
     if (r.nav_base_coef < 0.999) w.push("Военно-морских баз не хватает на весь флот.");
     if (r.nav_supply < 0.999) w.push("Флоту не хватает судов снабжения.");
@@ -1021,8 +1047,11 @@
     }
     function row(item) {
       const [kind, key] = item.split(":");
-      if (kind === "tab") return tableBlock(key);
+      if (kind === "tab") { const [t, vids] = key.split("@"); return tableBlock(t, vids ? vids.split(",") : null); }
+      if (kind === "force") return forcesBlock(key);
+      if (kind === "vkv") return vkvRow();
       if (kind === "debt") return loansBlock();
+      if (kind === "treas") return treasuryBlock();
       if (kind === "map") return mapRow(key);
       // описание показателя из летописи — подсказка при наведении на название строки
       const lore = M.paramLore(key), tip = lore ? paramText(key) : null, lab = text => h("span", { class: "l" + (lore ? " lored" : ""), text, title: tip, "data-lore": lore ? key : null });
@@ -1053,13 +1082,31 @@
       return h("div", { class: "mrow out" }, lab(label), h("span", { class: "c" }, v), h("span", { class: "u", text: unit }),
         h("span", { class: "hint", text: key === "pop_meg" ? "сумма городов страны на карте" : "по доле пустошей в карточке страны на карте" }));
     }
-    function tableBlock(t) {
+    // ВКВ: космодромы и военные спутники (правятся во вкладке «Космос»)
+    function vkvRow() {
+      const v = live(e => {
+        const sat = c.cnt.sat || {}, cntBy = eff => rules.tables.sat.filter(x => x.effect === eff).reduce((s, x) => s + (+sat[x.id] || 0), 0);
+        e.textContent = "космодромов " + (+c.in.pads || 0) + " · разведка и СПРН " + cntBy("mil") + " · «Стержни» " + cntBy("rod") + " · ПСО " + cntBy("asat");
+        e.className = "v";
+      });
+      return h("div", { class: "mrow out" }, h("span", { class: "l", text: "Космодромы и военные спутники" }), h("span", { class: "c" }, v), h("span", { class: "u" }),
+        h("span", { class: "hint", text: "правятся во вкладке «Космос»" }));
+    }
+    function tableBlock(t, vids) {
       const meta = M.TABLES[t], info = TAB_INFO[t] || [];
+      const vidOf = x => M.ROD_VID[x.rod] || (t === "ac" ? "vvs" : t === "sup" ? "rear" : "sv");
+      const groupOf = x => (t === "ship" ? x.cls || "" : x.rod || "");
+      const groupName = g => ((t === "ship" ? M.SHIP_CLS : M.ROD).find(o => o[0] === g) || [, g || "Прочие"])[1];
+      const list = rules.tables[t].filter(x => !vids || vids.includes(vidOf(x)));
+      const groups = ["div", "ac", "sup", "ship"].includes(t) ? [...new Set(list.map(groupOf))] : null;
       const tbl = h("table", { class: "mt units" });
       tbl.append(h("thead", null, h("tr", null, h("th", { text: meta.title.replace(/^Типы |^Классы /, "") }), h("th", { class: "num", text: meta.unit }), info.map(([, l]) => h("th", { class: "num", text: l })),
         t === "industry" ? h("th", { text: "Роль" }) : null, t === "food" ? h("th", { text: "Погода" }) : null, t === "sat" ? h("th", { text: "Эффект" }) : null)));
-      const body = h("tbody");
-      for (const rowT of rules.tables[t]) {
+      const body = h("tbody"), cols = 2 + info.length + (["industry", "food", "sat"].includes(t) ? 1 : 0);
+      const ordered = groups ? groups.flatMap(g => list.filter(x => groupOf(x) === g)) : list;
+      let lastG = null;
+      for (const rowT of ordered) {
+        if (groups && groups.length > 1 && groupOf(rowT) !== lastG) { lastG = groupOf(rowT); body.append(h("tr", { class: "grp" }, h("td", { colspan: cols, text: groupName(lastG) }))); }
         const cur = +(c.cnt[t][rowT.id] || 0);
         let cell;
         if (opts.editable) {
@@ -1076,6 +1123,76 @@
       }
       tbl.append(body);
       return h("div", { class: "mt-scroll" }, tbl);
+    }
+    // армии (дивизии + приданная авиация) и флоты (корабли + морская авиация): ГМ заводит, игрок видит свои
+    function forcesBlock(key) {
+      const isArmy = key === "armies", units = isArmy ? ["div", "ac"] : ["ship", "ac"];
+      const box = h("div", { class: "forces" });
+      if (!Array.isArray(c[key])) c[key] = [];
+      const prov = () => M.provinces(), provName = p => { const x = prov()[String(p)]; return x ? x.name + (x.c != null && String(x.c) !== String(opts.id) ? " (" + countryName(x.c) + ")" : "") : "—"; };
+      const ZONE = { home: "своя территория", ally: "земля союзника по военному блоку", away: "чужая территория" };
+      const okRow = (t, x) => (t === "ac" ? (isArmy ? M.ARMY_AC : M.FLEET_AC).includes(x.rod) : t === "div" ? String(x.army) === "1" && x.rod !== "vmf_coast" : true);
+      const unitName = (t, id) => ((rules.tables[t] || []).find(x => x.id === id) || { name: id }).name;
+      const compText = a => units.map(t => Object.keys(a[t] || {}).filter(k => a[t][k] > 0).map(k => a[t][k] + " × " + unitName(t, k))).flat().join(", ") || "состав не задан";
+      const provOptions = (kind = "l") => {
+        const P = prov(), own = [], other = [];
+        for (const id in P) if (P[id].k === kind) (String(P[id].c) === String(opts.id) ? own : other).push(id);
+        own.sort((a, b) => String(P[a].name).localeCompare(String(P[b].name), "ru"));
+        other.sort((a, b) => (countryName(P[a].c) + P[a].name).localeCompare(countryName(P[b].c) + P[b].name, "ru"));
+        if (kind === "s") return [["", "— не указана —"]].concat(own.concat(other).sort((a, b) => String(P[a].name).localeCompare(String(P[b].name), "ru")).map(id => [id, P[id].name]));
+        return [["", "— не указана (своя территория) —"]].concat(own.map(id => [id, P[id].name]), other.map(id => [id, countryName(P[id].c) + " — " + P[id].name]));
+      };
+      async function edit(a) {
+        const fields = [{ key: "name", label: isArmy ? "Название армии" : "Название флота или эскадры", type: "text" }, { key: "cmd", label: "Командующий", type: "text" },
+          { key: "prov", label: isArmy ? "Где стоит армия (зона на суше)" : "База: зона на побережье", type: "select", options: provOptions("l"), hint: "Зоны — укрупнённые регионы карты. Вне своей территории снабжение дороже на 50% (на земле союзника по военному блоку — вдвое меньше). Видно на личной карте" }];
+        if (!isArmy) fields.push({ key: "sea", label: "Где сейчас флот (морская зона)", type: "select", options: provOptions("s"), hint: "Для личной карты и расчёта морского боя; на снабжение не влияет" });
+        fields.push({ key: "vis", label: "Кому ещё показать эти войска на карте (владелец видит всегда)", type: "multi", options: Object.keys(mapCountries).filter(x => x !== String(opts.id)).sort((a, b) => countryName(a).localeCompare(countryName(b), "ru")).map(x => [x, countryName(x)]), hint: "Эти страны увидят название, страну, число дивизий или кораблей и место — без мощи. Откроется после публикации" });
+        const init = { name: a ? a.name : "", cmd: a ? a.cmd : "", prov: a ? a.prov : "", sea: a ? a.sea || "" : "", vis: a && a.vis ? a.vis.join(",") : "", note: a ? a.note || "" : "" };
+        for (const t of units) for (const x of rules.tables[t]) {
+          const have = +(c.cnt[t][x.id] || 0), inThis = a && a[t] ? +(a[t][x.id] || 0) : 0;
+          if (!okRow(t, x) || (!have && !inThis)) continue;
+          const busy = c[key].filter(o => o !== a).reduce((s, o) => s + (+((o[t] || {})[x.id]) || 0), 0);
+          fields.push({ key: t + ":" + x.id, label: x.name + (t === "ac" ? " (авиация)" : ""), type: "number", min: 0, step: 1, hint: "в стране " + have + ", в других " + (isArmy ? "армиях" : "флотах") + " " + busy });
+          init[t + ":" + x.id] = inThis;
+        }
+        fields.push({ key: "note", label: "Заметка", type: "textarea" });
+        const v = await window.KGForm(a ? a.name : isArmy ? "Новая армия" : "Новый флот", fields, init, v => (!String(v.name || "").trim() ? "Нужно название" : ""));
+        if (!v) return;
+        const o = a || { id: uid(isArmy ? "army" : "fleet") };
+        Object.assign(o, { name: v.name, cmd: v.cmd || "", prov: v.prov || "", sea: isArmy ? "" : v.sea || "", vis: v.vis ? String(v.vis).split(",").filter(Boolean) : [], note: v.note || "" });
+        for (const t of units) { o[t] = {}; for (const k in v) if (k.startsWith(t + ":") && +v[k] > 0) o[t][k.slice(t.length + 1)] = Math.round(+v[k]); }
+        if (!a) c[key].push(o);
+        draw(); changed();
+      }
+      const stat = (a, fn) => live((e, r) => { const x = (r[key] || []).find(y => y.id === a.id); e.textContent = x ? fn(x, r) : "—"; });
+      const draw = () => {
+        box.innerHTML = "";
+        if (!c[key].length) box.append(h("p", { class: "empty", text: isArmy ? "Армий нет: все дивизии в резерве и гарнизонах." : "Флотов нет: корабли считаются вместе." }));
+        for (const a of c[key]) {
+          const card = h("div", { class: "force-card" },
+            h("div", { class: "fc-head" }, h("b", { text: a.name || "—" }), a.cmd ? h("span", { class: "fc-cmd", text: " · " + a.cmd }) : null,
+              h("span", { class: "fc-prov" }, " · ", provName(a.prov), !isArmy && a.sea ? " → " + provName(a.sea) : "", " ", stat(a, x => "(" + ZONE[x.zone] + ")"))),
+            h("div", { class: "fc-comp", text: compText(a) }),
+            h("div", { class: "fc-stats" }, isArmy
+              ? stat(a, x => x.N + " дивиз. · сосредоточение +" + fmt(x.conc, "pct") + " · снабжение: нужно " + fmt(x.need, "d1") + ", обеспечено " + fmt(x.cover, "pct") +
+                (x.surcharge ? " (надбавка +" + fmt(x.surcharge, "pct") + ")" : "") + " · мощь " + fmt(x.power, "d1") + " · в обороне " + fmt(x.def, "d1"))
+              : stat(a, x => x.N + " кораб. (боевых " + x.Nc + ") · сосредоточение +" + fmt(x.conc, "pct") + " · суда снабжения " + x.aux + " из " + fmt(x.need, "d1") +
+                (x.surcharge ? " (надбавка +" + fmt(x.surcharge, "pct") + ")" : "") + " · мощь " + fmt(x.power, "d1"))),
+            a.note ? h("div", { class: "fc-note", text: a.note }) : null);
+          if (opts.editable) card.querySelector(".fc-head").append(h("span", { class: "btns" },
+            h("button", { class: "small-btn", text: "✎", title: "Изменить", onclick: () => edit(a) }),
+            h("button", { class: "small-btn danger", text: isArmy ? "Расформировать" : "Распустить", onclick: async () => {
+              if (await ask((isArmy ? "Расформировать армию «" : "Распустить флот «") + a.name + "»? Соединения вернутся в резерв.", "", { confirm: true })) { c[key].splice(c[key].indexOf(a), 1); draw(); changed(); }
+            } })));
+          box.append(card);
+        }
+        if (opts.editable) box.append(h("button", { class: "small-btn", text: isArmy ? "+ Армия" : "+ Флот", onclick: () => edit(null) }));
+        box.append(h("p", { class: "hint", text: isArmy
+          ? "Армия бьёт сильнее: +4% мощи за каждую дивизию сверх первой (до +40%, нужны войска связи). Но снабжения ей нужно больше: дивизии × (1 + 0,06 × (N − 1)). Ёмкость дают автомобильные и железнодорожные бригады; при нехватке мощь армии падает, но не ниже половины. Дивизии вне армий — резерв и гарнизоны."
+          : "Флот бьёт сильнее: +2% за каждый боевой корабль сверх первого (до +30%). Судов снабжения нужно больше с размером: боевые / 8 × (1 + 0,03 × (N − 1)). Корабли вне флотов считаются как раньше." }));
+      };
+      draw();
+      return box;
     }
     // займы страны: кредитор, сумма, проценты. ГМ (и игрок в «Что если») выдаёт, правит и списывает займы
     function loansBlock() {
@@ -1124,6 +1241,48 @@
         }
         if (opts.editable) box.append(h("button", { class: "small-btn", text: "+ Заём", onclick: () => editLoan(null) }));
         box.append(h("p", { class: "hint", text: "Перерасход бюджета каждый ход уходит в долг «Рынку». Резерв («Прочее») гасит сначала его, затем остальные займы пропорционально. Проценты вычитаются из доходов до раздела по статьям." }));
+      };
+      draw();
+      return box;
+    }
+
+    // казна: остаток и траты этого хода (назначает ГМ, игрок видит; траты списываются при переходе хода)
+    function treasuryBlock() {
+      const box = h("div", { class: "treasury" });
+      const kindName = k => (M.TRE_KINDS.find(x => x[0] === k) || [, k])[1];
+      async function editSpend(S) {
+        const v = await window.KGForm(S ? "Трата казны" : "Новая трата казны", [
+          { key: "kind", label: "На что", type: "select", options: M.TRE_KINDS.map(x => [x[0], x[1]]), hint: "ОВП: по курсу из правил. Боеготовность: трата за ход считается годовой × 4 и добавляется к военному бюджету. Стабильность: дороже, чем из бюджета «социалки»." },
+          { key: "amt", label: "Сумма, млрд кр.", type: "number", step: "any", min: 0 },
+          { key: "note", label: "Заметка", type: "textarea" }
+        ], S ? { kind: S.kind, amt: S.amt, note: S.note || "" } : { kind: "ovp", amt: 5, note: "" }, v => (!(+v.amt > 0) ? "Сумма должна быть больше нуля" : ""));
+        if (!v) return;
+        const o = { kind: v.kind, amt: +v.amt, note: v.note || "" };
+        if (S) Object.assign(S, o); else c.treasury.spend.push(Object.assign({ id: uid("tre") }, o));
+        draw(); changed();
+      }
+      const draw = () => {
+        box.innerHTML = "";
+        const T = M.treasuryState(c);
+        c.treasury = { bal: T.bal, spend: T.spend };
+        if (opts.editable) {
+          const inp = h("input", { type: "number", min: 0, step: "any", value: String(+T.bal.toFixed(3)), title: "Остаток казны, млрд кр." });
+          inp.addEventListener("input", () => { if (inp.value === "" || !isFinite(+inp.value)) return; c.treasury.bal = Math.max(0, +inp.value); changed(); });
+          box.append(h("label", { class: "tre-bal" }, "Остаток казны, млрд кр.: ", inp));
+        }
+        if (!c.treasury.spend.length) box.append(h("p", { class: "empty", text: "Трат на этот ход нет." }));
+        else {
+          const body = h("tbody");
+          for (const S of c.treasury.spend) {
+            const tr = h("tr", null, h("td", null, h("b", { text: kindName(S.kind) }), S.note ? h("small", { class: "sub", text: S.note }) : null), h("td", { class: "num", text: fmt(S.amt, "d1") }));
+            if (opts.editable) tr.append(h("td", { class: "btns" }, h("button", { class: "small-btn", text: "✎", title: "Изменить", onclick: () => editSpend(S) }),
+              h("button", { class: "small-btn danger", text: "✕", title: "Убрать трату", onclick: () => { c.treasury.spend.splice(c.treasury.spend.indexOf(S), 1); draw(); changed(); } })));
+            body.append(tr);
+          }
+          box.append(h("div", { class: "mt-scroll" }, h("table", { class: "mt units loans-t" }, h("thead", null, h("tr", null, h("th", { text: "На что" }), h("th", { class: "num", text: "Млрд кр." }), opts.editable ? h("th") : null)), body)));
+        }
+        if (opts.editable) box.append(h("button", { class: "small-btn", text: "+ Трата", onclick: () => editSpend(null) }));
+        box.append(h("p", { class: "hint", text: "Казна копится из резерва бюджета, когда долга нет, и тратится на перерасход раньше, чем он уйдёт в долг. Каждый ход она теряет часть запаса, выше потолка не растёт. Траты этого хода списываются при переходе хода." }));
       };
       draw();
       return box;
@@ -1365,14 +1524,14 @@
       if (data.world && data.world.links) data.world.links = M.quarterMods(data.world.links);
     }
     const base = M.compute(rules, data.c); M.applyWorld(rules, data.c, base, data.world);
-    player = { id, dk, data, base, c: clone(data.c) };
+    player = { id, dk, data, base, c: clone(data.c), seen: Array.isArray(data.seen) ? data.seen : [] }; forcesCache = null; window.dispatchEvent(new Event("kg:forces"));
   }
   async function restorePlayer() {
     let s = null; try { s = JSON.parse(sessionStorage.getItem(PLAYER_KEY) || "null"); } catch (e) { /* */ }
     if (!s || !mech.countries[s.id]) return;
     try { await openPlayer(s.id, C.unb64(s.dk)); } catch (e) { player = null; try { sessionStorage.removeItem(PLAYER_KEY); } catch (x) { /* */ } }
   }
-  function logoutPlayer() { player = null; sandbox = false; try { sessionStorage.removeItem(PLAYER_KEY); } catch (e) { /* */ } renderMy(); renderHomeAuth(); }
+  function logoutPlayer() { player = null; sandbox = false; forcesCache = null; window.dispatchEvent(new Event("kg:forces")); try { sessionStorage.removeItem(PLAYER_KEY); } catch (e) { /* */ } renderMy(); renderHomeAuth(); }
   function renderMy() {
     const box = $("mechMy"); box.innerHTML = "";
     if (!player) {
@@ -1440,6 +1599,28 @@
 
   // ---------- ГМ ----------
   const isGm = () => !!(window.KGMap && window.KGMap.gm);
+  // армии и флоты для личной карты: игрок — свои, ГМ — все (после расшифровки данных стран). Публично их нет нигде
+  let forcesCache = null;
+  function forcesFor() {
+    if (forcesCache) return forcesCache;
+    const list = [], add = (id, r) => {
+      for (const a of (r && r.armies) || []) list.push({ k: "a", c: String(id), id: a.id, n: a.name, cmd: a.cmd, z: a.prov, N: a.N, pw: a.power, df: a.def, zone: a.zone, cv: a.supply });
+      for (const f of (r && r.fleets) || []) list.push({ k: "f", c: String(id), id: f.id, n: f.name, cmd: f.cmd, z: f.prov, s: f.sea, N: f.N, pw: f.power, zone: f.zone, cv: f.supply });
+    };
+    if (isGm() && mk && Object.keys(gmData).length) {
+      try { const res = M.computeAll(rules, gmData, gmLinks, rgAllS()).results; for (const id in res) add(id, res[id]); } catch (e) { console.error(e); }
+    } else if (player) {
+      try { const r = M.compute(rules, player.data.c, player.id); M.applyWorld(rules, player.data.c, r, player.data.world); add(player.id, r); } catch (e) { console.error(e); }
+      for (const x of player.seen || []) list.push(Object.assign({ seen: true }, x)); // чужие войска, открытые вам ГМом
+    }
+    return (forcesCache = list);
+  }
+  window.KGForces = {
+    get: forcesFor,
+    // кто смотрит: "gm", "player" или null — карта решает, показывать ли личный слой
+    who: () => (isGm() && mk ? { role: "gm" } : player ? { role: "player", id: String(player.id), name: countryName(player.id) } : null),
+    zones: () => zoneMap
+  };
   async function pbkdf2Hash(pw, salt, iter) {
     const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(pw), "PBKDF2", false, ["deriveBits"]);
     return C.b64(new Uint8Array(await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations: iter }, key, 256)));
@@ -1467,7 +1648,7 @@
     snapshotBase();
   }
   function snapshotBase() {
-    gmBase = {};
+    gmBase = {}; forcesCache = null; window.dispatchEvent(new Event("kg:forces"));
     try { gmBase = M.computeAll(rules, gmData, gmLinks, rgAllS()).results; } catch (e) { console.error(e); }
   }
   async function unlockGm() {
@@ -1477,10 +1658,13 @@
     if (!mech.gm) {
       // первый запуск: создаём мастер-ключ под паролем ГМа
       let pw = gmPw;
-      if (!pw || (await pbkdf2Hash(pw, C.unb64(config.gm.salt), config.gm.iter)) !== config.gm.hash) {
+      const hasHash = !!(config.gm && config.gm.hash);
+      const okHash = async p => !hasHash || (await pbkdf2Hash(p, C.unb64(config.gm.salt), config.gm.iter)) === config.gm.hash;
+      if (!hasHash && !pw) { toast("Мастер-ключ ещё не создан, а хэша пароля в config.json нет. Задайте пароль ГМа заново."); return false; }
+      if (!pw || !(await okHash(pw))) {
         pw = await askGmPassword("Пароль ГМа для шифрования данных стран");
         if (!pw) return false;
-        if ((await pbkdf2Hash(pw, C.unb64(config.gm.salt), config.gm.iter)) !== config.gm.hash) { toast("Неверный пароль"); return false; }
+        if (!(await okHash(pw))) { toast("Неверный пароль"); return false; }
       }
       mk = C.newKey();
       mech.gm = await C.lockWithPassword(pw, mk);
@@ -1499,8 +1683,8 @@
     await offerDraft();
     return true;
   }
-  async function restoreGm() {
-    if (!isGm() || !mech.gm) return;
+  async function restoreGm(force) {
+    if ((!force && !isGm()) || !mech.gm) return;
     let s = null; try { s = sessionStorage.getItem(MK_KEY); } catch (e) { /* */ }
     if (!s) return;
     try {
@@ -1511,6 +1695,7 @@
     } catch (e) { mk = null; }
   }
   function lockGm() {
+    forcesCache = null; setTimeout(() => window.dispatchEvent(new Event("kg:forces")), 0);
     mk = null; dks = {}; gmData = {}; gmSel = null; gmDirty = false; gmLinks = [];
     try { sessionStorage.removeItem(MK_KEY); } catch (e) { /* */ }
     mech = clone(mechPub); rules = pubRules(mech);
@@ -1520,7 +1705,7 @@
   // черновик ГМа (в этом браузере)
   let draftTimer = null;
   function markDirty() {
-    gmDirty = true;
+    gmDirty = true; forcesCache = null; window.dispatchEvent(new Event("kg:forces"));
     const dot = $("mechDirty"); if (dot) dot.classList.remove("hidden");
     clearTimeout(draftTimer);
     draftTimer = setTimeout(() => {
@@ -1575,9 +1760,10 @@
       }
       for (const id in out.countries) {
         if (!gmData[id] || !dks[id]) continue;
-        out.countries[id].data = await C.encJSON(dks[id], { c: gmData[id], world: ctx[id], turn: out.turn, year: out.year, turn_months: M.TURN_MONTHS, at: out.updated });
+        out.countries[id].data = await C.encJSON(dks[id], { c: gmData[id], world: ctx[id], seen: M.seenForces(gmData, results, id), turn: out.turn, year: out.year, turn_months: M.TURN_MONTHS, at: out.updated });
         out.countries[id].pub = { inm: +results[id].inm.toFixed(2), rank: results[id].rank, econ: results[id].econ_level };
       }
+      // армии и флоты публично не публикуются: их место видят только сама страна и ГМ (внутри зашифрованных данных страны)
       // дефолты открыты всем (суммы долгов видят только сами страны и ГМ)
       out.debtPub = { def: Object.keys(out.countries).filter(id => gmData[id] && M.debtState(gmData[id]).def) };
       // публичный рейтинг корпораций: только место, выручка и число стран
@@ -1604,7 +1790,7 @@
       { key: "id", label: "Страна с карты", type: "select", options: free.map(id => [id, countryName(id)]) },
       { key: "tpl", label: "Начальные данные", type: "select", options: [["empty", "Пустые (заполнить вручную)"]].concat(M.SAMPLES.map((s, i) => [String(i), "Образец: " + s.profile + " (" + s.name + ")"])) },
       { key: "pw", label: "Пароль игрока", hint: "Сгенерирован автоматически, можно заменить. Его можно посмотреть позже." }
-    ], { id: free[0], tpl: "0", pw: C.genPassword() }, v => (!v.pw || v.pw.length < 6 ? "Пароль не короче 6 символов" : ""));
+    ], { id: free[0], tpl: "0", pw: C.genPassword() }, v => (!v.pw || v.pw.length < 12 ? "Пароль не короче 12 символов" : ""));
     if (!v) return;
     const dk = C.newKey();
     mech.countries[v.id] = { kg: await C.lockWithKey(mk, dk), kp: await C.lockWithPassword(v.pw, dk), pw: await C.encText(mk, v.pw) };
@@ -1662,6 +1848,9 @@
         // госдолг: стартовые займы — из файла, накопленный в игре долг и займы ГМа — прежние
         const D0 = M.debtState(gmData[id]);
         c.debt = { def: D0.def, loans: c.debt.loans.concat(D0.loans.filter(L => !L.id.startsWith("imp_"))) };
+        { const T0 = M.treasuryState(gmData[id]); if (T0.bal > 0 || T0.spend.length) c.treasury = gmData[id].treasury; } // накопленная в игре казна важнее стартовой
+        // армии и флоты: стартовые — из файла, заведённые ГМом — прежние
+        for (const k of ["armies", "fleets"]) c[k] = (c[k] || []).concat((gmData[id][k] || []).filter(a => a && !String(a.id).startsWith("imp_")));
       }
       gmData[id] = c; n++;
       if (n % 10 === 0) toast("Импорт: " + n + " из " + todo.length + "…");
@@ -1738,10 +1927,31 @@
   async function changePassword(id) {
     const pw = await ask("Новый пароль игрока: " + countryName(id), C.genPassword(), { note: "Старый пароль перестанет работать после публикации." });
     if (!pw) return;
-    if (pw.length < 6) { toast("Пароль слишком короткий"); return; }
+    if (pw.length < 12) { toast("Пароль не короче 12 символов"); return; }
     mech.countries[id].kp = await C.lockWithPassword(pw, dks[id]);
     mech.countries[id].pw = await C.encText(mk, pw);
     markDirty(); toast("Пароль изменён. Опубликуйте, чтобы он заработал.");
+  }
+  // перевыдать всем странам новые пароли (6 слов, 600 000 итераций) и усилить шифровку мастер-ключа
+  async function reissueAll() {
+    const ids = Object.keys(mech.countries);
+    if (!ids.length) { toast("Нет подключённых стран"); return; }
+    const ok = await ask("Перевыдать пароли всем странам (" + ids.length + ")?", "", { confirm: true, note: "Старые пароли перестанут работать после публикации. Новые будут скопированы в буфер обмена списком «страна: пароль». Раздайте их игрокам лично." });
+    if (!ok) return;
+    const lines = [];
+    for (const id of ids) {
+      if (!dks[id]) { toast("Страна " + countryName(id) + " не расшифрована — отмена"); return; }
+    }
+    for (const id of ids) {
+      const pw = C.genPassword();
+      mech.countries[id].kp = await C.lockWithPassword(pw, dks[id]);
+      mech.countries[id].pw = await C.encText(mk, pw);
+      lines.push(countryName(id) + ": " + pw);
+    }
+    if (gmPw) mech.gm = await C.lockWithPassword(gmPw, mk);
+    markDirty();
+    try { await navigator.clipboard.writeText(lines.join("\n")); toast("Пароли скопированы в буфер обмена. Опубликуйте, чтобы они заработали."); }
+    catch (e) { toast("Пароли перевыданы. Буфер недоступен — смотрите «Пароль игрока» в карточке страны. Опубликуйте."); }
   }
   async function removeCountry(id) {
     const ok = await ask("Отключить «" + countryName(id) + "» от механик?", "", { confirm: true, note: "Все данные страны будут удалены после публикации. Ctrl+Z здесь не работает." });
@@ -1760,19 +1970,21 @@
     if (debris.length) losses.push("от мусора: " + debris.join(", "));
     const y0 = M.firstYear(mech.turn, mech.year);
     const ok = await ask("Перейти к ходу " + (mech.turn + 1) + " (" + M.turnMonths(mech.turn + 1) + " " + M.turnYear(mech.turn + 1, y0) + ")?", "", { confirm: true,
-      note: "У всех стран технологии, стабильность и население примут прогнозные значения (население городов на карте умножится на прирост и опубликуется вместе с механиками), перерасход бюджета уйдёт в госдолг, резерв погасит часть долга, а при долге от " + fmt(+rules.K.debt_default, "pct") + " ВВП будет объявлен дефолт. Бесчестье союзов Старого Света вырастет на прирост за ход." + (losses.length ? " Не забудьте убрать спутники, сошедшие с орбиты (" + losses.join("; ") + ")." : "") });
+      note: "У всех стран технологии, стабильность и население примут прогнозные значения (население городов на карте умножится на прирост и опубликуется вместе с механиками), перерасход бюджета сначала спишет казну и только потом уйдёт в госдолг, резерв погасит долг, а остаток пополнит казну (с убылью за ход), а при долге от " + fmt(+rules.K.debt_default, "pct") + " ВВП будет объявлен дефолт. Бесчестье союзов Старого Света вырастет на прирост за ход." + (losses.length ? " Не забудьте убрать спутники, сошедшие с орбиты (" + losses.join("; ") + ")." : "") });
     if (!ok) return;
     const debtNews = [], grow = {};
     for (const id of ids) {
       const c = gmData[id], r = results[id];
       c.in.tech = +r.next_tech.toFixed(3);
       c.in.stability = +r.next_stab.toFixed(1);
+      c.in.support = +r.next_support.toFixed(1);
       // население: прирост за ход умножает города страны на карте; в данных страны — то же число (запасной вариант без карты)
       const p = M.popOf(c, id);
       if (p.city) grow[id] = 1 + r.d_pop;
       c.in.pop_meg = +(p.meg * (1 + r.d_pop)).toFixed(3);
       c.in.pop_waste = +(p.waste * (1 + r.d_pop)).toFixed(3);
       const wasDef = M.debtState(c).def, D = M.debtNextTurn(rules, c, r);
+      M.treasuryNextTurn(c, r);
       if (D.def !== wasDef) debtNews.push(countryName(id) + (D.def ? ": дефолт" : ": дефолт снят"));
     }
     for (const d of M.REGIONS) M.rgNextTurn(rules, d.id, rgS(d.id), results, gmData, mech.turn);
@@ -2142,6 +2354,7 @@
       h("button", { class: gmView === "rules" ? "active" : "", text: "Правила", onclick: () => { gmView = "rules"; renderGm(); } }),
       h("span", { class: "sp" }),
       h("button", { text: "+ Страна", onclick: addCountry }),
+      h("button", { text: "Перевыдать пароли", title: "Новые пароли всем странам, усиленное шифрование", onclick: reissueAll }),
       h("button", { text: "+ Корпорация", onclick: addCorp }),
       h("button", { text: "Импорт стран", title: "Подключить страны из файла стартовых данных (например, Страны_2200.json из папки D:/WorkWPG)", onclick: importCountries }),
       h("button", { text: "Следующий ход", onclick: nextTurn }),
@@ -2226,6 +2439,24 @@
 
   window.KGMech = {
     gmPassword(pw) { gmPw = pw; },
+    // проверка пароля ГМа расшифровкой мастер-ключа (отдельного хэша пароля в репозитории больше нет).
+    // Возвращает true/false; null — проверить нечем (мастер-ключ ещё не создан и хэша в config.json нет)
+    async checkGmPassword(pw) {
+      await init();
+      if (!config) return null;
+      if (mechPub && mechPub.gm) { try { await C.unlockWithPassword(pw, mechPub.gm); return true; } catch (e) { return false; } }
+      if (config.gm && config.gm.hash) return (await pbkdf2Hash(pw, C.unb64(config.gm.salt), config.gm.iter)) === config.gm.hash;
+      return null;
+    },
+    // сохранённый вход ГМа действителен, только если мастер-ключ из sessionStorage расшифровывает данные стран
+    async verifySession() {
+      await init();
+      if (!mech || !mech.gm || !C.ready()) return false;
+      if (!Object.keys(mech.countries).length) return false; // проверить ключ не на чем — войти заново
+      await restoreGm(true);
+      if (!mk) { try { sessionStorage.removeItem(MK_KEY); } catch (e) { /* */ } return false; }
+      return true;
+    },
     rewrapGm,
     renderCorpLore,
     renderIdeoLore,

@@ -36,6 +36,7 @@
     { id: "labels", name: "Страны", kind: "svg", vis: true, glow: "#ff7fd8" },
     { id: "provLabels", name: "Названия провинций", kind: "svg", vis: true },
     { id: "cities", name: "Города", kind: "svg", vis: true },
+    { id: "forces", name: "Армии и флоты", kind: "svg", vis: true, internal: true }, // слой личной карты (армии, флоты, зоны): в общей легенде его нет, значки видит только игрок своей страны и ГМ
     { id: "measure", kind: "svg", internal: true },
     { id: "over", kind: "svg", internal: true },
     { id: "cursor", kind: "svg", internal: true, nowrap: true } // курсор кисти: не повторяется по краям
@@ -52,10 +53,11 @@
     if (l.kind === "img") {
       el = document.createElement("img"); el.alt = ""; el.draggable = false; el.decoding = "async";
       el.dataset.src = l.src; // выключенные слои грузятся при включении, включённые — после показа карты (loadLayers)
+      el.dataset.lo = l.src.replace(/\.webp$/, "_lo.webp"); // половинный размер — для общего вида
     } else if (l.kind === "div") {
       el = document.createElement("div");
     } else if (l.kind === "canvas") {
-      el = document.createElement("canvas"); el.width = W; el.height = H;
+      el = document.createElement("canvas"); el.width = 1; el.height = 1; // полный размер — при первом мазке ГМа (pctx)
     } else {
       el = document.createElementNS(NS, "svg");
       el.setAttribute("viewBox", `0 0 ${W} ${H}`); el.setAttribute("width", W); el.setAttribute("height", H);
@@ -68,7 +70,12 @@
     world.appendChild(el);
     L[l.id] = el;
   });
-  const paintCtx = L.paint.getContext("2d", { willReadFrequently: true });
+  // холст предпросмотра кисти (W×H×4 байт) создаётся при первом мазке ГМа, у игроков его нет
+  let paintCtx = null;
+  function pctx() {
+    if (!paintCtx) { L.paint.width = W; L.paint.height = H; paintCtx = L.paint.getContext("2d", { willReadFrequently: true }); }
+    return paintCtx;
+  }
   // Бесшовная карта: картинки повторяются по краям сразу (это дёшево), векторные слои —
   // после загрузки, по одному в свободное время, чтобы не тормозить первую отрисовку.
   const WR = window.KGWrap.create(world, W, H);
@@ -83,26 +90,53 @@
   }
 
   const isVisible = l => (ui.vis[l.id] != null ? ui.vis[l.id] : l.vis);
-  function ensureSrc(img) { if (img && img.tagName === "IMG" && !img.getAttribute("src") && img.dataset.src) img.src = img.dataset.src; }
+  const provLayerOn = () => ["provBorders", "provLabels"].some(id => { const l = flat.find(x => x.id === id); return l && isVisible(l); });
+  // Рисунок слоя: на общем виде — половинного размера (_lo.webp, в 3 раза легче), полный — когда карту приблизили
+  // настолько, что половинного не хватает (hiNeeded), или его просит глобус. Полный сначала грузится и раскодируется
+  // в стороне, потом подменяет половинный — без мигания и без долгого кадра.
+  let hiOn = false;
+  const hiNeeded = () => s * (window.devicePixelRatio || 1) > 0.6;
+  function ensureSrc(img) {
+    if (img && img.tagName === "IMG" && !img.getAttribute("src") && img.dataset.src) img.src = hiOn || !img.dataset.lo ? img.dataset.src : img.dataset.lo;
+  }
+  async function toFull(img) {
+    if (!img || img.tagName !== "IMG" || !img.dataset.src) return;
+    const full = img.dataset.src;
+    if (img.getAttribute("src") !== full) {
+      const pre = new Image(); pre.src = full;
+      try { await pre.decode(); } catch (e) { /* не раскодировалось — подставим как есть */ }
+      img.src = full;
+      if (img === L.relief) L.landDark.src = full; // подложка суши — тот же рисунок
+    }
+    await whenLoaded(img);
+  }
+  const LAYER_ORDER = ["relief", "hydro", "road_major", "road_secondary", "citiesFill", "road_road", "rail"];
+  const imgLayers = () => flat.filter(l => l.kind === "img" && l.id !== "landDark")
+    .sort((a, b) => (LAYER_ORDER.indexOf(a.id) + 1 || 99) - (LAYER_ORDER.indexOf(b.id) + 1 || 99));
+  async function upgradeLayers() {
+    if (hiOn) return; hiOn = true;
+    for (const l of imgLayers()) if (L[l.id].getAttribute("src")) await toFull(L[l.id]);
+  }
   // Рисунки слоёв (рельеф, реки, дороги) весят мегабайты. На медленном канале они отнимали скорость у данных границ,
   // поэтому грузятся после показа карты и по одному: сначала рельеф, затем реки, дороги, городские зоны.
   let layersGo = false; // до показа карты включённые слои рисунков не грузим
   async function loadLayers() {
     layersGo = true;
-    const order = ["relief", "hydro", "road_major", "road_secondary", "citiesFill", "road_road", "rail"];
-    const list = flat.filter(l => l.kind === "img").sort((a, b) => (order.indexOf(a.id) + 1 || 99) - (order.indexOf(b.id) + 1 || 99));
-    for (const l of list) {
+    if (hiNeeded()) hiOn = true; // карту открыли сразу приближенной (страна из адреса) — полные рисунки
+    for (const l of imgLayers()) {
       const el = L[l.id];
-      if (!(l.internal || isVisible(l)) || el.getAttribute("src")) continue;
+      if (!isVisible(l) || el.getAttribute("src")) continue;
       el.fetchPriority = "low"; ensureSrc(el);
-      if (l.id === "relief") L.landDark.src = el.src; // подложка суши — тот же рисунок
+      if (l.id === "relief") L.landDark.src = el.getAttribute("src"); // подложка суши — тот же рисунок
       await whenLoaded(el);
     }
+    if (!L.landDark.getAttribute("src")) { ensureSrc(L.landDark); } // рельеф выключен — подложке нужен свой
   }
   function applyLayer(l) {
     const el = L[l.id]; if (!el || l.internal) return;
     try { if (globe) globeDirty(); } catch (e) { /* глобус ещё не создан */ }
     el.style.display = isVisible(l) ? "" : "none";
+    if ((l.id === "provBorders" || l.id === "provLabels") && isVisible(l)) setTimeout(() => ensureProvinces(), 0); // слой «Провинции» строится сразу, на любом масштабе
     if (isVisible(l) && layersGo) ensureSrc(el);
     if (l.road) {
       const on = !!ui.hl[l.id];
@@ -123,7 +157,6 @@
       cb.addEventListener("change", () => { ui.vis[l.id] = cb.checked; applyLayer(l); saveUi(); syncGroups(); });
       r.append(cb);
       const hlc = l.road || l.glow;
-      if (hlc) { const sw = document.createElement("span"); sw.className = "swatch"; sw.style.background = hlc; r.append(sw); }
       const nm = document.createElement("span"); nm.className = "lname"; nm.textContent = l.name; r.append(nm);
       if (hlc) {
         const b = document.createElement("button"); b.type = "button"; b.className = "hl-btn" + (ui.hl[l.id] ? " on" : ""); b.textContent = "Подсветка";
@@ -211,7 +244,7 @@
   function setProvPath(id, d) {
     id = String(id); provPaths.set(id, d || "");
     let e = provEls[id];
-    if (!e) { e = svgEl("path", {}, L.provBorders); provEls[id] = e; }
+    if (!e) { e = svgEl("path", {}, L.provBorders); provEls[id] = e; const pr = state.provinces && state.provinces[id]; if (pr && pr.type === "Акватория") e.classList.add("sea"); } // акватории светлее: на тёмном океане иначе не видны
     e.setAttribute("d", d || "");
     if (selProv === id) provSelPath.setAttribute("d", d || "");
   }
@@ -266,11 +299,20 @@
   }
   const fmtPop = p => (p >= 1e6 ? (p / 1e6).toFixed(p >= 1e7 ? 1 : 2).replace(/\.?0+$/, "").replace(".", ",") + " млн"
     : p >= 1e4 ? Math.round(p / 1e3).toLocaleString("ru-RU") + " тыс." : Math.round(p).toLocaleString("ru-RU")) + " жителей";
+  // Значки городов — по 6 элементов на город. На общем виде видны только столицы и города от миллиона, остальные ярусы
+  // (CSS: #mapFrame[data-cz]) создаются при первом приближении до их масштаба.
+  let cityZ = 0;
+  function showCityTier(z) {
+    if (z <= cityZ) return;
+    cityZ = z;
+    if (state && state.cities) for (const id in state.cities) if (!els.cities[id]) renderCity(id);
+  }
   function renderCity(id) {
     const c = state.cities[id];
     let g = els.cities[id];
     if (!c) { if (g) { g.remove(); delete els.cities[id]; } if (popCity === id) closeCityPop(); return; }
     if (!g) {
+      if (!c.capital && cityType(c).z > cityZ) return; // ярус скрыт на этом масштабе — создадим при приближении (showCityTier)
       g = svgEl("g", { "data-col": "cities", "data-id": id }, L.cities);
       const ci = svgEl("g", { class: "ci" }, g);
       svgEl("circle", { class: "c-ring", r: 0 }, ci);
@@ -554,6 +596,7 @@
     const cz = String(s >= 1.8 ? 3 : s >= 1.1 ? 2 : s >= 0.6 ? 1 : 0);
     const ck = s > 1.8 ? (Math.round(1.8 / s * 20) / 20).toFixed(2) : "1"; // значки не раздуваются при приближении
     if (frame.dataset.cz !== cz) frame.dataset.cz = cz;
+    showCityTier(+cz);
     // переменные — на world, а не на слоях: правка слоя заставила бы пересобрать его копии по краям
     if (world.style.getPropertyValue("--ck") !== ck) world.style.setProperty("--ck", ck);
     const lod = s < 0.5 ? "far" : "near"; // издалека границы провинций не читаются, а рисовать их дорого
@@ -565,6 +608,8 @@
     if (typeof renderMeasure === "function") renderMeasure();
     if (typeof popCity !== "undefined" && popCity && !popAt) placeCityPop();
     afterView.forEach(f => f());
+    if (layersGo && !hiOn && hiNeeded()) upgradeLayers(); // приблизили — полные рисунки слоёв
+    if ((lod === "near" || provLayerOn()) && !provP) ensureProvinces(); // приблизили — границы и подписи провинций
   }
   // экранная x точки карты — на той копии, что ближе к центру окна
   function screenX(x) {
@@ -667,6 +712,7 @@
   // Открывается по клику на страну, стоит у правого края карты — слева от легенды. Что можно
   // посчитать по карте — столица, площадь, провинции, города — считается; остальное ждёт данных.
   const stateCard = $("stateCard");
+  let stateCardOn = false; // карточка открыта кнопкой «Карточка» (клик по стране её не открывает)
   let stateCardClosed = null; // id страны, у которой карточку закрыли крестиком
   function countryArea(id) {
     // площадь по маске: пиксель Меркатора на широте φ — (длина экватора / W · cos φ)²
@@ -708,7 +754,7 @@
   }
   function renderStateCard() {
     const c = sel && sel.col === "countries" ? state.countries[sel.id] : null;
-    if (!c || stateCardClosed === sel.id) { stateCard.classList.add("hidden"); return; }
+    if (!c || !stateCardOn || stateCardClosed === sel.id) { stateCard.classList.add("hidden"); return; } // открывается только кнопкой «Карточка»
     const body = $("stateCardBody");
     // ГМ печатает в поле карточки — не перерисовываем её под ним
     if (body.dataset.id === sel.id && body.contains(document.activeElement) && document.activeElement.matches(".sc-in")) return;
@@ -798,7 +844,13 @@
     if (e.key === "Escape") { e.target.value = ((state.countries[sel.id] || {}).info || {})[e.target.dataset.k] || ""; e.target.blur(); }
   });
   $("stateCardBody").addEventListener("click", e => { if (gm && e.target.closest(".sc-flag")) $("flagInput").click(); });
-  $("stateCardClose").onclick = () => { if (sel) stateCardClosed = sel.id; stateCard.classList.add("hidden"); };
+  // кнопка «Карточка» в легенде: открывает и закрывает карточку выбранного государства
+  $("cardToggle").addEventListener("click", () => {
+    if (!stateCard.classList.contains("hidden")) { stateCardOn = false; stateCard.classList.add("hidden"); return; }
+    if (!sel || sel.col !== "countries") { toast("Сначала выберите страну на карте или в списке"); return; }
+    stateCardOn = true; stateCardClosed = null; renderStateCard();
+  });
+  $("stateCardClose").onclick = () => { stateCardOn = false; if (sel) stateCardClosed = sel.id; stateCard.classList.add("hidden"); };
 
   // ---------- размер шрифта выбранной подписи — прямо на карте (ГМ) ----------
   // Клик по стране, провинции или подписи показывает над её названием кнопки A− / A+.
@@ -883,11 +935,12 @@
   $("flagClear").addEventListener("click", () => { if (!sel || !gm) return; delete flagCache[sel.id]; const b = state.countries[sel.id], a = clone(b); a.flag = null; commit("countries", sel.id, b, a); });
 
   // вкладки легенды
-  const PANES = { countries: "paneCountries", layers: "paneLayers", alliances: "paneAlliances" };
+  const PANES = { countries: "paneCountries", layers: "paneLayers", alliances: "paneAlliances", forces: "paneForces" };
   document.querySelectorAll("#legend .legend-tabs button").forEach(b => b.addEventListener("click", () => {
     document.querySelectorAll("#legend .legend-tabs button").forEach(x => x.classList.toggle("active", x === b));
     for (const k in PANES) $(PANES[k]).classList.toggle("hidden", b.dataset.ltab !== k);
     if (b.dataset.ltab === "alliances") buildAllyList();
+    if (b.dataset.ltab === "forces") { if (opsWho() && !zonesData) ensureZones(); renderOps(); }
   }));
   $("allyShow").addEventListener("change", e => showAllyLayer(e.target.checked));
   $("addAllyBtn").addEventListener("click", () => editAlly(null));
@@ -1042,6 +1095,7 @@
     let d = null;
     try { d = await DB.get("draft"); } catch (e) { return; }
     if (!d) return;
+    await ensureProvinces();
     const when = new Date(d.time).toLocaleString("ru-RU");
     const note = d.base === loadedStamp ? "Черновик от " + when + "." : "Черновик от " + when + " сделан для более старой версии карты.";
     const ok = await ask("Восстановить неопубликованный черновик?", "", { confirm: true, note });
@@ -1068,11 +1122,14 @@
     const pw = await ask("Вход ГМа", "", { password: true, note: "Режим редактирования карты." });
     if (!pw) return;
     await new Promise(r => setTimeout(r, Math.min(4000, fails * 800)));
-    const g = config.gm;
-    const h = await pbkdf2(pw, unb64(g.salt), g.iter);
-    if (b64(h) !== g.hash) { fails++; toast("Неверный пароль"); return; }
+    let ok = null;
+    if (window.KGMech && window.KGMech.checkGmPassword) { try { ok = await window.KGMech.checkGmPassword(pw); } catch (e) { console.error(e); ok = null; } }
+    if (ok === null && config.gm && config.gm.hash) { // запасной путь: хэш пароля в config.json (если ещё есть)
+      const g = config.gm;
+      ok = b64(await pbkdf2(pw, unb64(g.salt), g.iter)) === g.hash;
+    }
+    if (ok !== true) { fails++; toast(ok === null ? "Не удалось проверить пароль: данные механик не загрузились" : "Неверный пароль"); return; }
     fails = 0;
-    try { sessionStorage.setItem(GM_KEY, g.hash); } catch (e) { /* */ }
     if (window.KGMech) window.KGMech.gmPassword(pw); // механикам: расшифровать данные стран без повторного ввода
     setGm(true);
     toast("Режим ГМа включён");
@@ -1094,9 +1151,11 @@
     setTool("pan");
     buildCountryList(); buildAllyList();
     updateCard();
+    try { loadForces(); } catch (e) { /* карта ещё не готова */ }
     try { refreshSats(); } catch (e) { /* */ }
     if (window.KGMoon) window.KGMoon.onGmChange();
     window.dispatchEvent(new CustomEvent("gmchange", { detail: gm }));
+    if (gm) ensureProvinces(); // правка провинций, черновик
   }
   $("gmLoginBtn").onclick = login;
   $("logoutBtn").onclick = logout;
@@ -1173,22 +1232,22 @@
 
   $("pwBtn").onclick = async () => {
     if (!gm) return;
-    const p1 = await ask("Новый пароль ГМа", "", { password: true, note: "Не короче 8 символов." });
+    const p1 = await ask("Новый пароль ГМа", "", { password: true, note: "Не короче 12 символов: лучше 5–6 случайных слов." });
     if (!p1) return;
-    if (p1.length < 8) { toast("Пароль слишком короткий"); return; }
+    if (p1.length < 12) { toast("Пароль слишком короткий"); return; }
     const p2 = await ask("Повторите новый пароль", "", { password: true });
     if (p1 !== p2) { toast("Пароли не совпадают"); return; }
     if (!(await ensureToken())) return;
-    const salt = crypto.getRandomValues(new Uint8Array(16)), iter = 150000;
-    const h = await pbkdf2(p1, salt, iter);
-    const next = clone(config); next.gm = { salt: b64(salt), hash: b64(h), iter };
+    const salt = crypto.getRandomValues(new Uint8Array(16)), iter = 600000;
     // мастер-ключ механик зашифрован паролем ГМа — перешифровываем тем же коммитом
     const mechFiles = window.KGMech ? await window.KGMech.rewrapGm(p1) : [];
     if (mechFiles === null) { toast("Пароль не изменён"); return; }
+    // Хэш пароля в config.json нужен, только пока в mech.json нет зашифрованного мастер-ключа (mechFiles пуст)
+    const next = clone(config);
+    if (mechFiles.length) delete next.gm; else next.gm = { salt: b64(salt), hash: b64(await pbkdf2(p1, salt, iter)), iter };
     try {
       await GH.commit(config.repo, [{ path: "data/config.json", content: JSON.stringify(next, null, 2) + "\n" }].concat(mechFiles), "Карта: смена пароля ГМа");
       config = next;
-      try { sessionStorage.setItem(GM_KEY, next.gm.hash); } catch (e) { /* */ }
       toast("Пароль изменён (вступит в силу после обновления сайта)");
     } catch (e) { toast("Не удалось сменить пароль: " + e.message); }
   };
@@ -1196,7 +1255,7 @@
   // ---------- инструменты ГМа ----------
   let tool = "pan", brushCountry = null, pencilSize = 2;
   const HINTS = {
-    pan: "Правая кнопка мыши — двигать карту, колесо — масштаб. Клик по стране — карточка государства. Двойной клик — переименовать (по городу — карточка города). Города и подписи тащите левой кнопкой; у выбранной подписи — кнопки размера шрифта.",
+    pan: "Правая кнопка мыши — двигать карту, колесо — масштаб. Клик по стране выбирает её, карточка — кнопкой «Карточка» в легенде. Двойной клик — переименовать (по городу — карточка города). Города и подписи тащите левой кнопкой; у выбранной подписи — кнопки размера шрифта.",
     brush: "Кисть: рисуйте территорию выбранной страны. [ и ] — размер, Alt+клик — взять страну с карты, правая кнопка — двигать карту.",
     pencil: "Карандаш: точная правка границы (1–4 px). Alt+клик — взять страну с карты, правая кнопка — двигать карту.",
     eraser: "Ластик: убирает территорию (суша становится ничьей). С галочкой «Не трогать соседей» стирает только страну, с которой начали мазок.",
@@ -1222,7 +1281,7 @@
     $("brushBar").classList.toggle("hidden", !gm || !PAINT.includes(t) || t === "picker");
     // панель инструментов опускается под панель кисти, если та переносится на несколько строк
     requestAnimationFrame(() => { const bb = $("brushBar"); frame.style.setProperty("--bbh", bb.classList.contains("hidden") ? "0px" : bb.offsetHeight + "px"); });
-    $("hint").textContent = viewMode === "globe" ? HINT_GLOBE : MEASURE.includes(t) ? HINTS[t] : gm ? HINTS[t] || "" : "Правая кнопка мыши — двигать карту (карта бесшовная, листается по кругу), колесо — масштаб. Клик по стране — карточка государства, по значку города — карточка города.";
+    $("hint").textContent = viewMode === "globe" ? HINT_GLOBE : MEASURE.includes(t) ? HINTS[t] : gm ? HINTS[t] || "" : "Правая кнопка мыши — двигать карту (карта бесшовная, листается по кругу), колесо — масштаб. Клик по стране выбирает её, карточка — кнопкой «Карточка» в легенде; по значку города — карточка города — карточка города.";
     const sz = $("bbSize");
     if (t === "pencil") { sz.max = 4; sz.value = pencilSize; } else { sz.max = 120; sz.value = brushSize; }
     $("bbSizeVal").textContent = sz.value;
@@ -1334,7 +1393,7 @@
     x1 = Math.min(W, Math.ceil(x1)); y1 = Math.min(H, Math.ceil(y1));
     const bw = x1 - x0, bh = y1 - y0;
     if (bw <= 0 || bh <= 0) return;
-    const img = paintCtx.getImageData(x0, y0, bw, bh), d = img.data;
+    const img = pctx().getImageData(x0, y0, bw, bh), d = img.data;
     for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
       const i = (y0 + y) * W + (x0 + x);
       if (E.mark[i] !== E.strokeNo) continue;
@@ -1342,7 +1401,7 @@
       const c = !v ? [16, 24, 46] : E === P ? [120, 235, 255] : rgbOf(v);
       d[o] = c[0]; d[o + 1] = c[1]; d[o + 2] = c[2]; d[o + 3] = E === P ? 150 : 235;
     }
-    paintCtx.putImageData(img, x0, y0);
+    pctx().putImageData(img, x0, y0);
   }
   const rgbCache = {};
   function rgbOf(v) {
@@ -1355,7 +1414,7 @@
   function paintValue() {
     if (tool === "eraser") return 0;
     if (provMode()) {
-      if (!provReady) { toast("Провинции ещё загружаются, подождите пару секунд"); return null; }
+      if (!provReady) { ensureProvinces(); toast("Провинции ещё загружаются, подождите пару секунд"); return null; }
       if (!brushProv || !state.provinces[brushProv]) { toast("Возьмите провинцию пипеткой (Alt+клик) или создайте новую"); return null; }
       return +brushProv;
     }
@@ -1367,7 +1426,7 @@
     const v = paintValue(); if (v == null) return false;
     const E = eng();
     if (eraseProv()) {
-      if (!provReady) { toast("Провинции ещё загружаются, подождите пару секунд"); return false; }
+      if (!provReady) { ensureProvinces(); toast("Провинции ещё загружаются, подождите пару секунд"); return false; }
       // «Не трогать соседей» (режим «Страны»): стираем только страну, с которой начали;
       // 0 — начали с ничьей земли, тогда страну берём первую, на которую попадёт курсор
       const only = E === T && paintOpts().keep ? T.at(p[0], p[1]) : null;
@@ -1420,7 +1479,7 @@
   function endStroke() {
     const st = stroke; stroke = null;
     const E = st.E, res = E.endStroke(st.ch);
-    paintCtx.clearRect(0, 0, W, H);
+    pctx().clearRect(0, 0, W, H);
     if (!res.idx.length) return;
     recomputeAny(res);
     pushUndo({ kind: "paint", stroke: res });
@@ -1490,6 +1549,7 @@
 
   async function handleClick(ent, p) {
     if (tool === "ruler") { rulerAdd(p); return; }
+    if (tool === "pan" && forcesTabOpen()) { clickZone(p); return; } // вкладка «Войска»: клик выбирает зону
     if (tool === "compass") return;
     if (!gm || tool === "pan") {
       const pid = P.ids ? P.at(p[0], p[1]) : 0;
@@ -1633,7 +1693,7 @@
     if (e.target.matches && (e.target.matches("input, textarea, select") || e.target.isContentEditable)) return;
     if (!$("modal").classList.contains("hidden")) return;
     if (e.key === "Escape" && popCity) closeCityPop();
-    else if (e.key === "Escape" && !stateCard.classList.contains("hidden") && sel) { stateCardClosed = sel.id; stateCard.classList.add("hidden"); if (!gm) return; }
+    else if (e.key === "Escape" && !stateCard.classList.contains("hidden") && sel) { stateCardOn = false; stateCardClosed = sel.id; stateCard.classList.add("hidden"); if (!gm) return; }
     if (e.code === "Space") { spaceDown = true; if (gm) e.preventDefault(); }
     if (MEASURE.includes(tool)) {
       if (e.key === "Enter") { finishRuler(); return; }
@@ -1861,8 +1921,7 @@
   function whenLoaded(img) { return img.complete && img.naturalWidth ? Promise.resolve() : new Promise(r => { img.addEventListener("load", r, { once: true }); img.addEventListener("error", r, { once: true }); }); }
   async function buildGlobeTextures() {
     const imgs = [L.relief, L.road_major, L.road_secondary, L.road_road, L.rail, L.hydro, L.citiesFill];
-    imgs.forEach(ensureSrc);
-    await Promise.all(imgs.map(whenLoaded));
+    await Promise.all(imgs.map(toFull)); // глобусу — полные рисунки (половинные он растянул бы)
     globe.setLand(L.relief);
     const N = W * H, lines = new Uint8Array(N * 4);
     [L.road_major, L.road_secondary, L.road_road, L.rail].forEach((img, ch) => {
@@ -1898,6 +1957,7 @@
       $("globeLoading").classList.remove("hidden");
       globeReady = buildGlobeTextures().then(() => $("globeLoading").classList.add("hidden"));
     }
+    if (mode === "globe") ensureProvinces(); // подсветка провинций на глобусе
     viewMode = mode;
     frame.classList.toggle("globe-mode", mode === "globe");
     $("globeWrap").classList.toggle("hidden", mode !== "globe");
@@ -2010,7 +2070,7 @@
     const focus = b === "earth" && cid && state.countries[cid];
     focusId = focus ? cid : null;
     await showBody(b, p, focus);
-    if (focus) { if (proj === "flat") fit(); stateCardClosed = null; focusCountry(cid); }
+    if (focus) { if (proj === "flat") fit(); stateCardOn = true; stateCardClosed = null; focusCountry(cid); } // ссылка на страну (из статьи, союзов) — явный запрос карточки
   });
 
   // панель спутников
@@ -2088,11 +2148,20 @@
       body.innerHTML = "";
       const inputs = {};
       for (const f of fields) {
-        const row = document.createElement("label"); row.className = "f-row"; row.dataset.key = f.key;
+        const row = document.createElement(f.type === "multi" ? "div" : "label"); row.className = "f-row"; row.dataset.key = f.key;
         const lb = document.createElement("span"); lb.textContent = f.label; row.append(lb);
         let inp;
         if (f.type === "textarea") {
           inp = document.createElement("textarea"); inp.rows = 4; inp.className = "f-area";
+        } else if (f.type === "multi") { // список галочек: значение — id через запятую
+          inp = document.createElement("input"); inp.type = "hidden";
+          const sel0 = new Set(String(values[f.key] || "").split(",").filter(Boolean)), box = document.createElement("div"); box.className = "f-multi";
+          for (const [v, t] of f.options) {
+            const l = document.createElement("label"), c = document.createElement("input"); c.type = "checkbox"; c.checked = sel0.has(String(v));
+            c.addEventListener("change", () => { c.checked ? sel0.add(String(v)) : sel0.delete(String(v)); inp.value = [...sel0].join(","); inp.dispatchEvent(new Event("change")); });
+            l.append(c, " " + t); box.append(l);
+          }
+          row.append(box);
         } else if (f.type === "select") {
           inp = document.createElement("select");
           for (const [v, t] of f.options) { const o = document.createElement("option"); o.value = v; o.textContent = t; inp.append(o); }
@@ -2415,6 +2484,7 @@
   // ---------- загрузка ----------
   function rebuildAll(keepPaths) {
     for (const col of COLS) {
+      if (col === "provinces" && !provWanted) continue; // провинции строит ensureProvinces, когда они понадобятся
       const map = col === "countries" ? els.clabel : col === "provinces" ? provLbl : els[col];
       for (const id of Object.keys(map)) if (!state[col][id]) RENDER[col](id);
       for (const id in state[col]) RENDER[col](id);
@@ -2478,6 +2548,44 @@
     try { await M.load("data/" + name + ".ids" + ver, land); }
     catch (e) { console.warn(name + ".ids:", e.message, "— читаю PNG"); await M.load("data/" + name + ".png" + ver, land); }
   }
+  // Провинции: растр (provinces.ids), ~800 контуров и подписей — это ~0,7 с работы и тысячи элементов.
+  // На общем виде их не видно, поэтому строим один раз, когда они понадобились.
+  let rasterVer = "", pathsCache = null, provP = null, provWanted = false;
+  function savePaths(patch) { pathsCache = Object.assign({}, pathsCache, patch); DB.set("paths", pathsCache).catch(() => {}); }
+  // данные провинций (растр, контуры из кэша или из фонового потока) — без элементов страницы; заранее, в свободное время
+  let provDataP = null;
+  function prepareProvinces() {
+    if (provDataP || !rasterVer) return provDataP || Promise.reject(new Error("карта ещё не загружена"));
+    provDataP = (async () => {
+      await loadIds(P, "provinces", rasterVer, T.land);
+      const kp = PATHS_VER + "|" + idsHash(P.ids);
+      const hitP = !!(pathsCache && pathsCache.kp === kp && pathsCache.p);
+      const pp = hitP ? pathsCache.p : await computePaths(P, true, false);
+      if (!hitP) savePaths({ kp, p: { paths: pp.paths } });
+      return { pp, hitP };
+    })();
+    provDataP.catch(() => { provDataP = null; });
+    return provDataP;
+  }
+  // элементы провинций (подписи и контуры) — когда понадобились; порциями, чтобы не было долгого кадра
+  function ensureProvinces() {
+    if (provP || !rasterVer) return provP || Promise.resolve();
+    provWanted = true;
+    provP = (async () => {
+      const t1 = performance.now(), ids = Object.keys(state.provinces);
+      for (let i = 0; i < ids.length; i += 400) {
+        for (const id of ids.slice(i, i + 400)) renderProvince(id);
+        await new Promise(r => setTimeout(r, 0));
+      }
+      const { pp, hitP } = await prepareProvinces();
+      await applyProvPaths(pp.paths);
+      provReady = true;
+      console.info("провинции " + (hitP ? "из кэша" : "построены") + " за", Math.round(performance.now() - t1), "мс");
+      if (globe) syncGlobe(true); // глобус уже открыт — передаём ему растр провинций
+    })();
+    provP.catch(e => { console.error("провинции:", e); provP = null; });
+    return provP;
+  }
   async function load() {
     // «no-cache» — браузер каждый раз спрашивает сервер (по ETag), но если файл не менялся, берёт его из кэша (ответ 304 без тела)
     try {
@@ -2498,6 +2606,7 @@
       ]);
       // ключ кэша — содержимое растра, а не время публикации: правка городов или текстов не заставляет пересчитывать контуры
       const kc = PATHS_VER + "|" + idsHash(T.ids);
+      rasterVer = ver; pathsCache = cache;
       const hit = !!(cache && cache.kc === kc && cache.c);
       const cp = hit ? cache.c : await computePaths(T, false, true);
       for (const [id, d] of cp.paths) if (state.countries[String(id)]) setCountryPath(id, d);
@@ -2507,30 +2616,239 @@
       applyFonts(); refreshCityKey();
       buildCountryList(); fillBrushSelect(); buildAllyList(); allyVisChanged();
       window.dispatchEvent(new Event("kg-alliances"));
-      let saved = null; try { saved = sessionStorage.getItem(GM_KEY); } catch (e) { /* */ }
-      setGm(!!saved && saved === config.gm.hash);
+      // Вход ГМа в этой вкладке считается действительным, только если сохранённый мастер-ключ реально
+      // расшифровывает данные стран. Хэш пароля публичен (data/config.json), поэтому по нему сессию не проверяем.
+      try { sessionStorage.removeItem(GM_KEY); } catch (e) { /* */ } // старый маркер сессии
+      let hasMk = false; try { hasMk = !!sessionStorage.getItem("kg-mech-mk"); } catch (e) { /* */ }
+      let restored = false;
+      if (hasMk) {
+        if (document.readyState !== "complete") await new Promise(r => window.addEventListener("load", r, { once: true }));
+        try { restored = !!(window.KGMech && await window.KGMech.verifySession()); } catch (e) { restored = false; }
+      }
+      setGm(restored);
       updUndo();
       $("mapLoading").classList.add("hidden");
       requestAnimationFrame(refit);
       mapReadyResolve();
-      loadLayers();
-      // провинции — уже после показа карты
-      const t1 = performance.now();
-      await loadIds(P, "provinces", ver, T.land);
-      const kp = PATHS_VER + "|" + idsHash(P.ids);
-      const hitP = !!(cache && cache.kp === kp && cache.p);
-      const pp = hitP ? cache.p : await computePaths(P, true, false);
-      await applyProvPaths(pp.paths);
-      provReady = true;
-      wrapVectorLayers(); // копии векторных слоёв по краям — когда всё построено
-      console.info("провинции " + (hitP ? "из кэша" : "построены") + " за", Math.round(performance.now() - t1), "мс");
-      if (!hit || !hitP) DB.set("paths", { kc, c: { paths: cp.paths, coast: cp.coast }, kp, p: { paths: pp.paths } }).catch(() => {});
-      if (gm) offerDraft();
+      loadLayers().then(() => (window.requestIdleCallback || setTimeout)(() => prepareProvinces().catch(() => {}))); // данные провинций — заранее
+      initOps(); // личная карта (армии, флоты, зоны): только после входа за страну или в режиме ГМа
+      wrapVectorLayers(); // копии векторных слоёв по краям (<use> покажет и то, что достроится позже)
+      if (!hit) savePaths({ kc, c: { paths: cp.paths, coast: cp.coast } });
+      // провинции — когда понадобятся: приближение (их границы видны с масштаба 0,5), ГМ, глобус
+      if (gm) { await ensureProvinces(); offerDraft(); }
+      else if (frame.dataset.lod === "near" || provLayerOn()) ensureProvinces();
     } catch (err) {
       console.error(err);
       $("mapLoading").textContent = "Не удалось загрузить карту: " + err.message;
     }
   }
+  // ---------- личная карта: армии, флоты, зоны ----------
+  // Зоны (суша и море) — это и есть провинции карты: слой «Провинции» показывает их всем. Войска — только игроку своей страны
+  // (и тем, кому их открыл ГМ) и ГМу; данные отдаёт mech.js (window.KGForces). Калькулятор боя — только ГМу.
+  // Вкладка «Войска» в легенде: верхняя половина — списки войск, нижняя — выбранная зона (и расчёт боя у ГМа).
+  let zonesVer = 0, zonesData = null, zoneIds = null, zonesLoading = null, zoneSel = null, forcesList = [], calc = { att: "", def: "", aman: "", dman: "", fort: 0, river: false, coast: false, roll: null };
+  const ops = { tab: $("tabForces"), pane: $("paneForces"), list: $("opsList"), zone: $("opsZone") };
+  const opsFmt = v => (Math.round(v * 10) / 10).toLocaleString("ru-RU");
+  const opsWho = () => (window.KGForces && window.KGForces.who ? window.KGForces.who() : null);
+  const cName = c => String((state.countries[String(c)] || {}).name || "Страна " + c).replace(/\n/g, " ");
+  const cColor = c => (state.countries[String(c)] || {}).color || "#888";
+  function ensureZones() {
+    if (zonesLoading) return zonesLoading;
+    return (zonesLoading = (async () => {
+      const j = await fetch("data/zones.json", { cache: "no-cache" }).then(r => r.json());
+      const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = "data/zones.png?v=" + j.v; });
+      const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+      const g = cv.getContext("2d", { willReadFrequently: true }); g.drawImage(img, 0, 0);
+      const d = g.getImageData(0, 0, W, H).data, ids = new Uint16Array(W * H);
+      for (let i = 0, n = W * H; i < n; i++) ids[i] = (d[i * 4] << 8) | d[i * 4 + 1];
+      zonesVer = j.v; zonesData = j.zones; zoneIds = ids;
+      loadForces();
+    })().catch(e => { console.error(e); zonesLoading = null; }));
+  }
+  function zoneAt(x, y) {
+    if (!zoneIds) return 0;
+    const xi = ((Math.floor(x) % W) + W) % W, yi = Math.floor(y);
+    return yi < 0 || yi >= H ? 0 : zoneIds[yi * W + xi];
+  }
+  // значок держит на экране ≈ 20 px при любом масштабе; переменная меняется ступенями, чтобы не пересчитывать стили на каждом кадре
+  function forceScale() {
+    const v = Math.pow(1.2, Math.round(Math.log(1.1 / s) / Math.log(1.2))).toFixed(3);
+    if (world.style.getPropertyValue("--fk") !== v) world.style.setProperty("--fk", v);
+  }
+  afterView.push(forceScale);
+  const forceZone = x => (x.k === "f" && x.s ? x.s : x.z);
+  function loadForces() {
+    forcesList = window.KGForces ? window.KGForces.get() : [];
+    if (opsWho() && !zonesData) ensureZones(); // зоны грузим, только когда они нужны: после входа
+    renderForces(); renderOps();
+  }
+  function renderForces() {
+    forceScale();
+    const lay = L.forces;
+    lay.querySelectorAll(".fx, .zh").forEach(g => g.remove());
+    if (!opsWho() || !zonesData) return;
+    if (zoneSel && zonesData[zoneSel]) drawZoneHighlight(zoneSel);
+    if (!$("opsIcons").checked) return;
+    const at = {}; // несколько соединений в одной зоне — рядом, а не друг на друге
+    for (const x of forcesList) {
+      const z = zonesData[String(forceZone(x))], co = state.countries[String(x.c)];
+      if (!z || !z.label) continue;
+      const pos = z.label, key = pos[0] + ":" + pos[1], i = at[key] = (at[key] || 0) + 1;
+      const g = svgEl("g", { class: "fx " + (x.k === "f" ? "fx-fleet" : "fx-army") + (x.seen ? " fx-seen" : ""), transform: `translate(${pos[0]} ${pos[1]})` }, lay);
+      const ic = svgEl("g", { transform: `translate(${(i - 1) * 22} 14)` }, svgEl("g", { class: "fx-i" }, g));
+      svgEl("rect", { x: -9, y: -6, width: 18, height: 12, rx: x.k === "f" ? 5 : 1, fill: (co && co.color) || "#888" }, ic);
+      if (x.k === "f") svgEl("path", { d: "M-6 1 q3 -3 6 0 t6 0", class: "fx-sym" }, ic);
+      else svgEl("path", { d: "M-9 -6 L9 6 M-9 6 L9 -6", class: "fx-sym" }, ic);
+      svgEl("title", {}, g).textContent = (x.n || (x.k === "f" ? "Флот" : "Армия")) + " — " + cName(x.c) + " · " + z.name;
+    }
+  }
+  // подсветка выбранной зоны: маленький холст по рамке зоны
+  function drawZoneHighlight(zid) {
+    const id = +zid; let b = zonesData[zid].bb;
+    if (!b) {
+      let x0 = W, y0 = H, x1 = -1, y1 = -1;
+      for (let y = 0; y < H; y++) { const row = y * W; for (let x = 0; x < W; x++) if (zoneIds[row + x] === id) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; } }
+      b = zonesData[zid].bb = [x0, y0, x1, y1];
+    }
+    const [x0, y0, x1, y1] = b;
+    if (x1 < x0) return;
+    const bw = x1 - x0 + 1, bh = y1 - y0 + 1, cv = document.createElement("canvas"); cv.width = bw; cv.height = bh;
+    const g = cv.getContext("2d"), im = g.createImageData(bw, bh), d = im.data;
+    for (let y = 0; y < bh; y++) { const row = (y + y0) * W + x0; for (let x = 0; x < bw; x++) if (zoneIds[row + x] === id) { const o = (y * bw + x) * 4; d[o] = 24; d[o + 1] = 217; d[o + 2] = 245; d[o + 3] = 95; } }
+    g.putImageData(im, 0, 0);
+    svgEl("image", { class: "zh", href: cv.toDataURL(), x: x0, y: y0, width: bw, height: bh, "pointer-events": "none" }, L.forces);
+  }
+  function flyTo(zid) {
+    const z = zonesData && zonesData[String(zid)]; if (!z) return;
+    const ns = Math.max(s, 0.55);
+    setView(ns, viewport.clientWidth / 2 - z.label[0] * ns, viewport.clientHeight / 2 - z.label[1] * ns);
+  }
+  function pickZone(zid) {
+    zoneSel = zid ? String(zid) : null;
+    calc.att = ""; calc.def = ""; calc.aman = ""; calc.dman = ""; calc.coast = false; calc.river = false; calc.fort = 0; calc.roll = null;
+    renderForces(); renderOps();
+  }
+  // клик по карте при открытой вкладке «Войска»: выбрать зону под курсором (повторный клик снимает выбор)
+  const forcesTabOpen = () => !!opsWho() && !!ops.tab && ops.tab.classList.contains("active") && !!zonesData;
+  function clickZone(p) {
+    const z = zoneAt(p[0], p[1]);
+    pickZone(z && zonesData[String(z)] && String(z) !== zoneSel ? z : null);
+  }
+  const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
+  function forceRow(x, onClick) {
+    const r = el("div", "ops-row"), dot = el("span", "sat-dot"); dot.style.background = cColor(x.c);
+    const who = opsWho(), foreign = who && who.role === "player" && String(x.c) !== String(who.id);
+    r.append(dot, el("span", "ops-n", (x.k === "f" ? "⚓ " : "✕ ") + (x.n || "—") + (foreign ? " · " + cName(x.c) : "")));
+    // чужие открытые войска: только число дивизий или кораблей, без мощи
+    r.append(el("span", "ops-p", x.pw != null && !x.seen ? opsFmt(x.k === "a" ? x.df || x.pw : x.pw) : (x.N || 0) + (x.k === "f" ? " кор." : " див.")));
+    r.title = cName(x.c) + " · " + (x.N || 0) + (x.k === "f" ? " кораб." : " дивиз.") + (x.seen ? " (по разведке)" : " · мощь " + opsFmt(x.pw) + (x.k === "a" ? " · в обороне " + opsFmt(x.df || x.pw) : ""));
+    if (onClick) { r.classList.add("click"); r.addEventListener("click", onClick); }
+    return r;
+  }
+  function renderOps() {
+    if (!ops.tab) return;
+    const who = opsWho();
+    ops.tab.classList.toggle("hidden", !who);
+    if (!who) {
+      zoneSel = null;
+      if (ops.tab.classList.contains("active")) document.querySelector('#legend .legend-tabs [data-ltab="countries"]').click();
+      return;
+    }
+    ops.tab.textContent = who.role === "gm" ? "Войска" : "Мои войска";
+    ops.list.innerHTML = "";
+    const mine = forcesList.slice().sort((a, b) => (a.k === b.k ? 0 : a.k === "a" ? -1 : 1) || String(a.c).localeCompare(String(b.c)) || String(a.n).localeCompare(String(b.n), "ru"));
+    if (!mine.length) ops.list.append(el("p", "ops-empty", who.role === "gm" ? "Армий и флотов нет. Заведите их в карточке страны (Механики)." : "У вас нет армий и флотов. Их заводит ГМ."));
+    for (const x of mine) {
+      const zid = forceZone(x), ok = zonesData && zonesData[String(zid)];
+      const row = forceRow(x, ok ? () => { pickZone(zid); flyTo(zid); } : null);
+      if (who.role === "gm") row.querySelector(".ops-n").textContent += " · " + cName(x.c);
+      if (!ok) row.append(el("span", "ops-p", "без зоны"));
+      ops.list.append(row);
+    }
+    renderZoneBox();
+  }
+  function renderZoneBox() {
+    const box = ops.zone; box.innerHTML = "";
+    if (!zonesData) { box.append(el("p", "ops-empty", "Загружаю зоны…")); return; }
+    if (!zoneSel || !zonesData[zoneSel]) { box.append(el("p", "ops-empty", "Нажмите на карте на зону (провинцию или акваторию): здесь появятся её сведения" + (opsWho() && opsWho().role === "gm" ? " и расчёт боя." : " и ваши войска в ней."))); return; }
+    const z = zonesData[zoneSel], sea = z.k === "s", who = opsWho(), M = window.KGMechModel, gmMode = who && who.role === "gm";
+    box.append(el("h4", "ops-zname", z.name));
+    const T = M && M.ZONE_TERRAIN ? (M.ZONE_TERRAIN[z.ter] || [z.ter])[0] : z.ter;
+    const info = [sea ? "Морская зона" : "Зона на суше" + (z.c != null ? " · " + cName(z.c) : " · ничья"), "Местность: " + T];
+    if (!sea) { info.push("Дороги и снабжение: " + (z.inf || 0) + " из 5"); if (z.vp) info.push("Города зоны: " + z.vp + " очков"); if (z.split) info.push("Область разделена между странами карты"); }
+    box.append(el("p", "ops-info", info.join(" · ")));
+    const nb = el("div", "ops-nb"); nb.append(el("span", null, "Соседи: "));
+    for (const n of z.nb || []) { const nz = zonesData[String(n)]; if (!nz) continue; const a = el("a", null, nz.name); a.href = "#"; a.addEventListener("click", e => { e.preventDefault(); pickZone(n); flyTo(n); }); nb.append(a, document.createTextNode(" · ")); }
+    box.append(nb);
+    const here = forcesList.filter(x => String(forceZone(x)) === zoneSel);
+    box.append(el("h4", "ops-h", "Войска в зоне"));
+    if (!here.length) box.append(el("p", "ops-empty", gmMode ? "Никого." : "Вам здесь никто не известен."));
+    for (const x of here) box.append(forceRow(x));
+    if (gmMode && M && M.battle) box.append(calcBox(z, M)); // расчёт боя — только ГМ
+  }
+  // ---------- калькулятор боя (только ГМ) ----------
+  function calcBox(z, M) {
+    const sea = z.k === "s", wrap = el("div", "ops-calc");
+    wrap.append(el("h4", "ops-h", "Расчёт боя в зоне"));
+    // сначала войска, стоящие в этой зоне, затем остальные того же вида (армии на суше, флоты в море)
+    const kind = sea ? "f" : "a", all = forcesList.filter(x => x.k === kind);
+    const pool = all.filter(x => String(forceZone(x)) === zoneSel).concat(all.filter(x => String(forceZone(x)) !== zoneSel));
+    const inZone = all.filter(x => String(forceZone(x)) === zoneSel).length;
+    const opt = (sel, v, t) => { const o = el("option", null, t); o.value = v; sel.append(o); return o; };
+    const pw = (x, key) => (key === "def" && x.k === "a" ? x.df || x.pw : x.pw);
+    const forceSel = (key, label) => {
+      const row = el("label", "ops-f"), sl = el("select");
+      row.append(el("span", null, label), sl);
+      opt(sl, "", "— вручную —");
+      pool.forEach((x, i) => opt(sl, String(i), (i < inZone ? "● " : "") + cName(x.c) + ": " + (x.n || "—") + " (" + opsFmt(pw(x, key)) + ")"));
+      sl.value = calc[key]; sl.addEventListener("change", () => { calc[key] = sl.value; calc.roll = null; renderZoneBox(); });
+      return row;
+    };
+    const power = (key, manKey) => (calc[key] !== "" && pool[+calc[key]] ? pw(pool[+calc[key]], key) : +calc[manKey] || 0);
+    const manual = (key, manKey, ph) => {
+      const i = el("input"); i.type = "number"; i.min = "0"; i.step = "any"; i.placeholder = ph; i.value = calc[manKey] || ""; i.disabled = calc[key] !== "";
+      i.addEventListener("input", () => { calc[manKey] = i.value; calc.roll = null; refresh(); });
+      return i;
+    };
+    wrap.append(forceSel("att", "Нападающий"), manual("att", "aman", "мощь нападающего"));
+    wrap.append(forceSel("def", "Обороняющийся (● — стоят в зоне)"), manual("def", "dman", "мощь обороны"));
+    const swap = el("button", "small-btn", "⇅ Поменять сторонами"); swap.type = "button";
+    swap.addEventListener("click", () => { [calc.att, calc.def] = [calc.def, calc.att]; [calc.aman, calc.dman] = [calc.dman, calc.aman]; calc.roll = null; renderZoneBox(); });
+    wrap.append(swap);
+    const opts = el("div", "ops-opts2");
+    const check = (key, text) => { const l = el("label"), c = el("input"); c.type = "checkbox"; c.checked = calc[key]; c.addEventListener("change", () => { calc[key] = c.checked; calc.roll = null; refresh(); }); l.append(c, " " + text); return l; };
+    if (!sea) {
+      const fs = el("select"); M.FORT_LEVELS.forEach((f, i) => opt(fs, String(i), "Укрепления: " + f[0] + (f[1] ? " (+" + Math.round(f[1] * 100) + "%)" : ""))); fs.value = String(calc.fort);
+      fs.addEventListener("change", () => { calc.fort = +fs.value; calc.roll = null; refresh(); });
+      opts.append(fs, check("river", "Форсирование реки"));
+    } else opts.append(check("coast", "Оборона у своего берега или базы"));
+    wrap.append(opts);
+    const out = el("div", "ops-res"); wrap.append(out);
+    function refresh() {
+      out.innerHTML = "";
+      const A = power("att", "aman"), D = power("def", "dman");
+      if (!(A > 0) && !(D > 0)) { out.append(el("p", "ops-empty", "Выберите нападающего и обороняющегося или введите мощь сторон.")); return; }
+      const r = M.battle(A, D, z, { fort: calc.fort, river: calc.river, coast: calc.coast });
+      const tb = el("table", "ops-tb");
+      const mulT = v => (v === 1 ? "·" : "×" + v.toFixed(2).replace(".", ","));
+      const tr = (a, b, c) => { const t = el("tr"); t.append(el("th", null, a), el("td", "num", b), el("td", "num", c)); tb.append(t); };
+      tr("", "Нападающий", "Оборона"); tr("Мощь", opsFmt(A), opsFmt(D));
+      for (const p of r.parts) tr(p[0], mulT(p[1]), mulT(p[2]));
+      tr("Итого", opsFmt(r.A), opsFmt(r.D));
+      out.append(tb);
+      out.append(el("p", "ops-verdict", r.verdict + " · перевес " + (isFinite(r.ratio) ? r.ratio.toFixed(2).replace(".", ",") + " : 1" : "∞")));
+      out.append(el("p", "ops-info", "Шанс победы нападающего " + Math.round(r.pWin * 100) + "%. Ожидаемые потери: нападающий " + Math.round(r.lossA * 100) + "%, оборона " + Math.round(r.lossD * 100) + "% личного состава (ориентир для ГМа)."));
+      const b = el("button", "small-btn", "Бросить кости"); b.type = "button";
+      b.addEventListener("click", () => { calc.roll = Math.random() < r.pWin ? "победа нападающего" : "оборона удержала зону"; refresh(); });
+      out.append(b);
+      if (calc.roll) out.append(el("p", "ops-roll", "Бросок: " + calc.roll));
+    }
+    refresh();
+    return wrap;
+  }
+  window.addEventListener("kg:forces", loadForces);
+  if ($("opsIcons")) $("opsIcons").addEventListener("change", renderForces);
+  function initOps() { if (opsWho()) ensureZones(); }
   setTool("pan");
   requestAnimationFrame(fit);
   load();

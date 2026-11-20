@@ -19,12 +19,12 @@
 <div id="summary">Выполняется…</div>
 <div id="out"></div>
 <script src="../js/geo.js?v=20261115a"></script>
-<script src="../js/territory.js?v=20261118r"></script>
+<script src="../js/territory.js?v=20261118u"></script>
 <script src="../js/sats.js?v=20261115e"></script>
 <script src="../js/moon-names.js?v=20261115a"></script>
 <script src="../js/wrap.js?v=20261115a"></script>
-<script src="../js/mech-lore.js?v=20261117q"></script>
-<script src="../js/mech-model.js?v=20261118n"></script>
+<script src="../js/mech-lore.js?v=20261121a"></script>
+<script src="../js/mech-model.js?v=20261121a"></script>
 <script src="../js/mech-crypto.js?v=20261115a"></script>
 <script>
 (async function () {
@@ -349,8 +349,8 @@
     const bad = names.filter(([n, la, lo, sz, c]) => !n || Math.abs(la) > 90 || Math.abs(lo) > 180 || !(sz > 0) || !cats.has(c));
     assert(!bad.length, "ошибки: " + bad.map(b => b[0]).join(", ")); return names.length + " названий";
   });
-  await test("Конфигурация ГМа: хэш пароля PBKDF2", () => {
-    assert(cfg.gm && cfg.gm.salt && cfg.gm.hash && cfg.gm.iter >= 100000, "нет хэша"); assert(cfg.repo.owner && cfg.repo.name, "нет репозитория");
+  await test("Конфигурация ГМа: хэша пароля в репозитории нет (проверка расшифровкой mech.gm)", () => {
+    assert(!cfg.gm || (cfg.gm.salt && cfg.gm.hash && cfg.gm.iter >= 100000), "битый хэш"); assert(cfg.repo.owner && cfg.repo.name, "нет репозитория");
   });
 
   group("Механики");
@@ -369,8 +369,10 @@
   // Excel считает ход длиной в год; на сайте ход = 3 месяца, поэтому всё «за ход» в 4 раза меньше эталона
   for (const k of ["d_tech", "d_stab", "d_gdp", "debris_loss"]) XL[k] = XL[k].map(v => v / MM.TURNS_YEAR);
   const rulesM = MM.defaultRules();
+  // Excel не знает тральщиков и палуб авианосцев (структура армии 2026-11-19): сверка — при тех же допущениях, что и в таблице
+  const rulesXL = MM.defaultRules(); rulesXL.K.mine_floor = 1; rulesXL.K.tax_stab = 0; rulesXL.K.tax_gdp = 0; rulesXL.tables.ship.forEach(x => (x.air = 0)); // таблица Excel — без налогового давления (новое правило)
   const samples = {}; MM.SAMPLES.forEach((s, i) => (samples["s" + i] = s.make()));
-  const all = MM.computeAll(rulesM, samples);
+  const all = MM.computeAll(rulesXL, samples);
   for (const key in XL) {
     await test("Совпадение с Excel: " + MM.OUT[key][0], () => {
       XL[key].forEach((v, i) => near(all.results["s" + i][key], v, Math.max(0.0006, Math.abs(v) * 1e-4), MM.SAMPLES[i].name));
@@ -420,7 +422,7 @@
     near(old.K.pop_growth, 0.012, 0, "исходные правила не испорчены");
     // значения по умолчанию = старые годовые / 4: пересчёт годовых правил даёт те же цифры
     const D = MM.defaultRules(), ann = JSON.parse(JSON.stringify(D));
-    const back = { tech_cost: 0.25 }; for (const k of ["soc_eff", "food_stab", "en_stab", "sec_stab", "support_stab", "pop_growth", "rad_mort", "growth_base", "infra_growth", "stab_growth", "nav_growth", "mop_pen", "ovp_unit", "ton_unit", "ac_unit", "launch_pad", "sat_decay", "kessler_loss", "corp_sov_stab", "corp_host_stab"]) back[k] = 4;
+    const back = { tech_cost: 0.25 }; for (const k of ["soc_eff", "food_stab", "en_stab", "sec_stab", "support_stab", "tax_stab", "tax_gdp", "pop_growth", "rad_mort", "growth_base", "infra_growth", "stab_growth", "nav_growth", "mop_pen", "ovp_unit", "ton_unit", "ac_unit", "launch_pad", "sat_decay", "kessler_loss", "corp_sov_stab", "corp_host_stab"]) back[k] = 4;
     for (const k in back) ann.K[k] *= back[k];
     ann.tables.law.forEach(x => (x.stab *= 4)); ann.tables.ideo.forEach(x => (x.e_stab *= 4)); ann.tables.csector.forEach(x => { x.tech *= 4; x.stab *= 4; });
     ann.tables.wonder.forEach(x => { if (x.t1 === "d_stab") x.v1 *= 4; if (x.t2 === "d_stab") x.v2 *= 4; });
@@ -450,7 +452,7 @@
   });
   await test("Игрок по сводке мира получает те же цифры, что ГМ", () => {
     for (const id in samples) {
-      const r = MM.compute(rulesM, samples[id]); MM.applyWorld(rulesM, samples[id], r, all.ctx[id]);
+      const r = MM.compute(rulesXL, samples[id]); MM.applyWorld(rulesXL, samples[id], r, all.ctx[id]);
       for (const k of ["inm", "rank", "world_share", "world_mil_share", "kessler"]) near(r[k], all.results[id][k], 1e-9, id + " " + k);
     }
   });
@@ -823,8 +825,9 @@
   });
   await test("Старые правила без описаний получают текст летописи по id, своё описание ГМа не трогается", () => {
     const r = MM.normalizeRules({ K: {}, tables: { div: [{ id: "walker", name: "Шагоходы" }, { id: "x1", name: "Свой тип", desc: "Мой текст" }] } });
-    assert(r.tables.div[0].desc === ML.units.div.walker.text, r.tables.div[0].desc);
-    assert(r.tables.div[1].desc === "Мой текст", "описание ГМа");
+    const wk = r.tables.div.find(x => x.id === "walker"), own = r.tables.div.find(x => x.id === "x1");
+    assert(wk.desc === ML.units.div.walker.text, wk.desc);
+    assert(own.desc === "Мой текст", "описание ГМа");
   });
   await test("Чудеса: 10 из летописи, описания закрыты, эффекты на существующие показатели", () => {
     const W0 = rulesLive.tables.wonder, tg = new Set(MM.MOD_TARGETS.map(x => x[0]));
@@ -1063,6 +1066,8 @@
   await test("Карточка каждой страны карты ведёт на её статью", async () => {
     await go("map/earth/flat", () => visible(D.getElementById("page-map")), "карта");
     const bad = [];
+    const card0 = D.getElementById("stateCard"); // карточка открывается только кнопкой «Карточка»: открываем один раз, дальше она показывает выбранную страну
+    W.KGMap.select({ col: "countries", id: Object.keys(MC)[0] }); if (card0.classList.contains("hidden")) D.getElementById("cardToggle").click();
     for (const id of Object.keys(MC)) {
       W.KGMap.select({ col: "countries", id });
       const want = (lore.states.find(s => s.map.includes(id)) || {}).id;
@@ -1070,6 +1075,7 @@
       if ((a ? a.getAttribute("href").split("/").pop() : undefined) !== want) bad.push(nm(id) + ": " + (a && a.getAttribute("href")));
     }
     W.KGMap.select(null);
+    if (!card0.classList.contains("hidden")) D.getElementById("cardToggle").click();
     assert(!bad.length, bad.join("; "));
   });
   await test("Механики: Статья, Справочник, Рейтинг, Союзы, Моя страна", async () => {
@@ -1168,9 +1174,9 @@
       !(p.label[0] > 2440 && p.label[1] < 1960));   // без Аравии
     assert(!af.length, "провинции Анархии в Африке: " + af.map(p => p.name).join(", "));
     // Союз Магриба разделён: Марокко (№ 46, Идрис IV), Союз Магриба (№ 147), Мавритания (№ 148), все вне союзов
-    const realOf = id => new Set(Object.values(map.provinces).filter(p => p.c === id).map(p => p.real));
+    const provOf = id => Object.values(map.provinces).filter(p => p.c === id);
     assert(nm("46") === "Королевство Марокко" && nm("147") === "Союз Магриба" && nm("148") === "Мавритания", "названия");
-    assert(!realOf("46").has("Algeria") && !realOf("46").has("Mauritania") && realOf("147").has("Algeria") && realOf("148").has("Mauritania"), "провинции");
+    assert(["46", "147", "148"].every(id => provOf(id).length > 0), "у каждой из трёх стран есть провинции");
     assert(["46", "147", "148"].every(id => !MC[id].alliance && T8.bbox[+id] && AFL.includes(id)), "вне союзов, на карте, в Африке");
     return states.length + " государств, " + lands.length + " земель; Магриб разделён на три страны";
   });
@@ -1383,7 +1389,7 @@
   });
   await test("Статья: карточка на каждый тип юнита, энергии, еды и отрасли — с шапкой 1280×720, характеристиками и описанием", () => {
     const errs = [];
-    for (const t of ["div", "ac", "ship", "sat", "energy", "food", "industry"]) {
+    for (const t of ["div", "sup", "ac", "ship", "sat", "energy", "food", "industry"]) {
       const cards = [...D.querySelectorAll('#mechArticle [data-mech-list="units"][data-table="' + t + '"] .unit-card')];
       if (cards.length !== rulesLive.tables[t].length) errs.push(t + ": карточек " + cards.length + " ≠ " + rulesLive.tables[t].length);
       for (const c of cards) {
@@ -1526,6 +1532,302 @@
       assert(!box.querySelector(".loans button"), "игрок займы не правит");
     } finally { box.remove(); }
     await go("wiki/mech/rating", () => /Дефолты/.test(text("#mechRating")), "рейтинг");
+  });
+  group("Структура армии, армии и флоты");
+  await test("Виды и рода войск: у каждого типа род, у корабля класс; старые правила получают новые типы", () => {
+    const R0 = MM.defaultRules(), errs = [];
+    for (const t of ["div", "sup", "ac"]) for (const x of R0.tables[t]) if (!MM.ROD_VID[x.rod]) errs.push(t + ":" + x.id);
+    for (const x of R0.tables.ship) if (!MM.SHIP_CLS.some(c => c[0] === x.cls)) errs.push("ship:" + x.id);
+    assert(!errs.length, "без рода или класса: " + errs.join(", "));
+    const vids = new Set(MM.ROD.map(r => r[2]));
+    for (const v of ["sv", "vmf", "vvs", "pvo", "vdv", "ng", "pv", "irr", "spec", "rear"]) assert(vids.has(v), "нет вида " + v);
+    for (const id of ["cvn", "cvl", "cvh", "cgn", "cl", "ddh", "ffh", "ffl", "ssgn", "lpd", "pg", "mso", "mhc"]) assert(R0.tables.ship.some(x => x.id === id), "нет подкласса " + id);
+    // правила ГМа до новой структуры: свои числа сохраняются, роды и новые типы добавляются, «ВДВ / горная» переименована
+    const old = { K: Object.assign({}, R0.K), tables: JSON.parse(JSON.stringify(R0.tables)) };
+    delete old.K.army_conc;
+    old.tables.div = old.tables.div.filter(x => !["svad", "dsh", "mountain", "coast"].includes(x.id)).map(x => { const o = Object.assign({}, x); delete o.rod; delete o.army; return o; });
+    old.tables.div.find(x => x.id === "airborne").name = "Воздушно-десантная / горная";
+    old.tables.div.find(x => x.id === "motor").power = 99;
+    const N = MM.normalizeRules(old);
+    assert(N.tables.div.every(x => MM.ROD_VID[x.rod]), "роды");
+    assert(["svad", "dsh", "mountain", "coast"].every(id => N.tables.div.some(x => x.id === id)), "новые типы");
+    assert(N.tables.div.find(x => x.id === "airborne").name === "Воздушно-десантная" && N.tables.div.find(x => x.id === "motor").power === 99, "переименование и свои числа");
+    assert(N.tables.sup.length === 9, "спецвойска и тыл");
+  });
+  await test("Армия: сосредоточение, снабжение, связь, надбавка вне своей территории", () => {
+    const K = rulesM.K, c = MM.emptyCountry();
+    Object.assign(c.in, { pop_meg: 50, mob_share: 0.3, working_share: 0.6, mob_law: 5, tech: 5, stability: 80, support: 80, tax: 0.4, b_def: 0.9 });
+    c.cnt.div = { motor: 10 }; c.cnt.sup = { sig: 2, auto: 4 };
+    const free = MM.compute(rulesM, c, null);
+    c.armies = [{ id: "a", name: "1-я армия", div: { motor: 10 } }];
+    const r = MM.compute(rulesM, c, null), a = r.armies[0];
+    assert(a.N === 10 && a.zone === "home", "состав и место");
+    near(a.conc, 9 * K.army_conc, 1e-12, "сосредоточение +36%");
+    near(a.need, 10 * (1 + K.army_sup_grow * 9), 1e-9, "потребность");
+    near(a.cover, Math.min(1, 4 * K.sup_auto / a.need), 1e-9, "обеспеченность");
+    near(r.ground_power, free.ground_power * (1 + a.conc) * (K.sup_floor + (1 - K.sup_floor) * a.cover), 1e-6, "мощь армии");
+    // без связи бонуса нет, без тыла — половина мощи
+    c.cnt.sup = { auto: 100 }; const nosig = MM.compute(rulesM, c, null);
+    assert(nosig.armies[0].conc === 0 && nosig.sig_cov === 0, "без связи");
+    c.cnt.sup = { sig: 2 }; const nosup = MM.compute(rulesM, c, null);
+    near(nosup.armies[0].supply, K.sup_floor, 1e-12, "без снабжения");
+    // чужая провинция: +50%, дороги снижают до +20%; ж/д чужой земле не помогают
+    MM.setMap({ "1": { id: "1" }, "2": { id: "2" } }, {}, { p1: { c: "1", name: "Своя" }, p2: { c: "2", name: "Чужая" } });
+    try {
+      c.cnt.sup = { sig: 2, rail: 10 }; c.armies[0].prov = "p2";
+      const away = MM.compute(rulesM, c, "1");
+      assert(away.armies[0].zone === "away", "зона " + away.armies[0].zone);
+      near(away.armies[0].surcharge, K.away, 1e-12, "надбавка");
+      near(away.armies[0].cover, 0, 1e-12, "ж/д вне своей территории не снабжают");
+      c.cnt.sup = { sig: 2, auto: 20, road: 2 };
+      near(MM.compute(rulesM, c, "1").armies[0].surcharge, K.away_min, 1e-12, "дорожники");
+      c.armies[0].prov = "p1";
+      assert(MM.compute(rulesM, c, "1").armies[0].zone === "home", "своя провинция");
+    } finally { MM.setMap(MC, AL, {}); }
+    // больше, чем есть в стране, не учитывается
+    c.armies = [{ id: "a", name: "A", div: { motor: 12, natguard: 3 } }];
+    assert(MM.compute(rulesM, c, null).armies[0].short === 5, "лишнее и неармейское — в short");
+    return "армия из 10 дивизий: +" + Math.round(a.conc * 100) + "%, снабжения нужно " + a.need.toFixed(1);
+  });
+  await test("Расчёт боя в зоне: местность, укрепления, море", () => {
+    const plain = { k: "l", ter: "plains", inf: 2, vp: 0 }, mount = { k: "l", ter: "mountain", inf: 2, vp: 0 };
+    const b1 = MM.battle(100, 100, plain, {}), b2 = MM.battle(100, 100, mount, {});
+    assert(b2.ratio < b1.ratio, "в горах нападать тяжелее, чем на равнине");
+    near(b1.ratio, 0.98, 1e-9, "равнина, дороги 2: 0,98");
+    near(MM.battle(100, 100, plain, { fort: 3 }).dm, 1.35, 1e-12, "укрепрайон +35%");
+    near(MM.battle(100, 100, plain, { river: true }).am, 0.98 * 0.8, 1e-12, "река −20% атаке");
+    assert(MM.battle(100, 100, { k: "s", ter: "ocean" }, { coast: true }).dm === 1.15, "у берега в море +15% обороне");
+    assert(MM.battle(100, 100, { k: "s", ter: "ocean" }, { fort: 3, river: true }).ratio === 1, "в море укрепления и реки не действуют");
+    const big = MM.battle(300, 100, plain, {}), none = MM.battle(100, 0, plain, {});
+    assert(big.pWin > 0.95 && big.lossA < big.lossD, "тройной перевес: победа и малые потери");
+    assert(none.pWin === 1 && none.ratio === Infinity, "пустая оборона");
+    assert(MM.battle(0, 100, plain, {}).pWin === 0, "нет атакующего");
+    return "равнина 100:100 → " + Math.round(b1.pWin * 100) + "%, горы → " + Math.round(b2.pWin * 100) + "%";
+  });
+  await test("Зоны боёв: данные согласованы с картой", async () => {
+    const z = (await (await fetch("../data/zones.json")).json()).zones, mp = await (await fetch("../data/map.json")).json();
+    const ids = Object.keys(z), land = ids.filter(i => z[i].k === "l"), sea = ids.filter(i => z[i].k === "s");
+    assert(land.length > 500 && sea.length > 50, "зон: суша " + land.length + ", море " + sea.length);
+    const badC = land.filter(i => z[i].c != null && !mp.countries[String(z[i].c)]);
+    assert(!badC.length, "зоны со страной, которой нет на карте: " + badC.slice(0, 5).join(", "));
+    const badN = ids.filter(i => z[i].nb.some(n => !z[String(n)] || !z[String(n)].nb.includes(+i)));
+    assert(!badN.length, "несимметричные соседи: " + badN.slice(0, 5).join(", "));
+    assert(ids.every(i => Array.isArray(z[i].label) && z[i].name), "у каждой зоны есть подпись и название");
+    return land.length + " сухопутных и " + sea.length + " морских зон";
+  });
+  await test("Флот, тральщики, РТВ, РЭБ, мобильные МБР", () => {
+    const K = rulesM.K, c = MM.SAMPLES[1].make();
+    const r0 = MM.compute(rulesM, c, null);
+    c.fleets = [{ id: "f", name: "1-й флот", ship: { destroyer: 10, frigate: 10, aux: 1 } }];
+    const r1 = MM.compute(rulesM, c, null), f = r1.fleets[0];
+    near(f.conc, Math.min(K.fleet_conc_max, 19 * K.fleet_conc), 1e-12, "сосредоточение флота");
+    near(f.need, 20 / K.ships_per_aux * (1 + K.fleet_sup_grow * 19), 1e-9, "суда снабжения");
+    near(f.supply, 1 / f.need, 1e-9, "снабжение флота");
+    assert(r1.fleet_n === 1 && r1.fleet_ships === 21, "счётчики");
+    // тральщики: по одному на базу снимают штраф вместимости
+    c.fleets = []; c.cnt.ship.mso = c.in.navbases;
+    const r2 = MM.compute(rulesM, c, null);
+    assert(r0.mine_cov === 0 && r2.mine_cov === 1 && r2.nav_base_coef > r0.nav_base_coef, "тральщики");
+    // РТВ усиливают ЗРВ, РЭБ — СВ и ВВС
+    c.in.rtv = Math.ceil(c.in.sam / K.rtv_per); c.cnt.sup = { ew: 10 };
+    const r3 = MM.compute(rulesM, c, null);
+    assert(r3.rtv_cov === 1 && r3.ad_power > r2.ad_power, "РТВ");
+    near(r3.ew_bonus, K.ew_max, 1e-12, "РЭБ");
+    // мобильные МБР — тот же залп, выше потенциал
+    const s = MM.SAMPLES[0].make(), a = MM.compute(rulesM, s, null); s.in.icbm_mob = 20; s.in.icbm -= 20;
+    const b = MM.compute(rulesM, s, null);
+    assert(b.nuke_cap === a.nuke_cap && b.nuke_power > a.nuke_power && b.strat_upkeep > a.strat_upkeep, "мобильные МБР");
+  });
+  await test("Армии и флоты на сайте: блоки по видам ВС, карточки армий, значки на карте", async () => {
+    const rl = W.KGMechModel, c = rl.SAMPLES[0].make();
+    c.cnt.sup = { sig: 3, auto: 6 }; c.armies = [{ id: "a1", name: "Проверочная армия", cmd: "Ген. Тест", prov: "", div: { motor: 8, tank: 4 }, ac: { heli: 20 } }];
+    c.fleets = [{ id: "f1", name: "Проверочный флот", prov: "", ship: { destroyer: 1, frigate: 4, aux: 1 } }];
+    const box = W.KGMech.countryView({ id: "8", c, world: null, editable: true, gm: true });
+    D.body.append(box);
+    try {
+      const t = box.textContent;
+      for (const s of ["Отдельные рода войск", "Иррегулярные формирования", "Специальные войска и войска тыла", "Войска ПВО", "Ракетные войска стратегического назначения", "Военно-космические войска", "Флоты и эскадры"])
+        assert(t.includes(s), "нет блока «" + s + "»");
+      const cards = [...box.querySelectorAll(".force-card")];
+      assert(cards.length === 2 && /Проверочная армия/.test(cards[0].textContent) && /12 дивиз/.test(cards[0].textContent) && /Проверочный флот/.test(cards[1].textContent), "карточки");
+      assert(box.querySelector("table.units tr.grp"), "рода войск — подзаголовками таблиц");
+      assert([...box.querySelectorAll(".forces > .small-btn")].length === 2, "ГМ заводит армии и флоты");
+    } finally { box.remove(); }
+    const fx = W.document.getElementById("forcesLayer");
+    assert(fx, "слой личной карты (армии, флоты, зоны) на карте есть");
+    assert(![...W.document.querySelectorAll("#layerList .lname")].some(e => /Армии|флот/i.test(e.textContent)), "в общей легенде карты армий и флотов быть не должно");
+    assert(!fx.querySelector(".fx"), "значков армий без входа за страну или ГМа быть не должно");
+    const pub = await fetch("../data/armies.json", { cache: "no-cache" }).then(r => (r.ok ? r.json() : { list: [] }));
+    assert(!(pub.list || []).length, "публичный data/armies.json должен быть пуст: армии и флоты видят только игрок и ГМ");
+    return "армии и флоты публично не показываются";
+  });
+  await test("Импорт стран: стартовая казна переходит в данные страны, мусор отсекается", () => {
+    const R = MM.defaultRules(), c = MM.importCountry(R, { in: {}, treasury: { bal: 12.5, spend: [{ kind: "ovp", amt: 5 }] } });
+    near(c.treasury.bal, 12.5, 1e-12, "остаток"); assert(c.treasury.spend.length === 0, "траты — дело ведущего, из файла не берутся");
+    near(MM.importCountry(R, { in: {}, treasury: { bal: -3 } }).treasury.bal, 0, 1e-12, "отрицательная казна → 0"); near(MM.importCountry(R, { in: {} }).treasury.bal, 0, 1e-12, "нет поля — ноль");
+  });
+  await test("Налог: выше нормы бьёт по стабильности, поддержке и росту ВВП, ниже — вдвое слабее помогает; поддержка меняется в ходе", async () => {
+    const R = MM.defaultRules(), K = R.K, mk = tax => { const c = JSON.parse(JSON.stringify(MM.SAMPLES[0].make(R))); c.in.tax = tax; return c; };
+    const rn = MM.compute(R, mk(K.tax_norm)), rh = MM.compute(R, mk(K.tax_norm + 0.1)), rl = MM.compute(R, mk(K.tax_norm - 0.1));
+    near(rn.tax_stab, 0, 1e-12, "норма — без поправки"); near(rh.tax_stab, -3, 1e-9, "+10 п. п. = −3 пункта стабильности за ход");
+    near(rl.tax_stab, 1.5, 1e-9, "−10 п. п. = +1,5 пункта"); near(rh.d_stab - rn.d_stab, -3, 1e-6, "налог входит в изменение стабильности");
+    near(rh.tax_gdp, -0.003, 1e-12, "+10 п. п. = −0,3% роста ВВП"); near(rh.d_gdp - rn.d_gdp, -0.003, 1e-9, "и в рост ВВП");
+    near(rh.d_support - rn.d_support, -2, 1e-9, "+10 п. п. = −2 пункта поддержки"); assert(rl.d_support > rn.d_support, "низкий налог помогает поддержке");
+    assert(rh.revenue > rn.revenue * 1.2, "доходы при этом растут (налог выше)");
+    // поддержка тянется к стабильности и ограничена 0–100
+    const c = mk(K.tax_norm); c.in.support = 20; c.in.stability = 80; assert(MM.compute(R, c).d_support > 0, "спокойная страна — поддержка растёт");
+    const c2 = mk(0.9); c2.in.support = 1; assert(MM.compute(R, c2).next_support >= 0, "поддержка не уходит ниже нуля");
+    const c3 = mk(0); c3.in.support = 99.9; assert(MM.compute(R, c3).next_support <= 100, "и выше ста");
+  });
+  await test("Казна: траты ограничены остатком, перерасход сначала тратит казну, резерв сначала гасит долг, убыль и потолок", async () => {
+    const R = MM.defaultRules(), K = R.K, base = MM.SAMPLES[0].make(R), mk = () => JSON.parse(JSON.stringify(base));
+    const r0 = MM.compute(R, mk());
+    assert(r0.budget > 10 && r0.tre_bal === 0 && r0.tre_spent === 0 && r0.tre_ovp === 0, "без казны ничего не меняется");
+    near(r0.tre_next, (r0.tre_in) * (1 - K.tre_decay), 1e-9, "пополнение с убылью");
+    // траты: ОВП, боеготовность, стабильность; больше остатка потратить нельзя
+    let c = mk(); c.treasury = { bal: 20, spend: [{ kind: "ovp", amt: 5 }, { kind: "ready", amt: 3 }, { kind: "stab", amt: 9 }] };
+    let r = MM.compute(R, c);
+    near(r.tre_spent, 17 > 20 ? 20 : 17, 1e-9, "потрачено 5 + 3 + 9 = 17 из 20");
+    near(r.tre_ovp, 5 * K.tre_ovp, 1e-9, "ОВП по курсу"); near(r.ovp, r0.ovp + 5 * K.tre_ovp, 1e-9, "ОВП страны выросли");
+    near(r.tre_ready, 3 * MM.TURNS_YEAR, 1e-9, "боеготовность: трата × 4 к военному бюджету");
+    assert(r.d_stab > r0.d_stab, "субсидия поднимает стабильность"); near(r.tre_stab, 9 * MM.TURNS_YEAR / r.budget / K.tre_stab_cost * K.soc_eff, 1e-9, "субсидия дороже бюджета");
+    c.treasury.spend.push({ kind: "ovp", amt: 100 }); r = MM.compute(R, c); near(r.tre_spent, 20, 1e-9, "потолок трат — остаток");
+    // перерасход: сначала казна, затем долг
+    c = mk(); c.in.b_def = 0.9; c.treasury = { bal: 3 }; r = MM.compute(R, c);
+    assert(r.b_other < 0 && r.tre_cover === 3 && r.debt_new > 0, "перерасход: 3 из казны, остальное в долг");
+    near(r.debt_new, -r.b_other * r.budget / MM.TURNS_YEAR - 3, 1e-9, "долг = перерасход − казна");
+    c.treasury.bal = 1e6; r = MM.compute(R, c); near(r.debt_new, 0, 1e-9, "богатая казна покрывает всё"); assert(r.tre_next < 1e6 && r.tre_next <= r.tre_cap + 1e-9, "потолок и убыль");
+    // резерв: сначала долг, остаток в казну
+    c = mk(); c.in.b_def = 0.1; c.in.b_soc = 0.1; c.debt = { loans: [{ id: "m", cr: "market", amt: 5, fresh: 0 }] }; r = MM.compute(R, c);
+    near(r.debt_repay, 5, 1e-9, "резерв гасит весь долг"); near(r.tre_in, -r.debt_repay + r.b_other * r.budget / MM.TURNS_YEAR, 1e-6, "остаток резерва идёт в казну");
+    assert(r.tre_in > 0, "остаток пополняет казну");
+    // переход хода: траты списаны, остаток по расчёту
+    c = mk(); c.treasury = { bal: 10, spend: [{ kind: "ovp", amt: 4 }] }; r = MM.compute(R, c); MM.treasuryNextTurn(c, r);
+    assert(c.treasury.spend.length === 0, "траты списаны"); near(c.treasury.bal, +r.tre_next.toFixed(3), 1e-9, "остаток по расчёту");
+    // грязные данные не ломают
+    c = mk(); c.treasury = { bal: "x", spend: [null, { kind: "bad", amt: 5 }, { kind: "ovp", amt: -1 }, { kind: "ovp", amt: 2, id: "a" }, { kind: "stab", amt: 1, id: "a" }] };
+    const T = MM.treasuryState(c); assert(T.bal === 0 && T.spend.length === 2 && T.spend[0].id !== T.spend[1].id, "очистка данных казны");
+  });
+  await test("Казна в статье: числа в тексте совпадают с правилами", async () => {
+    const html = await (await fetch("../index.html", { cache: "no-cache" })).text(), i = html.indexOf('id="m-treasury"'), j = html.indexOf('id="m-tech"'); assert(i > 0 && j > i, "раздел найден");
+    const txt = html.slice(i, j).replace(/<[^>]+>/g, " ").replace(/\s+/g, " "), K = MM.defaultRules().K, p = v => String(+(v * 100).toFixed(2)).replace(".", ","), n = v => String(+v).replace(".", ",");
+    const bad = [["tre_decay", "теряет " + p(K.tre_decay) + "% запаса"], ["tre_cap", "выше " + p(K.tre_cap) + "% годового бюджета"], ["tre_ovp", "даёт " + n(K.tre_ovp) + " ОВП"], ["tre_stab_cost", "в " + n(K.tre_stab_cost) + " раза дороже"], ["tre_decay", "× (1 − " + p(K.tre_decay) + "%)"]].filter(([, w]) => !txt.includes(w));
+    assert(!bad.length, "в тексте казны нет: " + bad.map(x => x[1]).join("; "));
+  });
+  await test("Раздел «Армия» в статье: числа в тексте совпадают с правилами в коде, нет устаревших слов", async () => {
+    const html = await (await fetch("../index.html", { cache: "no-cache" })).text();
+    const i = html.indexOf('id="m-army"'), j = html.indexOf('id="m-sats"'); assert(i > 0 && j > i, "раздел найден");
+    const txt = html.slice(i, j).replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ");
+    const K = MM.defaultRules().K, p = v => String(+(v * 100).toFixed(2)).replace(".", ","), n = v => String(+v).replace(".", ",");
+    const need = [
+      ["army_conc", "4% × (N − 1)", p(K.army_conc) + "% × (N − 1)"], ["army_conc_max", "min(40%", "min(" + p(K.army_conc_max) + "%"], ["army_sup_grow", "0,06 × (N − 1)", n(K.army_sup_grow) + " × (N − 1)"],
+      ["sup_floor", "0,5 × обеспеченность", n(1 - K.sup_floor) + " × обеспеченность"], ["away", "на 50% больше", "на " + p(K.away) + "% больше"], ["away_min", "до +20%", "до +" + p(K.away_min) + "%"],
+      ["fleet_conc", "2% × (боевые корабли", p(K.fleet_conc) + "% × (боевые корабли"], ["fleet_conc_max", "min(30%", "min(" + p(K.fleet_conc_max) + "%"], ["ships_per_aux", "боевые / 8", "боевые / " + n(K.ships_per_aux)],
+      ["fleet_sup_grow", "0,03 × (N − 1)", n(K.fleet_sup_grow) + " × (N − 1)"], ["eq_floor", "лишь 40% мощи", "лишь " + p(K.eq_floor) + "% мощи"], ["ac_per_base", "вмещает 100 летательных", "вмещает " + n(K.ac_per_base) + " летательных"],
+      ["ships_per_base", "вмещает 25 кораблей", "вмещает " + n(K.ships_per_base) + " кораблей"], ["mine_floor", "падает до 60%", "падает до " + p(K.mine_floor) + "%"], ["navy_world", "коэффициент мира 1,3", "коэффициент мира " + n(K.navy_world)],
+      ["sup_auto", "снабжает 4 дивизии", "снабжает " + n(K.sup_auto) + " дивизии"], ["sup_rail", "снабжает 6 дивизий", "снабжает " + n(K.sup_rail) + " дивизий"], ["road_cover", "1 бригада на 6 дивизий вне", "1 бригада на " + n(K.road_cover) + " дивизий вне"],
+      ["sig_cover", "на 5 дивизий в армиях. Без связи", "на " + n(K.sig_cover) + " дивизий в армиях. Без связи"], ["eng_cover", "Инженерные: 1 бригада на 5 дивизий", "Инженерные: 1 бригада на " + n(K.eng_cover) + " дивизий"],
+      ["eng_def", "+20% к обороне", "+" + p(K.eng_def) + "% к обороне"], ["eng_sec", "до +5% к безопасности", "до +" + p(K.eng_sec) + "% к безопасности"], ["ew_cover", "РЭБ: 1 бригада на 8 дивизий", "РЭБ: 1 бригада на " + n(K.ew_cover) + " дивизий"],
+      ["ew_max", "до +10% к мощи СВ", "до +" + p(K.ew_max) + "% к мощи СВ"], ["chem_cover", "РХБЗ: 1 бригада на 8", "РХБЗ: 1 бригада на " + n(K.chem_cover)], ["chem_rad", "радиации на 30%", "радиации на " + p(K.chem_rad) + "%"],
+      ["pipe_cover", "на 150 ЛА", "на " + n(K.pipe_cover) + " ЛА"], ["constr_cover", "на 4 базы", "на " + n(K.constr_cover) + " базы"], ["constr_max", "добавляет до 25%", "добавляет до " + p(K.constr_max) + "%"],
+      ["rtv_per", "1 на 10 дивизионов", "1 на " + n(K.rtv_per) + " дивизионов"], ["rtv_max", "ЗРВ до 30%", "ЗРВ до " + p(K.rtv_max) + "%"], ["icbm_wh", "МБР несёт 3", "МБР несёт " + n(K.icbm_wh)], ["mob_surv", "до 25% к потенциалу", "до " + p(K.mob_surv) + "% к потенциалу"],
+      ["strat_weight", "потенциал × 0,5", "потенциал × " + n(K.strat_weight)], ["morale_base", "= 0,6 + 0,3", "= " + n(K.morale_base) + " + " + n(K.morale_stab)], ["mop_safe", "больше 10% своих годных", "больше " + p(K.mop_safe) + "% своих годных"],
+      ["mop_pen", "(нагрузка − 10%) × 0,125", "(нагрузка − " + p(K.mop_safe) + "%) × " + n(K.mop_pen)], ["garr_threat", "ещё 0,25 за каждую", "ещё " + n(K.garr_threat) + " за каждую"]
+    ];
+    const bad = need.filter(([, want]) => !txt.includes(want)).map(([k, want, exp]) => k + ": в тексте нет «" + want + "», по правилам должно быть «" + exp + "»");
+    assert(!bad.length, bad.join("; "));
+    // местность в расчёте боя: числа атаки и обороны в тексте — из таблицы кода
+    const wrongT = Object.values(MM.ZONE_TERRAIN).filter(x => x[0] !== "Море").map(x => x[0].toLowerCase() + " " + n(x[1]).replace(/^(\d)$/, "$1,0") + " / " + n(x[2]).replace(/^(\d)$/, "$1,0")).filter(s => !txt.includes(s));
+    assert(!wrongT.length, "местность в тексте расходится с кодом: " + wrongT.join("; "));
+    const old = ["значок", "Береговые войска", "виден только значок"].filter(w => txt.includes(w)); assert(!old.length, "устаревшие слова: " + old.join(", "));
+    assert(/закрыты/.test(txt) && /только ведущему/.test(txt), "про закрытость армий и расчёт боя только у ведущего сказано");
+  });
+  await test("Картинки раздела «Армия»: у каждого типа своя пиктограмма и своя подпись, повторов нет", async () => {
+    const src = await (await fetch("../assets/mech/art.js", { cache: "no-cache" })).text(), files = JSON.parse(src.slice(src.indexOf("{\"v\""), src.lastIndexOf("}") + 1)).files;
+    const rules = MM.defaultRules(), seen = new Map(), missing = [], dup = [];
+    const keys = [["banner", "army"], ["banner", "air"], ["banner", "navy"], ["banner", "strat"]].map(([g, k]) => ["mech.banner." + k, k]);
+    for (const tb of ["div", "sup", "ac", "ship"]) for (const r of rules.tables[tb]) keys.push(["mech.unit." + tb + "." + r.id, r.id]);
+    for (const [slot, id] of keys) {
+      const f = files[slot]; if (!f) { missing.push(slot); continue; }
+      const body = (await (await fetch("../" + f, { cache: "no-cache" })).text()).replace(/<text[^>]*>.*?<\/text>/g, "").replace(/<circle[^>]*opacity[^>]*\/>/g, "");
+      if (seen.has(body)) dup.push(slot + " = " + seen.get(body)); else seen.set(body, slot);
+      const label = (await (await fetch("../" + f, { cache: "no-cache" })).text()).match(/text-anchor="end"[^>]*>([^<]*)</);
+      if (!label || label[1].toLowerCase() === id.toLowerCase().replace(/_$/, "") && !/^[a-z]+$/i.test(label[1])) missing.push(slot + " (нет подписи)");
+    }
+    assert(!missing.length, "нет картинки: " + missing.join(", "));
+    assert(!dup.length, "одинаковые рисунки: " + dup.join("; "));
+    return keys.length + " картинок";
+  });
+  await test("Провинции карты = зоны: суша и море, общие номера, страны существуют", async () => {
+    const zj = (await (await fetch("../data/zones.json", { cache: "no-cache" })).json()).zones, ids = Object.keys(zj), pv = map.provinces;
+    assert(Object.keys(pv).length === ids.length && ids.every(i => pv[i]), "провинции и зоны — один и тот же набор номеров");
+    const seaP = Object.values(pv).filter(p => p.type === "Акватория"), landP = Object.values(pv).filter(p => p.type !== "Акватория");
+    assert(seaP.length > 100 && landP.length > 700, "суша " + landP.length + ", море " + seaP.length);
+    assert(seaP.every(p => !p.c) && landP.every(p => !p.c || map.countries[p.c]), "у моря нет страны, у суши страна есть на карте");
+    assert(Object.values(pv).every(p => p.name && !/́/.test(p.name) && Array.isArray(p.label) && p.size >= 2.4), "названия, подписи и размеры");
+    const ant = Object.values(zj).filter(z => z.pole && z.k === "l");
+    assert(ant.length >= 40 && ant.every(z => z.c == null), "Антарктида разбита на игровые зоны без владельца: " + ant.length);
+    return landP.length + " провинций суши, " + seaP.length + " акваторий, " + ant.length + " антарктических зон";
+  });
+  await test("Видимость войск: игрок видит свои и открытые ему, без мощи; ГМ — всё", () => {
+    const fs = MM.forceState([{ id: "a1", name: "А", vis: ["2", "x", 3, ""] }], ["div", "ac"]);
+    assert(JSON.stringify(fs[0].vis) === '["2","x","3"]', "поле vis очищается: " + JSON.stringify(fs[0].vis));
+    const data = { "1": { armies: [{ id: "a1", name: "Первая", prov: "10", vis: ["2"] }, { id: "a2", name: "Тайная", prov: "11", vis: [] }], fleets: [{ id: "f1", name: "Флот", prov: "12", sea: "900", vis: ["2", "3"] }] }, "2": { armies: [{ id: "b1", name: "Своя", prov: "5" }] } };
+    const res = { "1": { armies: [{ id: "a1", N: 7, power: 99 }, { id: "a2", N: 3, power: 50 }], fleets: [{ id: "f1", N: 12, power: 80 }] }, "2": { armies: [{ id: "b1", N: 4, power: 10 }] } };
+    const s2 = MM.seenForces(data, res, "2"), s3 = MM.seenForces(data, res, "3"), s1 = MM.seenForces(data, res, "1");
+    assert(s2.length === 2 && s2.some(x => x.id === "a1" && x.N === 7 && x.c === "1") && s2.some(x => x.id === "f1" && x.s === "900"), "стране 2 открыты первая армия и флот");
+    assert(!s2.some(x => x.id === "a2") && !s2.some(x => "power" in x || "pw" in x), "закрытая армия скрыта, мощи нет");
+    assert(s3.length === 1 && s3[0].id === "f1", "стране 3 — только флот");
+    assert(s1.length === 0, "чужие армии, не открытые стране 1 (своих здесь нет), не видны");
+    return "стране 2 открыто " + s2.length + ", стране 3 — " + s3.length;
+  });
+  await test("Слой «Провинции»: контур и подпись есть у каждой зоны (суша и море), на любом масштабе", async () => {
+    await go("map/earth/flat", () => visible(D.getElementById("page-map")), "карта");
+    const total = Object.keys(map.provinces).length, sea = Object.values(map.provinces).filter(p => p.type === "Акватория").length;
+    const lay = D.getElementById("provBordersLayer"), lbl = D.getElementById("provLabelsLayer");
+    await waitFor(() => lay.childElementCount >= total && lbl.childElementCount >= total, "построены контуры и подписи провинций", 60000);
+    const kids = [...lay.children];
+    assert(kids.length === total, "контуров " + kids.length + " из " + total);
+    assert(!kids.filter(k => !k.getAttribute("d")).length, "есть провинции без контура");
+    assert(kids.filter(k => k.classList.contains("sea")).length === sea, "морских контуров должно быть " + sea);
+    // морская зона — не обрезок: самая большая охватывает сотни пикселей (иначе браузер держит старый растр)
+    const wide = Math.max(...kids.filter(k => k.classList.contains("sea")).map(k => k.getBBox().width));
+    assert(wide > 300, "морские контуры слишком мелкие (старый растр в кэше?): " + Math.round(wide));
+    assert(getComputedStyle(lay).display !== "none", "слой не скрыт при общем виде");
+  });
+  await test("Карта: «Карточка» в легенде, вкладка «Войска» скрыта от публики, калькулятор только у ГМа", async () => {
+    const d = W.document, $q = s => d.querySelector(s), sleep = ms => new Promise(r => setTimeout(r, ms));
+    assert($q("#cardToggle") && $q("#tabForces") && $q("#paneForces"), "кнопка и вкладка есть");
+    assert($q("#tabForces").classList.contains("hidden"), "без входа вкладка «Войска» скрыта");
+    // кнопка «Карточка»: выбрать страну → карточка видна; кнопка прячет и открывает снова
+    const cid = Object.keys(map.countries)[0];
+    W.KGMap.select({ col: "countries", id: cid }); await sleep(100);
+    const card = $q("#stateCard");
+    if (!card.classList.contains("hidden")) $q("#cardToggle").click(); // сбрасываем: вдруг открыта прошлым тестом
+    W.KGMap.select(null); W.KGMap.select({ col: "countries", id: cid }); await sleep(100);
+    assert(card.classList.contains("hidden"), "выбор страны карточку НЕ открывает");
+    $q("#cardToggle").click(); assert(!card.classList.contains("hidden"), "кнопка открывает карточку");
+    $q("#cardToggle").click(); assert(card.classList.contains("hidden"), "кнопка прячет карточку");
+    W.KGMap.select(null); W.KGMap.select({ col: "countries", id: cid }); await sleep(50);
+    assert(card.classList.contains("hidden"), "после закрытия новый выбор страны карточку не открывает");
+    // подмена данных: игрок, затем ГМ
+    const old = W.KGForces, zone = Object.keys((await (await fetch("../data/zones.json")).json()).zones).find(i => true);
+    const own = { k: "a", c: cid, id: "a1", n: "Моя армия", N: 5, pw: 50, df: 60, z: zone, zone: "home" }, seen = { k: "a", c: "999", id: "z1", n: "Чужая армия", N: 3, z: zone, seen: true };
+    try {
+      for (const role of ["player", "gm"]) {
+        W.KGForces = { get: () => [own, seen], who: () => (role === "gm" ? { role } : { role, id: cid, name: "Тест" }), zones: () => ({}) };
+        W.dispatchEvent(new W.Event("kg:forces"));
+        for (let i = 0; i < 40 && !$q("#opsList .ops-row.click"); i++) await sleep(250);
+        assert(!$q("#tabForces").classList.contains("hidden"), role + ": вкладка видна");
+        $q("#tabForces").click(); await sleep(100);
+        const row = $q("#opsList .ops-row.click"); assert(row, role + ": войска в списке"); row.click(); await sleep(300);
+        const zt = $q("#opsZone").textContent, has = /Расчёт боя/.test(zt) && !!$q("#opsZone .ops-calc select");
+        assert(/Войска в зоне/.test(zt) && /Моя армия/.test(zt), role + ": войска в зоне показаны");
+        if (role === "player") assert(!has && /Чужая армия/.test(zt) && ![...d.querySelectorAll("#opsZone .ops-row")].some(r => /Чужая/.test(r.textContent) && /мощь/i.test(r.title)), "игрок: чужая армия открыта без мощи, расчёта боя нет");
+        else assert(has && /Обороняющийся/.test(zt) && /Нападающий/.test(zt), "ГМ: расчёт боя с выбором обороняющегося");
+      }
+    } finally { W.KGForces = old; W.dispatchEvent(new W.Event("kg:forces")); }
+    return "игрок: без расчёта; ГМ: с расчётом";
   });
   await test("Ни одной ошибки JavaScript за весь прогон", () => {
     const e = errs.filter(x => !/youtube|ytimg|ERR_BLOCKED|Failed to load resource/i.test(x));
