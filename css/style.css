@@ -144,8 +144,7 @@ main { position: relative; z-index: 5; height: calc(100% - var(--topbar-h)); }
 .layer.relief { mix-blend-mode: multiply; opacity: .55; }
 .layer.hydro { filter: brightness(.6) sepia(1) hue-rotate(190deg) saturate(2.2); opacity: .85; }
 .layer.road { filter: brightness(0) invert(1); opacity: .5; transition: opacity .2s, filter .2s; }
-.layer.road.hl { opacity: 1; animation: roadPulse 2.2s ease-in-out infinite; }
-@keyframes roadPulse { 50% { opacity: .75; } }
+.layer.road.hl { opacity: 1; } /* без бесконечной пульсации: она заставляла перерисовывать огромный слой каждый кадр */
 
 #countriesLayer path { fill-opacity: .9; pointer-events: visiblePainted; cursor: pointer; }
 #bordersLayer path { fill: none; stroke: rgba(26, 18, 40, .62); stroke-width: 1px; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
@@ -175,10 +174,9 @@ path.al-none { fill: #160f24; fill-opacity: .66; pointer-events: none; }
   pointer-events: visiblePainted; cursor: pointer; user-select: none;
 }
 /* подсветка слоёв «Страны» и «Границы стран» */
-#labelsLayer.hl { filter: drop-shadow(0 0 1.5px var(--glow)) drop-shadow(0 0 5px var(--glow)); }
-#labelsLayer.hl .lbl-country { stroke: rgba(70, 0, 60, .9); }
-#bordersLayer.hl { filter: drop-shadow(0 0 1.2px var(--glow)) drop-shadow(0 0 4px var(--glow)); }
-#bordersLayer.hl path { stroke: #ff9be9; stroke-width: 1.7px; }
+/* подсветка — цветная обводка вместо размытого свечения (фильтр drop-shadow на слое во весь мир сильно тормозил) */
+#labelsLayer.hl .lbl-country { stroke: rgba(255, 63, 208, .85); stroke-width: 2.4px; }
+#bordersLayer.hl path { stroke: #ffa6ec; stroke-width: 2.2px; }
 .lbl-custom {
   font-family: var(--font-wide); font-weight: 300; fill: var(--pink-soft); stroke: rgba(4, 18, 40, .7); stroke-width: 2px; paint-order: stroke;
   text-anchor: middle; dominant-baseline: middle; pointer-events: visiblePainted; cursor: pointer; user-select: none;
@@ -372,8 +370,7 @@ body.is-gm .map-title { display: none; }
 /* ---------- провинции ---------- */
 #provBordersLayer path { fill: none; stroke: rgba(18, 22, 48, .42); stroke-width: .7px; stroke-dasharray: 3 2; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
 #provBordersLayer path.sea { stroke: rgba(150, 200, 255, .38); }
-#provBordersLayer.hl { filter: drop-shadow(0 0 1px var(--glow)) drop-shadow(0 0 3px var(--glow)); }
-#provBordersLayer.hl path { stroke: #9ff0ff; stroke-width: 1.1px; }
+#provBordersLayer.hl path { stroke: #9ff0ff; stroke-width: 1.5px; }
 .lbl-prov {
   display: none; font-family: var(--font-wide); font-weight: 300; letter-spacing: .06em; font-size: calc(var(--fs, 4px) * var(--pk, 1));
   fill: rgba(240, 250, 255, .9); stroke: rgba(14, 18, 40, .75); stroke-width: .6px; paint-order: stroke;
@@ -392,7 +389,7 @@ body.is-gm .prov-title { display: none; }
 
 /* ---------- глобус: холст поверх, спутники ---------- */
 .g-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-.g-labels.hl .g-label { filter: drop-shadow(0 0 2px #ff7fd8) drop-shadow(0 0 6px #ff3fd0); }
+.g-labels.hl .g-label { text-shadow: 0 0 2px #ff7fd8, 0 0 5px #ff3fd0; }
 .g-loading { position: absolute; left: 50%; bottom: 70px; transform: translateX(-50%); padding: 6px 14px; font-size: 12px; color: var(--line); background: var(--panel); border: 1px solid var(--line-dim); border-radius: 3px; }
 .sat-panel { position: absolute; z-index: 8; right: 10px; top: 50px; width: 290px; max-height: calc(100% - 130px); display: flex; flex-direction: column; }
 .sat-head { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--line-dim); font-family: var(--font-wide); font-weight: 300; font-size: 11px; letter-spacing: .25em; text-transform: uppercase; color: var(--line); }
@@ -693,7 +690,8 @@ body.moon-mode .moon-legend { display: flex; }
 .world > .wc { pointer-events: none !important; }
 .world > .wc-l { translate: calc(var(--ww) * -1) 0; }
 .world > .wc-r { translate: var(--ww) 0; }
-.world:not(.show-l) > .wc-l, .world:not(.show-r) > .wc-r { visibility: hidden; }
+/* невидимые копии убираем совсем (display), а не прячем: иначе браузер всё равно пересчитывает их стили и раскладку — это лишние тысячи элементов на каждом приближении */
+.world:not(.show-l) > .wc-l, .world:not(.show-r) > .wc-r { display: none; }
 
 /* ---------- карточка государства (заглушка) ---------- */
 .state-card { position: absolute; z-index: 9; top: calc(var(--row1) + 46px); right: 10px; width: 290px; max-height: calc(100% - var(--row1) - 120px); overflow-y: auto; padding: 12px 14px; background: rgba(6, 14, 32, .95); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 0 18px rgba(24, 217, 245, .22); color: var(--text); font-size: 13px; scrollbar-width: thin; }

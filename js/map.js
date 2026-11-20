@@ -141,7 +141,7 @@
     if (l.road) {
       const on = !!ui.hl[l.id];
       el.classList.toggle("hl", on);
-      el.style.filter = on ? `brightness(0) invert(1) drop-shadow(0 0 .6px ${l.road}) drop-shadow(0 0 1.4px ${l.road}) drop-shadow(0 0 3px ${l.road})` : "";
+      el.style.filter = on ? `brightness(0) invert(1) drop-shadow(0 0 1.5px ${l.road})` : ""; // одно свечение вместо трёх: тот же вид, втрое дешевле
     }
     if (l.glow) {
       el.classList.toggle("hl", !!ui.hl[l.id]);
@@ -1050,7 +1050,7 @@
     if (entry) mark(entry);
     $("gmDirty").classList.remove("hidden");
     scheduleDraft();
-    if (entry && touchesPaint(entry)) citiesChanged(); // границы сменились — у городов могла смениться страна
+    if (entry && touchesPaint(entry)) { globeIdsDirty = true; citiesChanged(); } // границы сменились — у городов могла смениться страна, а глобусу нужны новые растры
   }
   function recomputeAny(stroke) {
     if (!stroke.wide) { recompute(stroke.labels); return; }
@@ -1105,6 +1105,7 @@
     if (d.ids && d.ids.length === T.ids.length) { T.ids.set(d.ids); T.computeBBoxes(); terrDirty = true; }
     if (d.pids && d.pids.length === P.ids.length) { P.ids.set(d.pids); P.computeBBoxes(); provDirty = true; buildProvPaths(); }
     rebuildAll(true);
+    globeIdsDirty = true;
     dirty = true; $("gmDirty").classList.remove("hidden");
     toast("Черновик восстановлен");
   }
@@ -1180,6 +1181,21 @@
   };
   async function ensureToken() { return GH.token() ? true : setupToken(); }
 
+  // Готовые контуры стран, берега и провинций для data/paths.json и data/paths_prov.json (считаются в фоновом потоке, если в кэше браузера
+  // их нет или растр уже изменён правками ГМа). Игроки читают эти файлы вместо расчёта.
+  async function pathsFiles() {
+    await prepareProvinces(); // растр провинций загружен
+    const kc = PATHS_VER + "|" + idsHash(T.ids), kp = PATHS_VER + "|" + idsHash(P.ids);
+    let c = pathsCache && pathsCache.kc === kc && pathsCache.c ? pathsCache.c : null;
+    if (!c) { const r = await computePaths(T, false, true); c = { paths: r.paths, coast: r.coast }; }
+    let p = pathsCache && pathsCache.kp === kp && pathsCache.p ? pathsCache.p : null;
+    if (!p) { const r = await computePaths(P, true, false); p = { paths: r.paths }; }
+    savePaths({ kc, c, kp, p });
+    return [
+      { path: "data/paths.json", content: JSON.stringify({ pv: PATHS_VER, kc, c }) },
+      { path: "data/paths_prov.json", content: JSON.stringify({ pv: PATHS_VER, kp, p }) }
+    ];
+  }
   // файлы карты для публикации; их же берут механики, когда ход меняет население городов (один коммит на всё)
   async function publishFiles() {
     for (const ct of Object.values(state.cities)) setCityCc(ct); // страна у каждого города — по растру (для механик и лора)
@@ -1196,6 +1212,8 @@
     if (dirty) files.push({ path: "data/map.json", content: JSON.stringify(st) });
     if (terrDirty) files.push({ path: "data/territories.png", content: await T.toPngBlob() }, { path: "data/territories.ids", content: await T.toIdsBlob() });
     if (provDirty) files.push({ path: "data/provinces.png", content: await P.toPngBlob() }, { path: "data/provinces.ids", content: await P.toIdsBlob() });
+    // готовые контуры для игроков: после правки границ или если в репозитории их ещё нет / они от другого растра
+    if (terrDirty || provDirty || repoPaths === false) { try { files.push(...(await pathsFiles())); } catch (e) { console.warn("контуры для репозитория не собраны:", e.message); } }
     if (window.KGMoon && window.KGMoon.isDirty()) files.push(...(await window.KGMoon.files()));
     return { st, files };
   }
@@ -1871,7 +1889,10 @@
     sh.landDark = true; // подложка суши всегда видна
     return sh;
   }
+  // globeNeed — «перерисуй шар»: цикл ниже рисует только по этому флагу, при движении времени (спутники) или дорисовке чёткости
+  let globeNeed = true, globeLastDraw = 0;
   function globeDirty() {
+    globeNeed = true;
     if (viewMode !== "globe" || !globe || globeRaf || globeLoop) return;
     globeRaf = requestAnimationFrame(() => { globeRaf = 0; drawGlobe(); });
   }
@@ -1879,6 +1900,7 @@
     globe.show = globeShow();
     globe.sel = sel && sel.col === "countries" ? +sel.id : 0;
     globe.selProv = selProv ? +selProv : 0;
+    globeNeed = false;
     updateSats();
     globe.render();
     renderSatInfo();
@@ -1891,50 +1913,52 @@
       if (viewMode !== "globe") { globeLoop = 0; return; }
       const dt = now - satUi.last; satUi.last = now;
       satUi.time += dt * satUi.speed;
-      drawGlobe();
+      // Раньше шар рисовался в каждом кадре, даже неподвижный. Теперь — по требованию; спутники при скорости ×1 сдвигаются
+      // за секунду на доли пикселя, поэтому их перерисовка реже: ×1 — 5 раз в секунду, до ×60 — 20, быстрее — 30.
+      const every = satUi.speed <= 1 ? 200 : satUi.speed <= 60 ? 50 : 33;
+      const animated = satUi.speed > 0 && (satUi.items.length || satUi.showMoon || (satUi.debris && satUi.debris.length));
+      if (globeNeed || globe.pending(now) || (animated && now - globeLastDraw >= every)) { globeNeed = false; globeLastDraw = now; drawGlobe(); }
       globeLoop = requestAnimationFrame(tick);
     };
     globeLoop = requestAnimationFrame(tick);
   }
   function updateSats() {
     globe.sats = satUi;
-    satUi.moon = satUi.showMoon ? { pos: Sat.moonAt(satUi.time), ring: satUi.orbits ? Sat.moonRing(satUi.time, 240) : null } : null;
+    // Кольца орбит (сотни точек на спутник) зависят от времени только через вращение Земли (≈0,004° в секунду модели),
+    // поэтому пересчитываем их, когда модельное время ушло больше чем на 20 с (а для Луны — на 120 с), а не в каждом кадре.
+    let moonRing = satUi.moon && satUi.moon.ring;
+    if (satUi.showMoon && satUi.orbits && (!moonRing || Math.abs(satUi.time - (satUi.moonRingT || 0)) > 120000)) { moonRing = Sat.moonRing(satUi.time, 240); satUi.moonRingT = satUi.time; }
+    satUi.moon = satUi.showMoon ? { pos: Sat.moonAt(satUi.time), ring: satUi.orbits ? moonRing : null } : null;
     updateDebris();
     for (const it of satUi.items) {
       it.dead = satUi.time >= it.deadAt;
       if (it.dead) it.screen = null;
       it.pos = Sat.at(it.raw, satUi.time);
-      it.ring = satUi.orbits && it.on ? Sat.ring(it.raw, satUi.time, it.raw.orbit === "ell" ? 240 : 160) : null;
+      if (!(satUi.orbits && it.on)) it.ring = null;
+      else if (!it.ring || Math.abs(satUi.time - (it.ringT || 0)) > 20000) { it.ring = Sat.ring(it.raw, satUi.time, it.raw.orbit === "ell" ? 240 : 160); it.ringT = satUi.time; }
     }
     if (satUi.follow && satUi.sel) {
       const it = satUi.items.find(x => x.s.id === satUi.sel);
       if (it && it.pos) { globe.lat = Math.max(-1.3, Math.min(1.3, it.pos.lat * Math.PI / 180)); globe.lon = it.pos.lon * Math.PI / 180; }
     }
   }
-  // сборка упакованных текстур слоёв (дороги в RGBA, реки+городские зоны в LA)
-  function alphaOf(img) {
-    const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
-    const cx = cv.getContext("2d", { willReadFrequently: true });
-    cx.drawImage(img, 0, 0, W, H);
-    return cx.getImageData(0, 0, W, H).data;
-  }
   function whenLoaded(img) { return img.complete && img.naturalWidth ? Promise.resolve() : new Promise(r => { img.addEventListener("load", r, { once: true }); img.addEventListener("error", r, { once: true }); }); }
   async function buildGlobeTextures() {
     const imgs = [L.relief, L.road_major, L.road_secondary, L.road_road, L.rail, L.hydro, L.citiesFill];
     await Promise.all(imgs.map(toFull)); // глобусу — полные рисунки (половинные он растянул бы)
+    // Упаковка каналов идёт на видеокарте (globe.packAlpha): раньше это были getImageData по 58 МБ и циклы по 14,5 млн пикселей на странице.
+    // Между картинками отдаём страницу браузеру, чтобы шар открывался без замирания.
+    const pause = () => new Promise(r => setTimeout(r, 0));
     globe.setLand(L.relief);
-    const N = W * H, lines = new Uint8Array(N * 4);
-    [L.road_major, L.road_secondary, L.road_road, L.rail].forEach((img, ch) => {
-      const d = alphaOf(img);
-      for (let i = 0; i < N; i++) lines[i * 4 + ch] = d[i * 4 + 3];
-    });
-    globe.setLines(lines, W, H);
-    const misc = new Uint8Array(N * 2), hy = alphaOf(L.hydro), cf = alphaOf(L.citiesFill);
-    for (let i = 0; i < N; i++) { misc[i * 2] = hy[i * 4 + 3]; misc[i * 2 + 1] = cf[i * 4 + 3]; }
-    globe.setMisc(misc, W, H);
+    await pause();
+    // каналы: дороги — R главные, G второстепенные, B основные, A железные; реки — R, городские зоны — A
+    await globe.packAlpha("lines", [L.road_major, L.road_secondary, L.road_road, L.rail], [0, 1, 2, 3], W, H, pause);
+    await globe.packAlpha("misc", [L.hydro, L.citiesFill], [0, 3], W, H, pause);
   }
+  // растры стран и провинций уходят в видеопамять один раз; заново — только если ГМ их менял (globeIdsDirty)
+  let globeIdsOk = false, globeIdsDirty = false;
   function syncGlobe(withIds) {
-    if (withIds) { globe.setIds(T.ids, T.W, T.H); if (P.ids) globe.setProv(P.ids, P.W, P.H); }
+    if (withIds) { globe.setIds(T.ids, T.W, T.H); if (P.ids) globe.setProv(P.ids, P.W, P.H); globeIdsOk = !!P.ids; globeIdsDirty = false; }
     const pal = {}, labels = [], on = allyOn();
     const cx = document.createElement("canvas").getContext("2d");
     for (const id in state.countries) {
@@ -1965,7 +1989,8 @@
     if (mode === "globe") {
       const c = Geo.toLL((viewport.clientWidth / 2 - tx) / s, (viewport.clientHeight / 2 - ty) / s);
       globe.lat = Math.max(-60, Math.min(70, c[0])) * Math.PI / 180; globe.lon = c[1] * Math.PI / 180;
-      syncGlobe(true);
+      syncGlobe(!globeIdsOk || globeIdsDirty);
+      globe.invalidate();
       rebuildSatItems(); buildSatList(); buildTypeList(); buildDebrisList();
       satUi.time = Date.now();
       startLoop();
@@ -2552,6 +2577,14 @@
   // На общем виде их не видно, поэтому строим один раз, когда они понадобились.
   let rasterVer = "", pathsCache = null, provP = null, provWanted = false;
   function savePaths(patch) { pathsCache = Object.assign({}, pathsCache, patch); DB.set("paths", pathsCache).catch(() => {}); }
+  // Готовые контуры лежат в репозитории: data/paths.json (страны и берег) и data/paths_prov.json (провинции). Их собирает ГМ
+  // при публикации карты (pathsFiles), поэтому у игрока контуры не считаются совсем. Файл годится, только если отпечаток растра
+  // (kc для стран, kp для провинций) совпал с загруженным — иначе считаем сами, как раньше. IndexedDB остаётся быстрым кэшем.
+  const sharedP = {};
+  let repoPaths = null; // true/false — совпал ли файл из репозитория с растром (null — не проверяли)
+  function getShared(name, ver) {
+    return sharedP[name] || (sharedP[name] = fetch("data/" + name + ".json" + ver).then(r => (r.ok ? r.json() : null)).catch(() => null));
+  }
   // данные провинций (растр, контуры из кэша или из фонового потока) — без элементов страницы; заранее, в свободное время
   let provDataP = null;
   function prepareProvinces() {
@@ -2559,9 +2592,13 @@
     provDataP = (async () => {
       await loadIds(P, "provinces", rasterVer, T.land);
       const kp = PATHS_VER + "|" + idsHash(P.ids);
-      const hitP = !!(pathsCache && pathsCache.kp === kp && pathsCache.p);
-      const pp = hitP ? pathsCache.p : await computePaths(P, true, false);
-      if (!hitP) savePaths({ kp, p: { paths: pp.paths } });
+      let pp = pathsCache && pathsCache.kp === kp && pathsCache.p ? pathsCache.p : null, hitP = !!pp;
+      if (!pp) {
+        const sh = await getShared("paths_prov", rasterVer);
+        if (sh && sh.pv === PATHS_VER && sh.kp === kp && sh.p) { pp = sh.p; hitP = true; } // готовые контуры из репозитория
+        else pp = await computePaths(P, true, false);
+        savePaths({ kp, p: { paths: pp.paths } });
+      }
       return { pp, hitP };
     })();
     provDataP.catch(() => { provDataP = null; });
@@ -2600,18 +2637,22 @@
       const ver = "?v=" + encodeURIComponent(loadedStamp || String(Date.now()));
       const t0 = performance.now();
       // маска суши — отдельный лёгкий файл (1 бит на пиксель), чтобы контуры не ждали тяжёлый рисунок рельефа
-      const [cache] = await Promise.all([
-        DB.get("paths").catch(() => null),
-        loadIds(T, "territories", ver, "assets/map/land_mask.png")
-      ]);
+      const idsP = loadIds(T, "territories", ver, "assets/map/land_mask.png");
+      const cache = await DB.get("paths").catch(() => null);
+      if (!cache) getShared("paths", ver); // первый заход: готовые контуры качаем параллельно с растром
+      await idsP;
       // ключ кэша — содержимое растра, а не время публикации: правка городов или текстов не заставляет пересчитывать контуры
       const kc = PATHS_VER + "|" + idsHash(T.ids);
       rasterVer = ver; pathsCache = cache;
-      const hit = !!(cache && cache.kc === kc && cache.c);
-      const cp = hit ? cache.c : await computePaths(T, false, true);
+      let cp = cache && cache.kc === kc && cache.c ? cache.c : null, src = cp ? "из кэша" : "";
+      if (!cp) { // нет в браузере: берём готовые из репозитория, а считаем сами, только если их нет или они от другого растра
+        const sh = await getShared("paths", ver);
+        if (sh && sh.pv === PATHS_VER && sh.kc === kc && sh.c) { cp = sh.c; src = "из репозитория"; repoPaths = true; } else repoPaths = false;
+      }
+      if (!cp) cp = await computePaths(T, false, true);
       for (const [id, d] of cp.paths) if (state.countries[String(id)]) setCountryPath(id, d);
       setCoast(cp.coast);
-      console.info("контуры " + (hit ? "из кэша" : "построены") + " за", Math.round(performance.now() - t0), "мс");
+      console.info("контуры " + (src || "построены") + " за", Math.round(performance.now() - t0), "мс");
       rebuildAll(false);
       applyFonts(); refreshCityKey();
       buildCountryList(); fillBrushSelect(); buildAllyList(); allyVisChanged();
@@ -2633,7 +2674,7 @@
       loadLayers().then(() => (window.requestIdleCallback || setTimeout)(() => prepareProvinces().catch(() => {}))); // данные провинций — заранее
       initOps(); // личная карта (армии, флоты, зоны): только после входа за страну или в режиме ГМа
       wrapVectorLayers(); // копии векторных слоёв по краям (<use> покажет и то, что достроится позже)
-      if (!hit) savePaths({ kc, c: { paths: cp.paths, coast: cp.coast } });
+      if (src !== "из кэша") savePaths({ kc, c: { paths: cp.paths, coast: cp.coast } });
       // провинции — когда понадобятся: приближение (их границы видны с масштаба 0,5), ГМ, глобус
       if (gm) { await ensureProvinces(); offerDraft(); }
       else if (frame.dataset.lod === "near" || provLayerOn()) ensureProvinces();
@@ -2860,5 +2901,5 @@
     state.currencies = state.currencies || {};
     commit("currencies", id, before, val);
   }
-  window.KGMap = { get state() { return state; }, get dirty() { return dirty || terrDirty || provDirty; }, publishFiles, afterPublish, scaleCities, popByCountry, countryPop, cityOwner, setCurrency, curText: cu => curText(cu), fmtMln: p => fmtMln(p), ready: () => mapReady, stateReady: () => stateReady, login, logout, select, focusCountry, setTool, fit, T, setView3, measures, get globe() { return globe; }, get view() { return { s, tx, ty }; }, get gm() { return gm; }, get fonts() { return currentFonts(); }, get fontScale() { return fontScales(); }, get sat() { return satUi; } };
+  window.KGMap = { get state() { return state; }, get dirty() { return dirty || terrDirty || provDirty; }, publishFiles, pathsFiles, afterPublish, scaleCities, popByCountry, countryPop, cityOwner, setCurrency, curText: cu => curText(cu), fmtMln: p => fmtMln(p), ready: () => mapReady, stateReady: () => stateReady, login, logout, select, focusCountry, setTool, fit, T, setView3, measures, get globe() { return globe; }, get view() { return { s, tx, ty }; }, get gm() { return gm; }, get fonts() { return currentFonts(); }, get fontScale() { return fontScales(); }, get sat() { return satUi; } };
 })();

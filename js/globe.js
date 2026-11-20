@@ -66,14 +66,18 @@ void main(){
     if (uShow1.w > 0.5) landCol *= mix(vec3(1.0), land.rgb, 0.55);
     if (abs(id - uSel) < 0.5) landCol = mix(landCol, vec3(1.0, 0.45, 0.85), 0.25);
     col = mix(col, landCol, isLand);
-    vec4 misc = texture2D(uMisc, uv);
-    if (uShow2.x > 0.5) col = mix(col, vec3(0.24, 0.30, 0.50), misc.r * 0.85);   // реки и озёра
-    if (uShow2.y > 0.5) col = mix(col, vec3(0.95, 0.85, 0.65), misc.a * 0.35);   // городские зоны
-    vec4 ln = texture2D(uLines, uv);
-    col = roadMix(col, ln.r, uShow3.y, uShow4.y, vec3(1.0, 0.25, 0.82));
-    col = roadMix(col, ln.b, uShow3.z, uShow4.z, vec3(1.0, 0.88, 0.30));
-    col = roadMix(col, ln.g, uShow3.w, uShow4.w, vec3(0.10, 0.90, 1.0));
-    col = roadMix(col, ln.a, uShow4.x, uHl.x, vec3(1.0, 0.60, 0.24));
+    if (uShow2.x + uShow2.y > 0.5) { // чтение текстуры — только если включён хотя бы один из её слоёв
+      vec4 misc = texture2D(uMisc, uv);
+      if (uShow2.x > 0.5) col = mix(col, vec3(0.24, 0.30, 0.50), misc.r * 0.85);   // реки и озёра
+      if (uShow2.y > 0.5) col = mix(col, vec3(0.95, 0.85, 0.65), misc.a * 0.35);   // городские зоны
+    }
+    if (uShow3.y + uShow3.z + uShow3.w + uShow4.x > 0.5) {
+      vec4 ln = texture2D(uLines, uv);
+      col = roadMix(col, ln.r, uShow3.y, uShow4.y, vec3(1.0, 0.25, 0.82));
+      col = roadMix(col, ln.b, uShow3.z, uShow4.z, vec3(1.0, 0.88, 0.30));
+      col = roadMix(col, ln.g, uShow3.w, uShow4.w, vec3(0.10, 0.90, 1.0));
+      col = roadMix(col, ln.a, uShow4.x, uHl.x, vec3(1.0, 0.60, 0.24));
+    }
     vec2 e = 1.0 / uTex * max(1.0, 1.4 * length(fwidth(xy)));
     // провинции
     if (uShow2.z > 0.5 && land.a > 0.5) {
@@ -108,6 +112,7 @@ void main(){
     const pr = gl.createProgram();
     gl.attachShader(pr, sh(gl.VERTEX_SHADER, VS));
     gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, "#extension GL_OES_standard_derivatives : enable\n" + FS));
+    gl.bindAttribLocation(pr, 0, "p"); // один и тот же вход у основной и у упаковывающей программы
     gl.linkProgram(pr);
     if (!gl.getProgramParameter(pr, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(pr));
     gl.useProgram(pr);
@@ -127,7 +132,16 @@ void main(){
     for (const k of ["prov", "lines", "misc"]) this._upload(k, gl.LUMINANCE_ALPHA, 1, 1, new Uint8Array(2), gl.NEAREST);
     this.lat = 30 * D; this.lon = 40 * D; this.zoom = 1; this.sel = 0; this.selProv = 0;
     this.show = {}; this.labels = []; this.cities = []; this.provLabels = []; this.sats = null;
+    // Рисуем шар на видеокарте только когда что-то изменилось (вид, слои, текстуры): ключ последнего кадра.
+    this.texVer = 0; this._glKey = ""; this._cam = null; this.moveT = 0; this.q = 1;
+    // холст сбрасывается браузером (скрытая вкладка, нехватка памяти) — тогда перерисуем при возвращении
+    document.addEventListener("visibilitychange", () => { this._glKey = ""; });
+    canvas.addEventListener("webglcontextlost", e => e.preventDefault());
   }
+  // следующий render() обязательно перерисует шар
+  Globe.prototype.invalidate = function () { this._glKey = ""; };
+  // нужен ли дорисовать полное разрешение: вращение закончилось, а последний кадр был упрощённым
+  Globe.prototype.pending = function (now) { return this.q !== 1 && now - this.moveT >= 180; };
   Globe.prototype.ok = function () { return !!this.gl; };
   Globe.prototype._bind = function (k, filter) {
     const gl = this.gl;
@@ -142,12 +156,65 @@ void main(){
     this._bind(k, filter);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
     gl.texImage2D(gl.TEXTURE_2D, 0, fmt, w, h, 0, fmt, gl.UNSIGNED_BYTE, data);
+    this.texVer++;
+  };
+  // Упаковка альфа-каналов нескольких картинок в один RGBA на видеокарте: без чтения пикселей на странице
+  // (раньше это были getImageData по 58 МБ и циклы по 14,5 млн пикселей — страница замирала на секунды).
+  // k — имя текстуры, imgs — картинки, chans — в какой канал (0..3) класть альфу каждой.
+  Globe.prototype._packProgram = function () {
+    if (this._pk) return this._pk;
+    const gl = this.gl;
+    const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
+    const p = gl.createProgram();
+    gl.attachShader(p, sh(gl.VERTEX_SHADER, "attribute vec2 p; varying vec2 v; void main(){ v = p * 0.5 + 0.5; gl_Position = vec4(p, 0.0, 1.0); }"));
+    gl.attachShader(p, sh(gl.FRAGMENT_SHADER, "precision mediump float; varying vec2 v; uniform sampler2D t; void main(){ gl_FragColor = vec4(texture2D(t, v).a); }"));
+    gl.bindAttribLocation(p, 0, "p");
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+    return (this._pk = { p, t: gl.getUniformLocation(p, "t") });
+  };
+  Globe.prototype.packAlpha = async function (k, imgs, chans, w, h, pause) {
+    const gl = this.gl, pk = this._packProgram();
+    const dst = this.tex[k];
+    this._bind(k, gl.LINEAR);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    const fb = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, dst, 0);
+    const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+    if (!ok) { gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.deleteFramebuffer(fb); throw new Error("не удалось собрать текстуру шара"); }
+    gl.viewport(0, 0, w, h);
+    gl.disable(gl.BLEND);
+    gl.colorMask(true, true, true, true);
+    gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.useProgram(pk.p);
+    gl.uniform1i(pk.t, 7);
+    const tmp = gl.createTexture();
+    for (let i = 0; i < imgs.length; i++) {
+      if (pause) await pause(); // отдаём страницу браузеру между картинками
+      gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D, tmp);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, imgs[i]);
+      const c = chans[i];
+      gl.colorMask(c === 0, c === 1, c === 2, c === 3);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    }
+    gl.colorMask(true, true, true, true);
+    gl.deleteTexture(tmp);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.deleteFramebuffer(fb);
+    gl.useProgram(this.pr);
+    this.texVer++;
   };
   Globe.prototype.setIds = function (ids, w, h) { this._upload("ids", this.gl.LUMINANCE, w, h, ids, this.gl.NEAREST); this.texW = w; this.texH = h; };
   // провинции: 16-битные id -> LUMINANCE_ALPHA (младший, старший байт)
+  const LITTLE = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
   Globe.prototype.setProv = function (ids, w, h) {
-    const d = new Uint8Array(w * h * 2);
-    for (let i = 0; i < ids.length; i++) { const v = ids[i]; d[i * 2] = v & 255; d[i * 2 + 1] = v >> 8; }
+    let d;
+    if (LITTLE && ids instanceof Uint16Array) d = new Uint8Array(ids.buffer, ids.byteOffset, ids.byteLength); // те же байты (младший, старший) — без цикла по 14 млн пикселей
+    else { d = new Uint8Array(w * h * 2); for (let i = 0; i < ids.length; i++) { const v = ids[i]; d[i * 2] = v & 255; d[i * 2 + 1] = v >> 8; } }
     this._upload("prov", this.gl.LUMINANCE_ALPHA, w, h, d, this.gl.NEAREST);
   };
   Globe.prototype.setLines = function (rgba, w, h) { this._upload("lines", this.gl.RGBA, w, h, rgba, this.gl.LINEAR); };
@@ -156,6 +223,7 @@ void main(){
     const gl = this.gl;
     this._bind("land", gl.LINEAR);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+    this.texVer++;
   };
   Globe.prototype.setPalette = function (colors) {
     const data = new Uint8Array(256 * 4);
@@ -169,6 +237,7 @@ void main(){
   // подписи стран (DOM): [{id, name, lat, lon, size}]
   Globe.prototype.setLabels = function (list) {
     this.labels = list;
+    this._glKey = ""; // новые элементы подписей ещё без положения
     this.labelsEl.innerHTML = "";
     for (const l of list) {
       const el = document.createElement("div"); el.className = "g-label"; el.textContent = l.name;
@@ -213,9 +282,30 @@ void main(){
 
   Globe.prototype.render = function () {
     const gl = this.gl; if (!gl) return;
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const w = Math.round(this.cv.clientWidth * dpr), h = Math.round(this.cv.clientHeight * dpr);
+    const dpr = Math.min(2, window.devicePixelRatio || 1), now = performance.now(), R = this.radius();
+    // Пока шар вращают или приближают (быстрее ~1,5 px за кадр), рисуем с пониженным разрешением на больших экранах;
+    // через 0,18 с после остановки карта сама дорисовывается начисто (pending).
+    const cam = this._cam;
+    if (cam && R * Math.hypot(this.lat - cam[0], (this.lon - cam[1]) * Math.cos(this.lat)) + Math.abs(R - cam[2]) > 1.5) this.moveT = now;
+    this._cam = [this.lat, this.lon, R];
+    const area = this.cv.clientWidth * this.cv.clientHeight * dpr * dpr;
+    this.q = now - this.moveT < 180 && area > 900000 ? 0.7 : 1;
+    const rs = dpr * this.q;
+    const w = Math.round(this.cv.clientWidth * rs), h = Math.round(this.cv.clientHeight * rs);
+    // Шейдер тяжёлый (полноэкранный, ~10 чтений текстур на пиксель): рисуем его, только если изменилось то, от чего он зависит.
+    // Спутники и орбиты (холст поверх) от этого не зависят и перерисовываются отдельно.
+    const sh = this.show;
+    let sk = "";
+    for (const k of SHOW_KEYS) sk += sh[k] ? "1" : "0";
+    const key = w + "x" + h + "|" + this.lat + "|" + this.lon + "|" + R + "|" + this.sel + "|" + this.selProv + "|" + this.texVer + "|" + sk;
+    if (key !== this._glKey) { this._drawGL(gl, w, h, rs); this._glKey = key; this._labels(); }
+    this._overlay(dpr);
+  };
+  const SHOW_KEYS = ["ocean", "landDark", "countries", "relief", "hydro", "citiesFill", "provBorders", "borders", "coast", "road_major", "road_road", "road_secondary", "rail",
+    "hl_road_major", "hl_road_road", "hl_road_secondary", "hl_rail", "hl_borders", "hl_provBorders", "labels", "hl_labels"];
+  Globe.prototype._drawGL = function (gl, w, h, dpr) {
     if (this.cv.width !== w || this.cv.height !== h) { this.cv.width = w; this.cv.height = h; }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, w, h);
     gl.useProgram(this.pr);
     const S = k => (this.show[k] ? 1 : 0);
@@ -233,8 +323,6 @@ void main(){
     gl.uniform4f(this.u.uShow4, S("rail"), S("hl_road_major"), S("hl_road_road"), S("hl_road_secondary"));
     gl.uniform4f(this.u.uHl, S("hl_rail"), S("hl_borders"), S("hl_provBorders"), 0);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-    this._labels();
-    this._overlay(dpr);
   };
 
   // подписи стран
@@ -341,10 +429,22 @@ void main(){
       const step = d.legacy ? Math.max(1, d.step || 1) : 1;
       if (d.legacy) stride = Math.max(stride, step);
       let m = 0;
-      for (let i = 0; i < d.count; i += step) {
-        const pr = g.project(d.pts[i * 3], d.pts[i * 3 + 1], d.pts[i * 3 + 2]);
-        if (g.hidden(pr)) continue;
-        xy[m * 3] = cx + pr[0]; xy[m * 3 + 1] = cy + pr[1]; xy[m * 3 + 2] = pr[2] > 0 ? 1 : 0; m++;
+      if (g instanceof Globe) {
+        // то же, что project() и hidden(), но без массива на каждую точку (десятки тысяч точек в кадре) и с общими sin/cos вида
+        const R = g.radius(), R2 = R * R, c0 = Math.cos(g.lat), s0 = Math.sin(g.lat), lon0 = g.lon, pts = d.pts;
+        for (let i = 0; i < d.count; i += step) {
+          const rho = pts[i * 3 + 2], p = pts[i * 3] * D, l = pts[i * 3 + 1] * D - lon0;
+          const cp = Math.cos(p), sp = Math.sin(p), cl = Math.cos(l);
+          const r = R * rho, sx = cp * Math.sin(l) * r, sy = -(sp * c0 - cp * s0 * cl) * r, z = (sp * s0 + cp * c0 * cl) * rho;
+          if (z < 0 && sx * sx + sy * sy < R2) continue;
+          xy[m * 3] = cx + sx; xy[m * 3 + 1] = cy + sy; xy[m * 3 + 2] = z > 0 ? 1 : 0; m++;
+        }
+      } else {
+        for (let i = 0; i < d.count; i += step) {
+          const pr = g.project(d.pts[i * 3], d.pts[i * 3 + 1], d.pts[i * 3 + 2]);
+          if (g.hidden(pr)) continue;
+          xy[m * 3] = cx + pr[0]; xy[m * 3 + 1] = cy + pr[1]; xy[m * 3 + 2] = pr[2] > 0 ? 1 : 0; m++;
+        }
       }
       if (d.legacy) {
         // мусор Великой ошибки — полупрозрачная пыль без подложки (одна операция на точку)
@@ -383,23 +483,24 @@ void main(){
         if (!it.on || it.dead) continue; // разрушенный спутник — уже облако обломков
         const sel = S.sel === it.s.id;
         if (S.orbits && it.ring) {
-          // кольцо орбиты: передняя часть сплошная, задняя (за шаром) — пунктир
-          let prev = null;
+          // кольцо орбиты: передняя часть сплошная, задняя (за шаром) — пунктир.
+          // Собираем две ломаные (видимую и скрытую) и рисуем их двумя вызовами вместо сотни отдельных отрезков на спутник.
+          let prev = null, lastHid = null;
+          const front = new Path2D(), back = new Path2D();
           for (const pt of it.ring) {
             const pr = g.project(pt.lat, pt.lon, pt.rho);
             if (prev) {
-              const hid = g.hidden(pr) || g.hidden(prev);
-              ctx.beginPath();
-              ctx.setLineDash(hid ? [2, 5] : []);
-              ctx.strokeStyle = it.s.color;
-              ctx.globalAlpha = hid ? 0.25 : sel ? 0.95 : 0.55;
-              ctx.lineWidth = sel ? 2.2 : 1.3;
-              ctx.moveTo(cx + prev[0], cy + prev[1]); ctx.lineTo(cx + pr[0], cy + pr[1]);
-              ctx.stroke();
+              const hid = g.hidden(pr) || g.hidden(prev), path = hid ? back : front;
+              if (hid !== lastHid) path.moveTo(cx + prev[0], cy + prev[1]);
+              path.lineTo(cx + pr[0], cy + pr[1]);
+              lastHid = hid;
             }
             prev = pr;
           }
-          ctx.setLineDash([]); ctx.globalAlpha = 1;
+          ctx.strokeStyle = it.s.color; ctx.lineWidth = sel ? 2.2 : 1.3;
+          ctx.globalAlpha = 0.25; ctx.setLineDash([2, 5]); ctx.stroke(back);
+          ctx.globalAlpha = sel ? 0.95 : 0.55; ctx.setLineDash([]); ctx.stroke(front);
+          ctx.globalAlpha = 1;
         }
         const pr = g.project(it.pos.lat, it.pos.lon, it.pos.rho);
         const hid = g.hidden(pr);
