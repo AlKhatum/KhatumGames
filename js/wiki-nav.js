@@ -94,21 +94,32 @@
   function mechTabs() {
     return [...document.querySelectorAll("#mechNav button")].map(b => ({ id: b.dataset.mech, label: b.textContent.trim(), gm: b.classList.contains("gm-only") }));
   }
-  function treeData() {
+  const MP = () => (window.KGMechanics ? window.KGMechanics.pages : []);
+  // порядок разделов, который ГМ задал перетаскиванием: texts["wiki.order"] = JSON { "<родитель>": [ключи по порядку] }
+  const readOrder = () => { try { return JSON.parse(S.tx("wiki.order", "{}")) || {}; } catch (e) { return {}; } };
+  function applyOrder(list, parent, ord) {
+    const saved = ord[parent] || [], at = k => { const i = saved.indexOf(k); return i < 0 ? 1e6 : i; };
+    const out = list.map((n, i) => ({ n, i })).sort((a, b) => at(a.n.key) - at(b.n.key) || a.i - b.i).map(x => x.n);
+    for (const n of out) if (n.kids) n.kids = applyOrder(n.kids, n.key, ord);
+    return out;
+  }
+  function treeData() { return applyOrder(treeDataRaw(), "", readOrder()); }
+  function treeDataRaw() {
     const site = S.data, secs = mechSecs();
     return [
       { key: "events", label: S.tx("wiki.nav.events", "События"), icon: "events", count: site.events.length },
       { key: "lore", label: S.tx("wiki.nav.lore", "Лор"), icon: "lore", count: site.lore.length,
         kids: site.lore.map(a => ({ key: "lore/" + a.id, label: a.title || "Без названия", icon: S.LORE_ICON[S.specialOf(a)] || "article", count: counts[S.specialOf(a)] })) },
-      { key: "mech", label: S.tx("wiki.nav.mech", "Механики"), icon: "mech",
-        kids: mechTabs().map(t => t.id === "article"
-          ? { key: "mech/article", label: t.label, icon: "article", count: secs.length, kids: secs.map(s => ({ key: "mech/article/" + s.id, label: s.title })) }
-          : { key: "mech/" + t.id, label: t.label, icon: t.id, gm: t.gm }) }
+      { key: "mech", label: S.tx("wiki.nav.mech", "Механики"), icon: "mech", count: MP().length,
+        kids: MP().map(pg => ({ key: "mech/" + pg.id, label: pg.title, icon: "article", count: pg.sections.filter(x => !x.gm || document.body.classList.contains("is-gm")).length, kids: pg.sections.filter(x => !x.gm || document.body.classList.contains("is-gm")).map(s => ({ key: "mech/" + pg.id + "/" + s.id, label: s.title })) })) },
+      ...(window.KGCalc && window.KGCalc.allowed("gm") ? [{ key: "calc", label: "Калькулятор", icon: "mech",
+        kids: [{ key: "calc/tech", label: "ТЕХНИЧЕСКОЕ (ГМ)", gm: true, kids: (window.KGCalc.TECH || []).map(([id, t]) => ({ key: "calc/tech/" + id, label: t })) }] }] : []),
+      ...(window.KGCalc && window.KGCalc.allowed("player") ? [{ key: "my", label: "Моя страна", icon: "states" }] : [])
     ];
   }
   let treeSig = "", treeBtns = [];
   function node(n, lvl) {
-    const b = h("button", { type: "button", class: "tn" + (lvl ? " l" + Math.min(lvl + 1, 3) : "") + (n.gm ? " gm-only" : ""), "data-key": n.key, title: n.label, onclick: () => KG.go("wiki/" + n.key) },
+    const b = h("button", { type: "button", class: "tn" + (lvl ? " l" + Math.min(lvl + 1, 3) : "") + (n.gm ? " gm-only" : ""), "data-key": n.key, title: n.label, draggable: "true", onclick: () => KG.go("wiki/" + n.key) },
       n.icon ? icon(n.icon) : null, h("span", { class: "lbl", text: n.label }),
       n.count != null ? h("span", { class: "cnt" + (n.count ? "" : " zero"), text: n.count, title: "Материалов: " + n.count }) : null);
     treeBtns.push(b);
@@ -124,6 +135,38 @@
     } else g.append(row);
     return g;
   }
+  // перетаскивание разделов (режим правки ГМа): меняется порядок внутри одного родителя
+  (function () {
+    const nav = $("wtreeNav"); let dragKey = null;
+    const parentOf = k => (k.includes("/") ? k.slice(0, k.lastIndexOf("/")) : "");
+    const clearMarks = () => nav.querySelectorAll(".drop-before, .drop-after, .dragging").forEach(x => x.classList.remove("drop-before", "drop-after", "dragging"));
+    nav.addEventListener("dragstart", e => {
+      const b = e.target.closest && e.target.closest(".tn");
+      if (!b || !S.editing) { e.preventDefault(); return; }
+      dragKey = b.dataset.key; e.dataTransfer.setData("text/plain", dragKey); e.dataTransfer.effectAllowed = "move"; b.classList.add("dragging");
+    });
+    nav.addEventListener("dragover", e => {
+      if (!dragKey) return;
+      const b = e.target.closest && e.target.closest(".tn");
+      if (!b || b.dataset.key === dragKey || parentOf(b.dataset.key) !== parentOf(dragKey)) return;
+      e.preventDefault(); e.dataTransfer.dropEffect = "move";
+      nav.querySelectorAll(".drop-before, .drop-after").forEach(x => x.classList.remove("drop-before", "drop-after"));
+      const r = b.getBoundingClientRect(); b.classList.add(e.clientY < r.top + r.height / 2 ? "drop-before" : "drop-after");
+    });
+    nav.addEventListener("drop", e => {
+      const b = e.target.closest && e.target.closest(".tn");
+      if (!dragKey || !b || b.dataset.key === dragKey || parentOf(b.dataset.key) !== parentOf(dragKey)) { clearMarks(); dragKey = null; return; }
+      e.preventDefault();
+      const par = parentOf(dragKey), before = b.classList.contains("drop-before");
+      const keys = treeBtns.map(x => x.dataset.key).filter(k => parentOf(k) === par && k !== dragKey);
+      keys.splice(keys.indexOf(b.dataset.key) + (before ? 0 : 1), 0, dragKey);
+      const ord = readOrder(); ord[par] = keys; S.setVal("wiki.order", JSON.stringify(ord));
+      clearMarks(); dragKey = null;
+      renderTree(KG.route.parts.slice(1).join("/"));
+      window.dispatchEvent(new Event("kg:order"));
+    });
+    nav.addEventListener("dragend", () => { clearMarks(); dragKey = null; });
+  })();
   function renderTree(key) {
     const data = treeData(), sig = JSON.stringify(data);
     if (sig !== treeSig) { // перестраиваем, только если поменялись разделы, названия или счётчики — иначе не играла бы анимация раскрытия
@@ -161,12 +204,15 @@
         }
       }
     }
+    if (p[1] === "calc") {
+      list.push(p[2] === "tech" ? ["Калькулятор", "wiki/calc"] : ["Калькулятор"]);
+      if (p[2] === "tech") { list.push(["ТЕХНИЧЕСКОЕ (ГМ)", "wiki/calc/tech"]); const t = ((window.KGCalc && window.KGCalc.TECH) || []).find(x => x[0] === p[3]); if (t) list.push([t[1]]); }
+    }
+    if (p[1] === "my") list.push(["Моя страна"]);
     if (p[1] === "mech") {
-      list.push([S.tx("wiki.nav.mech", "Механики"), "wiki/mech/article"]);
-      const t = mechTabs().find(x => x.id === (p[2] || "article"));
-      if (t) list.push([t.label, "wiki/mech/" + t.id]);
-      const s = p[2] === "article" && p[3] && mechSecs().find(x => x.id === p[3]);
-      if (s) list.push([s.title]);
+      list.push([S.tx("wiki.nav.mech", "Механики"), "wiki/mech/intro"]);
+      const pg = MP().find(x => x.id === p[2]);
+      if (pg) { list.push([pg.title, "wiki/mech/" + pg.id]); const sc = p[3] && pg.sections.find(x => x.id === p[3]); if (sc) list.push([sc.title]); }
     }
     if (req !== crumbsReq) return; // пока ждали лор, адрес сменился
     const box = $("wikiCrumbs");
@@ -227,13 +273,18 @@
       [...d.querySelectorAll("p, li, h2, h3")].forEach(n => { const t = n.textContent.replace(/\s+/g, " ").trim(); if (t.length > 20) add({ tag: "Хронология", title: chron.title, path: "Лор › " + chron.title, text: t, route: "wiki/lore/" + chron.id }); }); }
     const st = loreBy("states");
     if (st) {
+      const LT = L.states.some(s => s.html == null) ? await KG.loreText() : { state: {} }; // тексты статей — отдельным файлом (data/lore_text.json)
       for (const s of L.states) add({ tag: "Страна", title: oneLine(S.names.state(s)), path: "Лор › " + st.title, route: "wiki/lore/" + st.id + "/" + s.id,
-        text: Object.entries(s.passport || {}).map(([k, v]) => k + ": " + v).join(" · ") + " " + strip(tx("lore.state." + s.id + ".html", s.html)) });
+        text: Object.entries(s.passport || {}).map(([k, v]) => k + ": " + v).join(" · ") + " " + strip(tx("lore.state." + s.id + ".html", s.html != null ? s.html : LT.state[s.id] || "")) });
       for (const u of L.unions) add({ tag: "Союз", title: oneLine(S.names.union(u)), path: "Лор › " + st.title + " › Союзы", route: "wiki/lore/" + st.id + "/" + u.id,
         text: tx("lore.union." + u.id + ".members", u.members || "") + " " + strip(tx("lore.union." + u.id + ".html", u.html)) });
     }
     const rg = loreBy("regions");
     if (rg) for (const r of S.regionsOf(L)) add({ tag: "Регион", title: S.names.region(r), path: "Лор › " + rg.title, route: "wiki/lore/" + rg.id + "/" + r.id, text: S.statesOf(L, r.id).map(s => oneLine(S.names.state(s))).join(", ") });
+    for (const pg of MP()) for (const sc of pg.sections) {
+      const d = document.createElement("div"); d.innerHTML = sc.html;
+      add({ tag: "Механики", title: sc.title, path: "Механики › " + pg.title, text: d.textContent.replace(/\s+/g, " ").trim(), route: "wiki/mech/" + pg.id + "/" + sc.id });
+    }
     // статья механик: подраздел (h2) и каждый его заголовок h3
     for (const s of mechSecs()) {
       let cur = { tag: "Механики", title: s.title, path: "Механики › Статья", text: "", route: "wiki/mech/article/" + s.id };
@@ -328,4 +379,5 @@
     if (matchMedia("(max-width: 900px)").matches) KG.openDrawer($("wtree"));
     setTimeout(() => Q.focus(), 30);
   });
+  window.addEventListener("kg:auth", () => { try { renderTree(KG.route.parts.slice(1).join("/")); } catch (e) { /* */ } });
 })();

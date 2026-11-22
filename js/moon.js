@@ -495,8 +495,8 @@
   // ---------- инструменты ----------
   const PAINT = ["brush", "pencil", "eraser", "fill", "picker"], ALL = ["pan", "ruler", "compass"];
   const HINTS = {
-    pan: "Правая кнопка мыши — двигать (карта листается по кругу), колесо — масштаб. Клик — выбрать территорию, отметку или дорогу.",
-    brush: "Кисть: рисуйте территорию. [ и ] — размер, Alt+клик — взять территорию, правая кнопка — двигать карту.",
+    pan: "Левая кнопка мыши — двигать (карта листается по кругу), колесо — масштаб. Клик — выбрать территорию, отметку или дорогу.",
+    brush: "Кисть: рисуйте территорию. [ и ] — размер, Alt+клик — взять территорию, пробел + левая кнопка — двигать карту.",
     pencil: "Карандаш: точная правка границы.", eraser: "Ластик: убирает территорию.", fill: "Заливка связной области.", picker: "Пипетка: выберите территорию для кисти.",
     mark: "Кликните, чтобы поставить отметку выбранного типа.",
     road: "Дорога: кликайте по точкам пути. Двойной клик или Enter — закончить, Backspace — убрать точку, Esc — отмена.",
@@ -631,6 +631,7 @@
   const entOf = t => { const el = t && t.closest ? t.closest("[data-mcol]") : null; return el ? { col: el.dataset.mcol, id: el.dataset.id, part: el.dataset.part || null } : null; };
   vp.addEventListener("contextmenu", e => e.preventDefault());
   vp.addEventListener("pointerdown", e => {
+    if (e.pointerType === "mouse" && e.button !== 0) return; // средняя и правая кнопки карту не двигают
     vp.setPointerCapture(e.pointerId);
     let p = toMap(e), target = e.target;
     // клик по копии сбоку: сдвигаем вид на ширину карты, чтобы под указателем была основная копия
@@ -638,8 +639,8 @@
       setView(s, tx + Math.floor(p[0] / MW) * MW * s, ty, true);
       p = toMap(e); target = document.elementFromPoint(e.clientX, e.clientY) || target;
     }
-    // ЛКМ мышью карту не двигает: только правая/средняя кнопка или палец на экране
-    const ent = entOf(target), panBtn = e.button === 1 || e.button === 2, gm = isGm(), noPan = !panBtn && e.pointerType === "mouse";
+    // карту двигает ЛКМ (протяжка) или палец; клик без протяжки выбирает; пробел + ЛКМ двигает и во время рисования ГМа
+    const ent = entOf(target), panBtn = !!window.__moonSpace, gm = isGm(), noPan = false;
     const v = target.closest && target.closest(".vertex");
     if (gm && v && sel && sel.col === "roads") { drag = { kind: "vtx", i: +v.dataset.vi, before: clone(st.roads[sel.id]) }; holdWrap = true; return; }
     if (!panBtn && tool === "compass") { circ = { c: toLL(p[0], p[1]), r: 0 }; drag = { kind: "compass" }; holdWrap = true; return; }
@@ -721,6 +722,8 @@
     const v = TM.at(p[0], p[1]); select(v && st.territories[v] ? { col: "territories", id: String(v) } : null);
   });
 
+  window.addEventListener("keydown", e => { if (e.code === "Space" && !(e.target.matches && e.target.matches("input, textarea, select")) && !e.target.isContentEditable) window.__moonSpace = true; });
+  window.addEventListener("keyup", e => { if (e.code === "Space") window.__moonSpace = false; });
   window.addEventListener("keydown", e => {
     if (!active || (e.target.matches && (e.target.matches("input, textarea, select") || e.target.isContentEditable)) || !$("modal").classList.contains("hidden") || !$("formModal").classList.contains("hidden")) return;
     const k = e.key.toLowerCase();

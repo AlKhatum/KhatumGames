@@ -21,21 +21,22 @@
     { id: "countries", name: "Заливка стран", kind: "svg", vis: true },
     { id: "alliances", name: "Союзы", kind: "svg", vis: false }, // страны союза — цветом союза, остальные притемнены
     { id: "relief", name: "Рельеф", kind: "img", src: "assets/map/land.webp", cls: "relief", vis: true },
-    { id: "hydro", name: "Гидрография", kind: "img", src: "assets/map/hydro.webp", cls: "hydro", vis: true },
+    // v — версия рисунка в адресе: реки и дороги перекрашены заранее (Лор/слои_карты_дубль.py), старые копии из кэша не подойдут к новому CSS
+    { id: "hydro", name: "Гидрография", kind: "img", src: "assets/map/hydro.webp", v: "c1", cls: "hydro", vis: true },
     { group: "roads", name: "Дороги", children: [
-      { id: "road_major", name: "Главные автострады", kind: "img", src: "assets/map/road_major.webp", vis: true, road: "#ff3fd0" },
-      { id: "road_road", name: "Основные магистрали", kind: "img", src: "assets/map/road_road.webp", vis: false, road: "#ffe14d" },
-      { id: "road_secondary", name: "Второстепенные дороги", kind: "img", src: "assets/map/road_secondary.webp", vis: true, road: "#19e6ff" },
-      { id: "rail", name: "Железные дороги", kind: "img", src: "assets/map/rail.webp", vis: false, road: "#ff9b3d" }
+      { id: "road_major", name: "Главные автострады", kind: "img", src: "assets/map/road_major.webp", v: "c1", vis: false, road: "#ff3fd0" },
+      { id: "road_road", name: "Основные магистрали", kind: "img", src: "assets/map/road_road.webp", v: "c1", vis: false, road: "#ffe14d" },
+      { id: "road_secondary", name: "Второстепенные дороги", kind: "img", src: "assets/map/road_secondary.webp", v: "c1", vis: false, road: "#19e6ff" },
+      { id: "rail", name: "Железные дороги", kind: "img", src: "assets/map/rail.webp", v: "c1", vis: false, road: "#ff9b3d" }
     ] },
     { id: "citiesFill", name: "Городские зоны", kind: "img", src: "assets/map/cities_fill.webp", vis: true, opacity: 0.45 },
-    { id: "provBorders", name: "Провинции", kind: "svg", vis: true, glow: "#7fe8ff" },
+    { id: "provBorders", name: "Провинции", kind: "svg", vis: false, glow: "#7fe8ff" },
     { id: "borders", name: "Границы стран", kind: "svg", vis: true, glow: "#ff3fd0" },
-    { id: "coast", name: "Береговая линия", kind: "svg", vis: true },
+    { id: "coast", name: "Береговая линия", kind: "svg", vis: false },
     { id: "paint", kind: "canvas", internal: true },
     { id: "labels", name: "Страны", kind: "svg", vis: true, glow: "#ff7fd8" },
-    { id: "provLabels", name: "Названия провинций", kind: "svg", vis: true },
-    { id: "cities", name: "Города", kind: "svg", vis: true },
+    { id: "provLabels", name: "Названия провинций", kind: "svg", vis: false },
+    { id: "cities", name: "Города", kind: "svg", vis: false },
     { id: "forces", name: "Армии и флоты", kind: "svg", vis: true, internal: true }, // слой личной карты (армии, флоты, зоны): в общей легенде его нет, значки видит только игрок своей страны и ГМ
     { id: "measure", kind: "svg", internal: true },
     { id: "over", kind: "svg", internal: true },
@@ -52,8 +53,9 @@
     let el;
     if (l.kind === "img") {
       el = document.createElement("img"); el.alt = ""; el.draggable = false; el.decoding = "async";
-      el.dataset.src = l.src; // выключенные слои грузятся при включении, включённые — после показа карты (loadLayers)
-      el.dataset.lo = l.src.replace(/\.webp$/, "_lo.webp"); // половинный размер — для общего вида
+      const v = l.v ? "?v=" + l.v : "";
+      el.dataset.src = l.src + v; // выключенные слои грузятся при включении, включённые — после показа карты (loadLayers)
+      el.dataset.lo = l.src.replace(/\.webp$/, "_lo.webp") + v; // половинный размер — для общего вида
     } else if (l.kind === "div") {
       el = document.createElement("div");
     } else if (l.kind === "canvas") {
@@ -87,6 +89,54 @@
     const idle = window.requestIdleCallback || (f => setTimeout(f, 30));
     const next = () => { const l = todo.shift(); if (!l) return; WR.add(L[l.id]); idle(next, { timeout: 400 }); };
     idle(next, { timeout: 400 });
+  }
+
+  // ---------- заливка стран картинкой на общем виде ----------
+  // На общем виде (масштаб × плотность пикселей экрана ≤ 0,5) браузер в каждом кадре зума перерисовывал 132 сложных контура
+  // заливки — это треть времени кадра. Там та же заливка показывается картинкой в половину размера карты (не меньше пикселя
+  // картинки на пиксель экрана): её рисует фоновый поток js/fill-worker.js из тех же путей и цветов, что у SVG. Сами пути
+  // остаются на месте прозрачными (класс ghost) — по ним работают клики; ближе — снова вектор. Пока картинка устарела
+  // (ГМ правит границы или цвета) или ещё не готова, показывается вектор.
+  const FILL_K = 0.5;
+  const fillImg = document.createElement("img");
+  fillImg.className = "layer country-fill"; fillImg.alt = ""; fillImg.draggable = false; fillImg.decoding = "async"; fillImg.style.display = "none";
+  L.countries.before(fillImg); // под векторным слоем: выбранная подпись, обводка и подсветка остаются сверху
+  WR.add(fillImg);
+  let fillVer = 0, fillReadyVer = -1, fillOn = false, fillTimer = 0, fillWorker = null, fillJob = 0, fillJobVer = -1, fillUrl = "";
+  function applyFillMode() {
+    const want = fillReadyVer === fillVer && isVisible(flat.find(l => l.id === "countries")) && s * (window.devicePixelRatio || 1) <= FILL_K;
+    if (want === fillOn) return;
+    fillOn = want;
+    fillImg.style.display = want ? "" : "none";
+    L.countries.classList.toggle("ghost", want);
+  }
+  function markFillDirty() {
+    fillVer++;
+    applyFillMode(); // устаревшую картинку сразу меняем на вектор
+    clearTimeout(fillTimer);
+    fillTimer = setTimeout(buildFill, 500);
+  }
+  function buildFill() {
+    if (typeof OffscreenCanvas === "undefined" || !window.Worker) return; // старый браузер — остаётся вектор
+    const items = [...L.countries.querySelectorAll("path[data-id]")].map(p => [p.getAttribute("d") || "", p.getAttribute("fill") || "#000"]);
+    if (!items.some(x => x[0])) return;
+    if (!fillWorker) {
+      try { fillWorker = new Worker("js/fill-worker.js?v=20261122o2"); } catch (e) { return; }
+      fillWorker.onmessage = async e => {
+        const { job, blob, error } = e.data;
+        if (error) console.warn("заливка картинкой:", error);
+        if (job !== fillJob || error || !blob) return;
+        const ver = fillJobVer, url = URL.createObjectURL(blob), pre = new Image();
+        pre.src = url;
+        try { await pre.decode(); } catch (x) { URL.revokeObjectURL(url); return; }
+        if (job !== fillJob) { URL.revokeObjectURL(url); return; }
+        const old = fillUrl; fillUrl = url; fillImg.src = url;
+        if (old) setTimeout(() => URL.revokeObjectURL(old), 2000); // копии по краям успевают взять новый адрес
+        fillReadyVer = ver; applyFillMode();
+      };
+    }
+    fillJobVer = fillVer;
+    fillWorker.postMessage({ job: ++fillJob, W, H, k: FILL_K, items });
   }
 
   const isVisible = l => (ui.vis[l.id] != null ? ui.vis[l.id] : l.vis);
@@ -141,13 +191,14 @@
     if (l.road) {
       const on = !!ui.hl[l.id];
       el.classList.toggle("hl", on);
-      el.style.filter = on ? `brightness(0) invert(1) drop-shadow(0 0 1.5px ${l.road})` : ""; // одно свечение вместо трёх: тот же вид, втрое дешевле
+      el.style.filter = on ? `drop-shadow(0 0 1.5px ${l.road})` : ""; // рисунок уже белый; одно свечение вместо трёх: тот же вид, втрое дешевле
     }
     if (l.glow) {
       el.classList.toggle("hl", !!ui.hl[l.id]);
       el.style.setProperty("--glow", l.glow);
     }
     if (l.id === "alliances") allyVisChanged();
+    if (l.id === "countries") { try { applyFillMode(); } catch (e) { /* вид карты ещё не создан */ } }
   }
   function buildLayerList() {
     const list = $("layerList"); list.innerHTML = "";
@@ -258,6 +309,7 @@
     let f = els.cfill[id], b = els.cborder[id];
     if (!f) { f = svgEl("path", { "data-col": "countries", "data-id": id }, L.countries); els.cfill[id] = f; }
     if (!b) { b = svgEl("path", {}, L.borders); els.cborder[id] = b; }
+    if (f.getAttribute("d") !== (d || "")) markFillDirty(); // заливку картинкой — перерисовать
     f.setAttribute("d", d || ""); b.setAttribute("d", d || "");
     if (sel && sel.col === "countries" && sel.id === id) selPath.setAttribute("d", d || "");
     scheduleAlly();
@@ -266,11 +318,12 @@
     const c = state.countries[id];
     let t = els.clabel[id];
     if (!c) {
+      if (els.cfill[id]) markFillDirty();
       [els.cfill, els.cborder, els.clabel].forEach(m => { if (m[id]) { m[id].remove(); delete m[id]; } });
       paths.delete(id); return;
     }
     if (!els.cfill[id]) setCountryPath(id, paths.get(id) || "");
-    els.cfill[id].setAttribute("fill", c.color);
+    if (els.cfill[id].getAttribute("fill") !== c.color) { els.cfill[id].setAttribute("fill", c.color); markFillDirty(); }
     if (!t) { t = svgEl("text", { class: "lbl-country", "data-col": "countries", "data-id": id, "data-part": "label" }, gCountryLabels); els.clabel[id] = t; }
     t.setAttribute("x", c.label[0]); t.setAttribute("y", c.label[1]);
     const fs = +(c.size * fk("country")).toFixed(2); // размер подписи × общий масштаб ГМа
@@ -348,9 +401,7 @@
       `<div class="cp-head"><span class="cp-ico t-${t.id}${c.capital ? " cap" : ""}"></span><div><div class="cp-name">${esc(window.KG.lines.oneLine(c.name))}</div>` +
       (c.capital ? `<div class="cp-cap">★ Столица${country ? " · " + esc(country) : ""}</div>` : "") + `</div></div>` +
       rows.join("") +
-      (c.desc ? `<p class="cp-desc">${esc(c.desc)}</p>` : `<p class="cp-desc cp-empty">${gm ? "Описания пока нет — нажмите «Изменить»." : "Описания пока нет."}</p>`) +
-      `<div class="cp-foot">` + (c.wiki ? `<a href="https://ru.wikipedia.org/wiki/${encodeURIComponent(c.wiki.replace(/ /g, "_"))}" target="_blank" rel="noopener">Википедия</a><small>текст — CC BY-SA</small>` : "<span></span>") +
-      (gm ? `<button class="small-btn" id="cpEdit">Изменить</button>` : "") + `</div>`;
+      `<div class="cp-foot">` + (gm ? `<button class="small-btn" id="cpEdit">Изменить</button>` : "") + `</div>`;
     pop.querySelector(".cp-close").onclick = closeCityPop;
     const ed = $("cpEdit"); if (ed) ed.onclick = () => editCity(popCity);
     placeCityPop();
@@ -577,6 +628,7 @@
 
   // ---------- вид ----------
   let s = 0.3, tx = 0, ty = 0, fitS = 0.3;
+  let zoomDetail = null; // ярусы и размеры городов и подписей, отложенные до конца движения (applyZoomDetail)
   // holdWrap: пока ГМ рисует или тащит объект, вид не перескакивает между копиями карты
   let holdWrap = false;
   // карта повторяется по горизонтали, поэтому отдалять дальше половины ширины окна незачем
@@ -595,16 +647,15 @@
     const cityVis = s < 0.3 ? "hidden" : "", z = String(s >= 3.2 ? 3 : s >= 1.9 ? 2 : s >= 1.1 ? 1 : 0);
     const cz = String(s >= 1.8 ? 3 : s >= 1.1 ? 2 : s >= 0.6 ? 1 : 0);
     const ck = s > 1.8 ? (Math.round(1.8 / s * 20) / 20).toFixed(2) : "1"; // значки не раздуваются при приближении
-    if (frame.dataset.cz !== cz) frame.dataset.cz = cz;
-    showCityTier(+cz);
-    // переменные — на world, а не на слоях: правка слоя заставила бы пересобрать его копии по краям
-    if (world.style.getPropertyValue("--ck") !== ck) world.style.setProperty("--ck", ck);
     const lod = s < 0.5 ? "far" : "near"; // издалека границы провинций не читаются, а рисовать их дорого
     const pk = Math.min(1, 2.4 / s).toFixed(2); // названия провинций не раздуваются при приближении
-    if (L.cities.style.visibility !== cityVis) L.cities.style.visibility = cityVis;
-    if (frame.dataset.z !== z) frame.dataset.z = z;
     if (frame.dataset.lod !== lod) frame.dataset.lod = lod;
-    if (world.style.getPropertyValue("--pk") !== pk) world.style.setProperty("--pk", pk);
+    applyFillMode(); // общий вид — заливка картинкой, ближе — вектор
+    // Ярусы и размеры городов и подписей провинций: пока карту крутят колесом (класс moving), эти слои скрыты,
+    // поэтому меняем их один раз, когда движение закончилось. Иначе --pk менялась в каждом кадре и браузер
+    // пересчитывал тысячи подписей (зум вблизи был в 1,7 раза медленнее).
+    zoomDetail = { cityVis, z, cz, ck, pk };
+    if (!frame.classList.contains("moving")) applyZoomDetail();
     if (typeof renderMeasure === "function") renderMeasure();
     if (typeof popCity !== "undefined" && popCity && !popAt) placeCityPop();
     afterView.forEach(f => f());
@@ -639,10 +690,22 @@
   // браузеру не приходится перерисовывать тысячи элементов в каждом кадре. Через 0,25 с после
   // остановки они возвращаются. При перетаскивании карта рисуется слоем GPU (класс panning).
   let movingTimer = 0;
+  function applyZoomDetail() {
+    const d = zoomDetail; if (!d) return;
+    zoomDetail = null;
+    if (frame.dataset.cz !== d.cz) frame.dataset.cz = d.cz;
+    showCityTier(+d.cz);
+    // переменные — на world, а не на слоях: правка слоя заставила бы пересобрать его копии по краям
+    if (world.style.getPropertyValue("--ck") !== d.ck) world.style.setProperty("--ck", d.ck);
+    if (world.style.getPropertyValue("--pk") !== d.pk) world.style.setProperty("--pk", d.pk);
+    if (L.cities.style.visibility !== d.cityVis) L.cities.style.visibility = d.cityVis;
+    if (frame.dataset.z !== d.z) frame.dataset.z = d.z;
+  }
   function markMoving() {
     if (!frame.classList.contains("moving")) frame.classList.add("moving");
     clearTimeout(movingTimer);
-    movingTimer = setTimeout(() => frame.classList.remove("moving"), 250);
+    // сначала новые размеры и ярусы, потом снимаем moving — в одном кадре, без мигания старых размеров
+    movingTimer = setTimeout(() => { applyZoomDetail(); frame.classList.remove("moving"); }, 250);
   }
   viewport.addEventListener("wheel", e => {
     e.preventDefault();
@@ -712,7 +775,7 @@
   // Открывается по клику на страну, стоит у правого края карты — слева от легенды. Что можно
   // посчитать по карте — столица, площадь, провинции, города — считается; остальное ждёт данных.
   const stateCard = $("stateCard");
-  let stateCardOn = false; // карточка открыта кнопкой «Карточка» (клик по стране её не открывает)
+  let stateCardOn = ui.card !== false; // галочка «Карточка государства» в легенде: включена — клик по стране открывает карточку
   let stateCardClosed = null; // id страны, у которой карточку закрыли крестиком
   function countryArea(id) {
     // площадь по маске: пиксель Меркатора на широте φ — (длина экватора / W · cos φ)²
@@ -731,7 +794,7 @@
   // то, что посчитано по карте (столица — по отметкам столиц), или «—». Население считается всегда само:
   // города страны + пустоши (доля pw от городов); валюта — из справочника валют (state.currencies, info.cur).
   const INFO = [
-    ["capital", "Столица"], ["gov", "Форма правления"], ["head", "Глава государства"], ["lang", "Язык"]
+    ["capital", "Столица"], ["gov", "Форма правления"], ["regime", "Режим"], ["head", "Глава государства"], ["lang", "Язык"]
   ];
   const fmtMln = p => (p >= 1e6 ? (p / 1e6).toFixed(p >= 1e8 ? 0 : 1).replace(".", ",") + " млн" : Math.round(p / 1e3).toLocaleString("ru-RU") + " тыс.");
   const fmtRate = v => (+v).toLocaleString("ru-RU", { maximumFractionDigits: 3 });
@@ -845,12 +908,14 @@
   });
   $("stateCardBody").addEventListener("click", e => { if (gm && e.target.closest(".sc-flag")) $("flagInput").click(); });
   // кнопка «Карточка» в легенде: открывает и закрывает карточку выбранного государства
-  $("cardToggle").addEventListener("click", () => {
-    if (!stateCard.classList.contains("hidden")) { stateCardOn = false; stateCard.classList.add("hidden"); return; }
-    if (!sel || sel.col !== "countries") { toast("Сначала выберите страну на карте или в списке"); return; }
-    stateCardOn = true; stateCardClosed = null; renderStateCard();
+  const cardBtn = $("cardShow");
+  const syncCardBtn = () => { cardBtn.classList.toggle("active", stateCardOn); cardBtn.setAttribute("aria-pressed", stateCardOn ? "true" : "false"); };
+  syncCardBtn();
+  cardBtn.addEventListener("click", () => {
+    stateCardOn = !stateCardOn; ui.card = stateCardOn; saveUi(); stateCardClosed = null; syncCardBtn();
+    if (stateCardOn && sel && sel.col === "countries") renderStateCard(); else stateCard.classList.add("hidden");
   });
-  $("stateCardClose").onclick = () => { stateCardOn = false; if (sel) stateCardClosed = sel.id; stateCard.classList.add("hidden"); };
+  $("stateCardClose").onclick = () => { if (sel) stateCardClosed = sel.id; stateCard.classList.add("hidden"); };
 
   // ---------- размер шрифта выбранной подписи — прямо на карте (ГМ) ----------
   // Клик по стране, провинции или подписи показывает над её названием кнопки A− / A+.
@@ -1120,20 +1185,23 @@
   let fails = 0;
   async function login() {
     if (!window.crypto || !crypto.subtle) { toast("Вход ГМа работает только по https"); return; }
-    const pw = await ask("Вход ГМа", "", { password: true, note: "Режим редактирования карты." });
+    const pw = await ask("Вход администратора", "", { password: true, note: "Режим редактирования карты и страниц." });
     if (!pw) return;
     await new Promise(r => setTimeout(r, Math.min(4000, fails * 800)));
+    try { await loadState(); } catch (e) { /* нет config.json — ниже скажем, что проверить пароль нельзя */ }
     let ok = null;
     if (window.KGMech && window.KGMech.checkGmPassword) { try { ok = await window.KGMech.checkGmPassword(pw); } catch (e) { console.error(e); ok = null; } }
-    if (ok === null && config.gm && config.gm.hash) { // запасной путь: хэш пароля в config.json (если ещё есть)
+    if (ok === null && config && config.gm && config.gm.hash) { // запасной путь: хэш пароля в config.json (если ещё есть)
       const g = config.gm;
       ok = b64(await pbkdf2(pw, unb64(g.salt), g.iter)) === g.hash;
     }
     if (ok !== true) { fails++; toast(ok === null ? "Не удалось проверить пароль: данные механик не загрузились" : "Неверный пароль"); return; }
     fails = 0;
     if (window.KGMech) window.KGMech.gmPassword(pw); // механикам: расшифровать данные стран без повторного ввода
+    try { sessionStorage.setItem("kg-dup-admin", "1"); } catch (e) { /* */ }
     setGm(true);
-    toast("Режим ГМа включён");
+    startLoad(); // вошли с Главной или из Вики, пока карта ещё не грузилась: администратору она нужна сразу
+    toast("Режим администратора включён");
     offerDraft();
   }
   async function logout() {
@@ -1141,7 +1209,7 @@
       const ok = await ask("Есть неопубликованные правки. Выйти?", "", { confirm: true, note: "Черновик останется в этом браузере и будет предложен при следующем входе." });
       if (!ok) return;
     }
-    try { sessionStorage.removeItem(GM_KEY); } catch (e) { /* */ }
+    try { sessionStorage.removeItem(GM_KEY); sessionStorage.removeItem("kg-dup-admin"); } catch (e) { /* */ }
     setGm(false);
   }
   function setGm(on) {
@@ -1149,6 +1217,7 @@
     document.body.classList.toggle("is-gm", gm);
     $("gmLoginBtn").classList.toggle("hidden", gm);
     $("gmActions").classList.toggle("hidden", !gm);
+    { const li = $("adminLogin"), lo = $("adminLogout"); if (li) li.classList.toggle("hidden", gm); if (lo) lo.classList.toggle("hidden", !gm); const n = $("adminNote"); if (n && gm) n.textContent = "Режим администратора включён: правка включается кнопкой «✎ Правка» в верхней панели."; }
     setTool("pan");
     buildCountryList(); buildAllyList();
     updateCard();
@@ -1159,6 +1228,12 @@
     if (gm) ensureProvinces(); // правка провинций, черновик
   }
   $("gmLoginBtn").onclick = login;
+  if ($("adminLogin")) { $("adminLogin").onclick = login; $("adminLogout").onclick = logout; }
+  // «Вход игрока» на Главной пока заглушка: список государств без проверки пароля
+  function fillPlayerCountries() {
+    const sel = $("plCountry"); if (!sel || !state) return;
+    sel.replaceChildren(...Object.entries(state.countries).map(([id, c]) => ({ id, n: window.KG.lines.oneLine(c.name) })).sort((a, b) => a.n.localeCompare(b.n, "ru")).map(c => { const o = document.createElement("option"); o.value = c.id; o.textContent = c.n; return o; }));
+  }
   $("logoutBtn").onclick = logout;
   window.addEventListener("beforeunload", e => { if (gm && dirty) { e.preventDefault(); e.returnValue = ""; } });
 
@@ -1181,8 +1256,8 @@
   };
   async function ensureToken() { return GH.token() ? true : setupToken(); }
 
-  // Готовые контуры стран, берега и провинций для data/paths.json и data/paths_prov.json (считаются в фоновом потоке, если в кэше браузера
-  // их нет или растр уже изменён правками ГМа). Игроки читают эти файлы вместо расчёта.
+  // Готовые контуры стран, берега и провинций для data/paths.bin и data/paths_prov.bin (считаются в фоновом потоке, если в кэше браузера
+  // их нет или растр уже изменён правками ГМа). Игроки читают эти файлы вместо расчёта. Формат — у decodePathsBin.
   async function pathsFiles() {
     await prepareProvinces(); // растр провинций загружен
     const kc = PATHS_VER + "|" + idsHash(T.ids), kp = PATHS_VER + "|" + idsHash(P.ids);
@@ -1192,8 +1267,8 @@
     if (!p) { const r = await computePaths(P, true, false); p = { paths: r.paths }; }
     savePaths({ kc, c, kp, p });
     return [
-      { path: "data/paths.json", content: JSON.stringify({ pv: PATHS_VER, kc, c }) },
-      { path: "data/paths_prov.json", content: JSON.stringify({ pv: PATHS_VER, kp, p }) }
+      { path: "data/paths.bin", content: await encodePathsBin({ pv: PATHS_VER, kc, c }) },
+      { path: "data/paths_prov.bin", content: await encodePathsBin({ pv: PATHS_VER, kp, p }) }
     ];
   }
   // файлы карты для публикации; их же берут механики, когда ход меняет население городов (один коммит на всё)
@@ -1273,9 +1348,9 @@
   // ---------- инструменты ГМа ----------
   let tool = "pan", brushCountry = null, pencilSize = 2;
   const HINTS = {
-    pan: "Правая кнопка мыши — двигать карту, колесо — масштаб. Клик по стране выбирает её, карточка — кнопкой «Карточка» в легенде. Двойной клик — переименовать (по городу — карточка города). Города и подписи тащите левой кнопкой; у выбранной подписи — кнопки размера шрифта.",
-    brush: "Кисть: рисуйте территорию выбранной страны. [ и ] — размер, Alt+клик — взять страну с карты, правая кнопка — двигать карту.",
-    pencil: "Карандаш: точная правка границы (1–4 px). Alt+клик — взять страну с карты, правая кнопка — двигать карту.",
+    pan: "Левая кнопка мыши — двигать карту, колесо — масштаб. Клик по стране выбирает её, статья — кнопкой «Статья» в легенде. Двойной клик — переименовать (по городу — карточка города). Города и подписи тащите левой кнопкой; у выбранной подписи — кнопки размера шрифта.",
+    brush: "Кисть: рисуйте территорию выбранной страны. [ и ] — размер, Alt+клик — взять страну с карты, пробел + левая кнопка — двигать карту.",
+    pencil: "Карандаш: точная правка границы (1–4 px). Alt+клик — взять страну с карты, пробел + левая кнопка — двигать карту.",
     eraser: "Ластик: убирает территорию (суша становится ничьей). С галочкой «Не трогать соседей» стирает только страну, с которой начали мазок.",
     fill: "Заливка: клик заливает связную область выбранной страной (пустую — только по суше).",
     picker: "Пипетка: кликните по стране, чтобы рисовать ей.",
@@ -1299,7 +1374,7 @@
     $("brushBar").classList.toggle("hidden", !gm || !PAINT.includes(t) || t === "picker");
     // панель инструментов опускается под панель кисти, если та переносится на несколько строк
     requestAnimationFrame(() => { const bb = $("brushBar"); frame.style.setProperty("--bbh", bb.classList.contains("hidden") ? "0px" : bb.offsetHeight + "px"); });
-    $("hint").textContent = viewMode === "globe" ? HINT_GLOBE : MEASURE.includes(t) ? HINTS[t] : gm ? HINTS[t] || "" : "Правая кнопка мыши — двигать карту (карта бесшовная, листается по кругу), колесо — масштаб. Клик по стране выбирает её, карточка — кнопкой «Карточка» в легенде; по значку города — карточка города — карточка города.";
+    $("hint").textContent = viewMode === "globe" ? HINT_GLOBE : MEASURE.includes(t) ? HINTS[t] : gm ? HINTS[t] || "" : "Левая кнопка мыши — двигать карту (карта бесшовная, листается по кругу), колесо — масштаб. Клик по стране выбирает её, статья — кнопкой «Статья» в легенде; по значку города — карточка города — карточка города.";
     const sz = $("bbSize");
     if (t === "pencil") { sz.max = 4; sz.value = pencilSize; } else { sz.max = 120; sz.value = brushSize; }
     $("bbSizeVal").textContent = sz.value;
@@ -1620,6 +1695,7 @@
   viewport.addEventListener("dragstart", e => e.preventDefault());
   viewport.addEventListener("selectstart", e => e.preventDefault());
   viewport.addEventListener("pointerdown", e => {
+    if (e.pointerType === "mouse" && e.button !== 0) return; // средняя и правая кнопки карту не двигают
     if (e.button === 0) { const sl = window.getSelection(); if (sl && sl.rangeCount && !sl.isCollapsed) sl.removeAllRanges(); }
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     viewport.setPointerCapture(e.pointerId);
@@ -1636,9 +1712,9 @@
       setView(s, tx + Math.floor(p[0] / W) * W * s, ty, true);
       p = toMap(e); ent = entOf(document.elementFromPoint(e.clientX, e.clientY));
     }
-    // ЛКМ мышью карту не двигает: только правая/средняя кнопка, пробел + ЛКМ или палец на экране
-    const panButton = e.button === 1 || e.button === 2 || spaceDown;
-    const noPan = !panButton && e.pointerType === "mouse";
+    // карту двигает ЛКМ (протяжка), палец на экране; пробел + ЛКМ двигает и во время рисования ГМа. Клик без протяжки выбирает.
+    const panButton = spaceDown;
+    const noPan = false;
     if (!panButton && tool === "compass") { compassStart(p); drag = { kind: "compass" }; holdWrap = true; return; }
     if (gm && !panButton && ["brush", "pencil", "eraser"].includes(tool)) {
       if (e.altKey) { pick(p); return; }
@@ -1711,7 +1787,7 @@
     if (e.target.matches && (e.target.matches("input, textarea, select") || e.target.isContentEditable)) return;
     if (!$("modal").classList.contains("hidden")) return;
     if (e.key === "Escape" && popCity) closeCityPop();
-    else if (e.key === "Escape" && !stateCard.classList.contains("hidden") && sel) { stateCardOn = false; stateCardClosed = sel.id; stateCard.classList.add("hidden"); if (!gm) return; }
+    else if (e.key === "Escape" && !stateCard.classList.contains("hidden") && sel) { stateCardClosed = sel.id; stateCard.classList.add("hidden"); if (!gm) return; }
     if (e.code === "Space") { spaceDown = true; if (gm) e.preventDefault(); }
     if (MEASURE.includes(tool)) {
       if (e.key === "Enter") { finishRuler(); return; }
@@ -1815,11 +1891,11 @@
   const HINT_GLOBE = "Глобус: тяните — вращать, колесо — масштаб, клик по стране — легенда, по городу — его карточка, по спутнику — орбита. Редактирование и измерения — на плоской карте.";
   const Sat = window.KGSats;
   let viewMode = "flat", globe = null, globeRaf = 0, globeLoop = 0, globeReady = null;
-  const satUi = { items: [], sel: "kovcheg", orbits: true, names: true, speed: 60, time: Date.now(), follow: false, last: 0, hidden: {}, showDebris: true, showMoon: true, debris: [] };
+  const satUi = { items: [], sel: "kovcheg", orbits: false, names: true, speed: 60, time: Date.now(), follow: false, last: 0, hidden: {}, showDebris: false, showMoon: false, debris: [] };
   // настройки панели орбит переживают перезагрузку (иначе браузер восстанавливает галочки, а карта рисует всё)
   {
     const s = ui.sat || {};
-    for (const k of ["orbits", "names", "showDebris", "showMoon"]) if (typeof s[k] === "boolean") satUi[k] = s[k];
+    for (const k of ["orbits", "names"]) if (typeof s[k] === "boolean") satUi[k] = s[k];
     if (s.hidden && typeof s.hidden === "object") satUi.hidden = Object.assign({}, s.hidden);
   }
   const saveSatUi = () => { ui.sat = { orbits: satUi.orbits, names: satUi.names, showDebris: satUi.showDebris, showMoon: satUi.showMoon, hidden: satUi.hidden }; saveUi(); };
@@ -1901,6 +1977,7 @@
     globe.sel = sel && sel.col === "countries" ? +sel.id : 0;
     globe.selProv = selProv ? +selProv : 0;
     globeNeed = false;
+    if (!globeHi && globe.zoom > GLOBE_HI_ZOOM) globeUpgrade();
     updateSats();
     globe.render();
     renderSatInfo();
@@ -1934,7 +2011,7 @@
       it.dead = satUi.time >= it.deadAt;
       if (it.dead) it.screen = null;
       it.pos = Sat.at(it.raw, satUi.time);
-      if (!(satUi.orbits && it.on)) it.ring = null;
+      if (!((satUi.orbits || it.s.id === satUi.sel) && it.on)) it.ring = null; // без «Все траектории» — только кольцо выбранного
       else if (!it.ring || Math.abs(satUi.time - (it.ringT || 0)) > 20000) { it.ring = Sat.ring(it.raw, satUi.time, it.raw.orbit === "ell" ? 240 : 160); it.ringT = satUi.time; }
     }
     if (satUi.follow && satUi.sel) {
@@ -1943,17 +2020,39 @@
     }
   }
   function whenLoaded(img) { return img.complete && img.naturalWidth ? Promise.resolve() : new Promise(r => { img.addEventListener("load", r, { once: true }); img.addEventListener("error", r, { once: true }); }); }
-  async function buildGlobeTextures() {
-    const imgs = [L.relief, L.road_major, L.road_secondary, L.road_road, L.rail, L.hydro, L.citiesFill];
-    await Promise.all(imgs.map(toFull)); // глобусу — полные рисунки (половинные он растянул бы)
-    // Упаковка каналов идёт на видеокарте (globe.packAlpha): раньше это были getImageData по 58 МБ и циклы по 14,5 млн пикселей на странице.
-    // Между картинками отдаём страницу браузеру, чтобы шар открывался без замирания.
+  // Текстуры шара. Сначала половинные рисунки (в 4 раза меньше пикселей — шар открывается без долгих замираний),
+  // полные подгружаются, только когда шар приблизили (globe.zoom > GLOBE_HI_ZOOM).
+  let globeHi = false, globeHiBusy = false;
+  const GLOBE_HI_ZOOM = 1.8;
+  // Рисунок для видеокарты — ImageBitmap: раскодируется в фоновом потоке, а загрузка в текстуру не держит страницу
+  // (из <img> каждая занимала 40–190 мс главного потока). Цвета те же: без предумножения альфы, как у texImage2D из <img>.
+  async function globeBitmap(src) {
+    if (window.createImageBitmap) {
+      try { return await createImageBitmap(await (await fetch(src)).blob(), { premultiplyAlpha: "none", colorSpaceConversion: "default" }); }
+      catch (e) { /* ниже — как раньше, через <img> */ }
+    }
+    const im = new Image(); im.src = src;
+    try { await im.decode(); } catch (e) { /* не раскодировалось — рисуем как есть */ }
+    return im;
+  }
+  async function buildGlobeTextures(hi) {
+    const w = hi ? W : Math.round(W / 2), h = hi ? H : Math.round(H / 2);
+    // глобусу — половинные рисунки, а когда его приблизили — полные; по одному, чтобы не держать в памяти все сразу
+    const pic = id => () => { const el = L[id]; return globeBitmap((el && (hi ? el.dataset.src : el.dataset.lo || el.dataset.src)) || ""); };
+    // Упаковка каналов идёт на видеокарте (globe.packAlpha). Между картинками отдаём страницу браузеру.
     const pause = () => new Promise(r => setTimeout(r, 0));
-    globe.setLand(L.relief);
+    const relief = await pic("relief")();
+    globe.setLand(relief);
+    if (relief.close) relief.close();
     await pause();
     // каналы: дороги — R главные, G второстепенные, B основные, A железные; реки — R, городские зоны — A
-    await globe.packAlpha("lines", [L.road_major, L.road_secondary, L.road_road, L.rail], [0, 1, 2, 3], W, H, pause);
-    await globe.packAlpha("misc", [L.hydro, L.citiesFill], [0, 3], W, H, pause);
+    await globe.packAlpha("lines", ["road_major", "road_secondary", "road_road", "rail"].map(pic), [0, 1, 2, 3], w, h, pause);
+    await globe.packAlpha("misc", ["hydro", "citiesFill"].map(pic), [0, 3], w, h, pause);
+  }
+  function globeUpgrade() {
+    if (globeHi || globeHiBusy || !globe) return;
+    globeHiBusy = true;
+    buildGlobeTextures(true).then(() => { globeHi = true; }).catch(e => console.error(e)).finally(() => { globeHiBusy = false; globeDirty(); });
   }
   // растры стран и провинций уходят в видеопамять один раз; заново — только если ГМ их менял (globeIdsDirty)
   let globeIdsOk = false, globeIdsDirty = false;
@@ -1979,7 +2078,7 @@
       try { globe = new window.KGGlobe($("globeCanvas"), $("globeOverlay"), $("globeLabels")); } catch (e) { console.error(e); globe = null; }
       if (!globe || !globe.ok()) { globe = null; toast("Не удалось запустить глобус (нужен WebGL)"); return; }
       $("globeLoading").classList.remove("hidden");
-      globeReady = buildGlobeTextures().then(() => $("globeLoading").classList.add("hidden"));
+      globeReady = buildGlobeTextures(false).then(() => $("globeLoading").classList.add("hidden"));
     }
     if (mode === "globe") ensureProvinces(); // подсветка провинций на глобусе
     viewMode = mode;
@@ -2014,7 +2113,7 @@
     if (sb && !sb.classList.contains("active")) sb.click();
   }
   function showSolar(on) {
-    $("solar").classList.toggle("hidden", !on);
+    $("solarScreen").classList.toggle("hidden", !on); // отдельный экран; карта на это время скрыта (css: body.solar-mode)
     document.body.classList.toggle("solar-mode", on);
     if (on) { $("solarPick").classList.add("hidden"); drawSolar(); }
   }
@@ -2086,16 +2185,21 @@
   document.querySelectorAll("#solarPick [data-proj]").forEach(b => b.addEventListener("click", () => window.KG.go("map/" + $("solarPick").dataset.body + "/" + b.dataset.proj)));
   // маршрут карты: ждём загрузки данных, затем показываем нужный объект
   let mapReadyResolve, stateReadyResolve; const mapReady = new Promise(r => (mapReadyResolve = r)), stateReady = new Promise(r => (stateReadyResolve = r));
+  // Ушли с карты (на схему системы, в Вики…): карточку города закрываем и город не держим выбранным (решение автора 2026-11-22)
+  function closeCityCard() { if (popCity) closeCityPop(); if (sel && sel.col === "cities") select(null); }
+  window.addEventListener("tabchange", e => { if (e.detail !== "map") closeCityCard(); });
   window.addEventListener("routechange", async e => {
     if (e.detail.tab !== "map") return;
     const [, b, p, cid] = e.detail.parts;
-    if (!BODIES[b]) { showBody(null); return; }
+    // последний вид «Карты» (схема системы или тело и проекция) — на него ведёт кнопка вкладки (js/app.js → lastMap)
+    try { localStorage.setItem("kg-map-last", BODIES[b] ? "map/" + b + "/" + (p === "globe" ? "globe" : "flat") : "map"); } catch (x) { /* */ }
+    if (!BODIES[b]) { closeCityCard(); showBody(null); return; }
     await mapReady;
     // #map/earth/flat/<номер страны> — выбрать страну и приблизить (сразу, без отложенной подгонки карты под окно)
     const focus = b === "earth" && cid && state.countries[cid];
     focusId = focus ? cid : null;
     await showBody(b, p, focus);
-    if (focus) { if (proj === "flat") fit(); stateCardOn = true; stateCardClosed = null; focusCountry(cid); } // ссылка на страну (из статьи, союзов) — явный запрос карточки
+    if (focus) { if (proj === "flat") fit(); stateCardClosed = null; focusCountry(cid); } // ссылка на страну (из статьи, союзов) — явный запрос карточки
   });
 
   // панель спутников
@@ -2577,19 +2681,87 @@
   // На общем виде их не видно, поэтому строим один раз, когда они понадобились.
   let rasterVer = "", pathsCache = null, provP = null, provWanted = false;
   function savePaths(patch) { pathsCache = Object.assign({}, pathsCache, patch); DB.set("paths", pathsCache).catch(() => {}); }
-  // Готовые контуры лежат в репозитории: data/paths.json (страны и берег) и data/paths_prov.json (провинции). Их собирает ГМ
+  // Готовые контуры лежат в репозитории: data/paths.bin (страны и берег) и data/paths_prov.bin (провинции). Их собирает ГМ
   // при публикации карты (pathsFiles), поэтому у игрока контуры не считаются совсем. Файл годится, только если отпечаток растра
   // (kc для стран, kp для провинций) совпал с загруженным — иначе считаем сами, как раньше. IndexedDB остаётся быстрым кэшем.
+  // Формат .bin (втрое легче JSON, без потерь): gzip( «KGPB», 1, varint длины заголовка, заголовок JSON, тело ). Тело: для каждого
+  // раздела — varint числа путей; путь — [varint id] и команды: 0 = M, 1 = L (за ними zigzag-varint dx, dy в десятых пикселя), 2 = Z,
+  // 3 = конец. Строки путей выходят ровно такими же, как из territory.js (toFixed(1)). Перевод JSON → .bin: Лор/контуры_дубля.py.
+  const KGPB = [75, 71, 80, 66, 1];
+  function decodePathsBin(u8) {
+    if (KGPB.some((v, k) => u8[k] !== v)) throw new Error("не контуры KGPB");
+    let i = KGPB.length;
+    const rd = () => { let r = 0, m = 1, b; do { b = u8[i++]; r += (b & 127) * m; m *= 128; } while (b & 128); return r; };
+    const num = v => (v < 0 ? "-" + num(-v) : ((v / 10) | 0) + "." + (v % 10)); // то же, что toFixed(1) для десятых
+    const hl = rd(), head = JSON.parse(new TextDecoder().decode(u8.subarray(i, i + hl))); i += hl;
+    const res = {};
+    for (const [name, hasIds] of head.sections) {
+      const n = rd(), list = new Array(n);
+      for (let k = 0; k < n; k++) {
+        const id = hasIds ? rd() : 0;
+        let s = "", x = 0, y = 0;
+        for (;;) {
+          const t = u8[i++];
+          if (t === 3) break;
+          if (t === 2) { s += "Z"; continue; }
+          let dx = rd(), dy = rd();
+          x += dx & 1 ? -(dx + 1) / 2 : dx / 2; y += dy & 1 ? -(dy + 1) / 2 : dy / 2;
+          s += (t ? "L" : "M") + num(x) + " " + num(y);
+        }
+        list[k] = hasIds ? [id, s] : s;
+      }
+      res[name] = list;
+    }
+    return Object.assign({ pv: head.pv }, head.keys, { [head.key]: res });
+  }
+  // obj — { pv, kc|kp, c|p: { paths: [[id, d]…], coast?: [d…] } } → Blob .bin
+  async function encodePathsBin(obj) {
+    let buf = new Uint8Array(1 << 20), n = 0;
+    const put = b => { if (n === buf.length) { const nb = new Uint8Array(buf.length * 2); nb.set(buf); buf = nb; } buf[n++] = b; };
+    const vi = v => { while (v >= 128) { put((v % 128) | 128); v = Math.floor(v / 128); } put(v); };
+    const zz = v => (v >= 0 ? v * 2 : -v * 2 - 1);
+    const enc = d => {
+      let x = 0, y = 0;
+      for (const m of d.matchAll(/([MLZ])(?:(-?\d+\.\d) (-?\d+\.\d))?/g)) {
+        if (m[1] === "Z") { put(2); continue; }
+        const nx = Math.round(parseFloat(m[2]) * 10), ny = Math.round(parseFloat(m[3]) * 10);
+        put(m[1] === "M" ? 0 : 1); vi(zz(nx - x)); vi(zz(ny - y)); x = nx; y = ny;
+      }
+      put(3);
+    };
+    const key = Object.keys(obj).find(k => obj[k] && typeof obj[k] === "object");
+    const keys = {}; for (const k in obj) if (k !== "pv" && typeof obj[k] === "string") keys[k] = obj[k];
+    const sections = Object.entries(obj[key]).map(([name, list]) => [name, list.length && Array.isArray(list[0]) ? 1 : 0]);
+    KGPB.forEach(put);
+    const head = new TextEncoder().encode(JSON.stringify({ pv: obj.pv, keys, key, sections }));
+    vi(head.length); head.forEach(put);
+    for (const [name, hasIds] of sections) {
+      const list = obj[key][name];
+      vi(list.length);
+      for (const it of list) { if (hasIds) { vi(it[0]); enc(it[1]); } else enc(it); }
+    }
+    return new Response(new Blob([buf.subarray(0, n)]).stream().pipeThrough(new CompressionStream("gzip"))).blob();
+  }
+  async function readPathsBin(url) {
+    if (typeof DecompressionStream === "undefined") throw new Error("браузер не умеет распаковывать");
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(r.status + " " + url);
+    return decodePathsBin(new Uint8Array(await new Response(r.body.pipeThrough(new DecompressionStream("gzip"))).arrayBuffer()));
+  }
   const sharedP = {};
   let repoPaths = null; // true/false — совпал ли файл из репозитория с растром (null — не проверяли)
+  // .bin, а если его нет (например, положили paths.json из оригинала) — .json
   function getShared(name, ver) {
-    return sharedP[name] || (sharedP[name] = fetch("data/" + name + ".json" + ver).then(r => (r.ok ? r.json() : null)).catch(() => null));
+    return sharedP[name] || (sharedP[name] = readPathsBin("data/" + name + ".bin" + ver)
+      .catch(() => fetch("data/" + name + ".json" + ver).then(r => (r.ok ? r.json() : null)))
+      .catch(() => null));
   }
   // данные провинций (растр, контуры из кэша или из фонового потока) — без элементов страницы; заранее, в свободное время
   let provDataP = null;
   function prepareProvinces() {
     if (provDataP || !rasterVer) return provDataP || Promise.reject(new Error("карта ещё не загружена"));
     provDataP = (async () => {
+      await ensureLand(); // провинции делят маску суши со странами
       await loadIds(P, "provinces", rasterVer, T.land);
       const kp = PATHS_VER + "|" + idsHash(P.ids);
       let pp = pathsCache && pathsCache.kp === kp && pathsCache.p ? pathsCache.p : null, hitP = !!pp;
@@ -2623,21 +2795,37 @@
     provP.catch(e => { console.error("провинции:", e); provP = null; });
     return provP;
   }
-  async function load() {
-    // «no-cache» — браузер каждый раз спрашивает сервер (по ETag), но если файл не менялся, берёт его из кэша (ответ 304 без тела)
-    try {
-      const [cfg, st] = await Promise.all([
+  // Состояние карты (config.json и map.json, ~60 КБ) нужно и Вики (флаги, цвета, валюты), и входу на Главной — грузится сразу.
+  // «no-cache» — браузер каждый раз спрашивает сервер (по ETag), но если файл не менялся, берёт его из кэша (ответ 304 без тела)
+  let stateP = null;
+  function loadState() {
+    if (!stateP) {
+      stateP = Promise.all([
         fetch("data/config.json", { cache: "no-cache" }).then(r => r.json()),
         fetch("data/map.json", { cache: "no-cache", priority: "high" }).then(r => r.json())
-      ]);
-      config = cfg; state = st; loadedStamp = st.updated || "";
-      stateReadyResolve();
-      for (const c of COLS) state[c] = state[c] || {};
+      ]).then(([cfg, st]) => {
+        config = cfg; state = st; loadedStamp = st.updated || "";
+        for (const c of COLS) state[c] = state[c] || {};
+        stateReadyResolve();
+        fillPlayerCountries();
+      });
+      stateP.catch(() => { stateP = null; });
+    }
+    return stateP;
+  }
+  // Маска суши (1 бит на пиксель, 140 КБ) нужна провинциям, расчёту берега и кисти ГМа, но не первому показу карты: грузим после.
+  let landP = null;
+  function ensureLand() {
+    if (!landP) { landP = T.loadLand("assets/map/land_mask.png"); landP.catch(() => { landP = null; }); }
+    return landP;
+  }
+  async function load() {
+    try {
+      await loadState();
       // растры привязаны к времени публикации: браузер берёт их из кэша, пока карту не обновят
       const ver = "?v=" + encodeURIComponent(loadedStamp || String(Date.now()));
       const t0 = performance.now();
-      // маска суши — отдельный лёгкий файл (1 бит на пиксель), чтобы контуры не ждали тяжёлый рисунок рельефа
-      const idsP = loadIds(T, "territories", ver, "assets/map/land_mask.png");
+      const idsP = loadIds(T, "territories", ver, null); // маска суши — потом (ensureLand)
       const cache = await DB.get("paths").catch(() => null);
       if (!cache) getShared("paths", ver); // первый заход: готовые контуры качаем параллельно с растром
       await idsP;
@@ -2649,7 +2837,7 @@
         const sh = await getShared("paths", ver);
         if (sh && sh.pv === PATHS_VER && sh.kc === kc && sh.c) { cp = sh.c; src = "из репозитория"; repoPaths = true; } else repoPaths = false;
       }
-      if (!cp) cp = await computePaths(T, false, true);
+      if (!cp) { await ensureLand(); cp = await computePaths(T, false, true); } // считаем сами: берегу нужна маска суши
       for (const [id, d] of cp.paths) if (state.countries[String(id)]) setCountryPath(id, d);
       setCoast(cp.coast);
       console.info("контуры " + (src || "построены") + " за", Math.round(performance.now() - t0), "мс");
@@ -2666,12 +2854,13 @@
         if (document.readyState !== "complete") await new Promise(r => window.addEventListener("load", r, { once: true }));
         try { restored = !!(window.KGMech && await window.KGMech.verifySession()); } catch (e) { restored = false; }
       }
+      if (!restored && !window.KGMech) { try { restored = sessionStorage.getItem("kg-dup-admin") === "1"; } catch (e) { /* */ } }
       setGm(restored);
       updUndo();
       $("mapLoading").classList.add("hidden");
       requestAnimationFrame(refit);
       mapReadyResolve();
-      loadLayers().then(() => (window.requestIdleCallback || setTimeout)(() => prepareProvinces().catch(() => {}))); // данные провинций — заранее
+      loadLayers().then(() => (window.requestIdleCallback || setTimeout)(() => prepareProvinces().catch(() => {}))); // маска суши и данные провинций — заранее
       initOps(); // личная карта (армии, флоты, зоны): только после входа за страну или в режиме ГМа
       wrapVectorLayers(); // копии векторных слоёв по краям (<use> покажет и то, что достроится позже)
       if (src !== "из кэша") savePaths({ kc, c: { paths: cp.paths, coast: cp.coast } });
@@ -2892,7 +3081,20 @@
   function initOps() { if (opsWho()) ensureZones(); }
   setTool("pan");
   requestAnimationFrame(fit);
-  load();
+  // Карта (растры, контуры, рисунки слоёв, провинции — мегабайты) грузится сразу, только если открыта она сама или вошёл
+  // администратор. С других страниц — через 7 с после загрузки страницы, когда браузер свободен (решение автора 2026-11-22),
+  // или сразу, как только открыли «Карту». Лёгкое состояние карты (map.json) нужно Вики и Главной — оно грузится сразу.
+  let loadStarted = false;
+  function startLoad() { if (!loadStarted) { loadStarted = true; load(); } }
+  loadState().catch(() => {});
+  let adminSession = false;
+  try { adminSession = sessionStorage.getItem("kg-dup-admin") === "1" || !!sessionStorage.getItem("kg-mech-mk"); } catch (e) { /* */ }
+  if (window.KG.route.tab === "map" || adminSession) startLoad();
+  else {
+    window.addEventListener("tabchange", e => { if (e.detail === "map") startLoad(); });
+    const later = () => setTimeout(() => (window.requestIdleCallback || (f => f()))(startLoad, { timeout: 3000 }), 7000);
+    if (document.readyState === "complete") later(); else window.addEventListener("load", later, { once: true });
+  }
   // справочник валют (Вики → Лор → Валюты): правка ГМа — обычная правка карты (Ctrl+Z, публикация карты)
   function setCurrency(id, val) {
     if (!gm) return;

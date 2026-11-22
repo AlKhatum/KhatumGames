@@ -142,11 +142,15 @@ main { position: relative; z-index: 5; height: calc(100% - var(--topbar-h)); }
 /* суша без стран — тёмная, как «чужие» земли в шаблоне */
 .layer.land-dark { filter: brightness(.32) sepia(1) hue-rotate(185deg) saturate(2.6); }
 .layer.relief { mix-blend-mode: multiply; opacity: .55; }
-.layer.hydro { filter: brightness(.6) sepia(1) hue-rotate(190deg) saturate(2.2); opacity: .85; }
-.layer.road { filter: brightness(0) invert(1); opacity: .5; transition: opacity .2s, filter .2s; }
+/* реки и дороги уже в готовых цветах (Лор/слои_карты_дубль.py): прежние фильтры brightness(.6) sepia(1) hue-rotate(190deg) saturate(2.2)
+   и brightness(0) invert(1) применены к самим рисункам, браузеру не нужно пересчитывать их в каждом кадре зума */
+.layer.hydro { opacity: .85; }
+.layer.road { opacity: .5; transition: opacity .2s, filter .2s; }
 .layer.road.hl { opacity: 1; } /* без бесконечной пульсации: она заставляла перерисовывать огромный слой каждый кадр */
 
 #countriesLayer path { fill-opacity: .9; pointer-events: visiblePainted; cursor: pointer; }
+/* на общем виде заливку рисует картинка (img.country-fill под этим слоем, js/map.js → applyFillMode); пути остаются прозрачными — для кликов */
+#countriesLayer.ghost path { fill-opacity: 0; }
 #bordersLayer path { fill: none; stroke: rgba(26, 18, 40, .62); stroke-width: 1px; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
 /* слой «Союзы» (Земля и Луна): страны союза — его цветом, остальные притемнены */
 path.al-fill { fill-opacity: .92; stroke: none; pointer-events: none; }
@@ -914,7 +918,12 @@ body:not(.site-edit) .edit-only { display: none !important; }
 .view-switch .vs-body { padding: 0 10px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--pink-soft); border-left: 1px solid var(--line-dim); border-right: 1px solid var(--line-dim); height: var(--ctl-h); display: flex; align-items: center; white-space: nowrap; }
 .view-switch .vs-body:empty { display: none; }
 .moon-sub { display: none !important; }
-body.solar-mode .legend, body.solar-mode #viewSwitch { display: none !important; }
+/* Солнечная система — отдельный экран вкладки «Карта» (#solarScreen): та же рамка, что у карты; сама карта (рамка, легенда,
+   карточки городов) на это время скрыта целиком, поэтому её окна на схему не попадают */
+.solar-screen { height: 100%; padding: 10px; display: flex; }
+.solar-screen > .solar-frame { flex: 1; min-width: 0; }
+body.solar-mode #page-map > .map-shell { display: none; }
+@media (max-width: 900px) { .solar-screen { padding: 6px; } }
 .solar { position: absolute; inset: 0; z-index: 20; display: flex; flex-direction: column; background: radial-gradient(ellipse at center, #0a1530 0%, #030712 80%); overflow: hidden; }
 .solar-head { padding: 14px 18px 0; text-align: center; flex: none; }
 .solar-head h2 { margin: 0; font-family: var(--font-wide); font-weight: 300; font-size: clamp(13px, 1.6vw, 18px); letter-spacing: .25em; text-transform: uppercase; color: var(--pink-soft); text-shadow: 0 0 10px rgba(255, 63, 208, .6); }

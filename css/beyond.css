@@ -1,0 +1,97 @@
+/* Оформление по мотивам интерфейса Civilization: Beyond Earth: сине-чёрный фон, один холодный бирюзовый акцент,
+   приглушённый второй цвет, угловые рамки, широкий геометрический шрифт. Подключается последним и перекрывает переменные. */
+:root {
+  --bg: #050a14;
+  --panel: rgba(8, 17, 32, 0.88);
+  --panel-solid: #0a1426;
+  --line: #3fd2d6;
+  --line-dim: rgba(63, 210, 214, 0.30);
+  --pink: #c46ad8;
+  --pink-soft: #b9a3e6;
+  --text: #e4f1f6;
+  --muted: #8fa6b8;
+  --danger: #ff6a5c;
+  /* «родственности» игры: Гармония, Чистота, Превосходство */
+  --harmony: #7ccf6a; --purity: #5aa8ff; --supremacy: #f0903c;
+  --font-ui: "Exo 2", "Segoe UI", sans-serif;
+  --font-wide: "Jura", "Exo 2", sans-serif;
+  --font-city: "Jura", "Oswald", sans-serif;
+}
+#bg-shade { background: radial-gradient(ellipse at center, rgba(5, 10, 20, .45), rgba(5, 10, 20, .9)); }
+/* заголовки и вкладки: Jura, жирнее и чуть уже трекинг, чем у прежнего Unbounded */
+.brand-name, .stub h1, .mech-head h1, .mech h2, .mech h3, .wtree-h { font-family: var(--font-wide); font-weight: 700; }
+.mech h2, .mech h3 { letter-spacing: .12em; }
+.brand-name { letter-spacing: .18em; }
+.tabs button, .legend-head, .sat-head { font-family: var(--font-wide); font-weight: 600; letter-spacing: .14em; text-transform: uppercase; }
+/* рамки со срезанными углами */
+.panel, .modal-box, .sat-panel { border-radius: 0; box-shadow: none; border-color: var(--line-dim); }
+.stub, .modal-box, .sat-panel, .wmain > .panel {
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+}
+.stub-btns button, .data-btns button, .btn-like, .modal-btns button, .btn-link, .small-btn {
+  border-radius: 0; background: rgba(63, 210, 214, .07); font-family: var(--font-wide); font-weight: 600; letter-spacing: .1em;
+}
+.stub-btns button:hover, .btn-like:hover, .modal-btns button:hover, .small-btn:hover { background: rgba(63, 210, 214, .18); box-shadow: 0 0 10px rgba(63, 210, 214, .35); }
+
+/* ---------- раздел «Механики» ---------- */
+.mech-view { max-width: 1100px; }
+.mv-title { font-family: var(--font-wide); font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--line); margin: 6px 0 2px; font-size: 24px; }
+.mv-sub { color: var(--muted); margin: 0 0 6px; }
+.mv-sec { margin-top: 30px; scroll-margin-top: 12px; }
+.mv-body p, .mv-body li { line-height: 1.6; font-size: 14.5px; }
+.mv-body h3 { margin: 20px 0 6px; }
+.mt-wrap { overflow-x: auto; margin: 12px 0; }
+.mt { border-collapse: collapse; width: 100%; font-size: 13.5px; line-height: 1.5; }
+.mt th { text-align: left; font-family: var(--font-wide); font-weight: 600; letter-spacing: .08em; text-transform: uppercase; font-size: 11.5px; color: var(--line); border-bottom: 1px solid var(--line); padding: 8px 10px; white-space: nowrap; }
+.mt td { padding: 8px 10px; border-bottom: 1px solid var(--line-dim); vertical-align: top; }
+.mt tbody tr:hover td { background: rgba(63, 210, 214, .05); }
+.prop { display: inline-block; font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; padding: 0 6px; border: 1px dashed var(--pink); color: var(--pink-soft); border-radius: 2px; vertical-align: 1px; cursor: help; }
+.m-formula { padding: 10px 14px; background: rgba(63, 210, 214, .07); border-left: 2px solid var(--line); font-family: var(--font-wide); font-size: 14px; letter-spacing: .04em; }
+.mv-body .m-world { border-left: 2px solid var(--pink-soft); padding: 2px 0 2px 12px; color: #d6e4f5; font-style: italic; }
+.mv-body .m-world b { font-style: normal; color: var(--pink-soft); font-weight: 600; }
+.mpager { display: flex; justify-content: space-between; gap: 10px; margin-top: 30px; }
+.mv-body a { color: var(--line); }
+.agenda-q { width: 100%; max-width: 420px; padding: 8px 10px; background: rgba(5, 10, 20, .7); border: 1px solid var(--line-dim); color: var(--text); font: inherit; margin-bottom: 6px; }
+.mt.agenda td.dim { color: rgba(143, 166, 184, .5); }
+.mt.agenda td a { color: var(--line); text-decoration: none; }
+.mt.agenda td { white-space: nowrap; }
+/* запас внизу, чтобы последние разделы можно было прокрутить к верху экрана и дерево подсвечивало их верно */
+.mech-view { padding-bottom: 75vh; }
+
+/* логотип кругом слева от названия */
+.brand-logo { width: 34px; height: 34px; border-radius: 50%; overflow: hidden; flex: none; border: 1px solid var(--line); box-shadow: 0 0 10px rgba(63, 210, 214, .35); display: inline-block; }
+.brand-logo img { width: 100%; height: 100%; object-fit: cover; transform: scale(1.32); display: block; }
+/* плашка раннего доступа */
+.early-badge { flex: none; font-family: var(--font-wide); font-weight: 700; font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
+  color: #ffd9d4; background: rgba(210, 40, 40, .28); border: 1px solid #ff4a40; padding: 4px 10px; box-shadow: 0 0 10px rgba(255, 60, 50, .35); white-space: nowrap; }
+.early-badge.big { display: inline-block; font-size: 13px; padding: 7px 16px; margin-bottom: 18px; }
+@media (max-width: 1100px) { .topbar > .early-badge { display: none; } }
+/* вход на главной */
+.home .auth-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin: 22px 0 8px; text-align: left; }
+.home .auth-card { border: 1px solid var(--line-dim); padding: 14px 16px; background: rgba(63, 210, 214, .04); }
+.home .auth-card h2 { margin: 0 0 8px; font-family: var(--font-wide); font-size: 14px; letter-spacing: .12em; text-transform: uppercase; color: var(--line); }
+.home .f-row { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; font-size: 12px; color: var(--muted); }
+.home .f-row select, .home .f-row input { background: rgba(5, 10, 20, .8); border: 1px solid var(--line-dim); color: var(--text); padding: 7px 8px; font: inherit; }
+.home .auth-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.home .auth-btns button { border: 1px solid var(--line); background: rgba(63, 210, 214, .1); color: var(--text); padding: 8px 14px; font-family: var(--font-wide); font-weight: 600; letter-spacing: .08em; }
+.home .auth-btns button:disabled { opacity: .45; cursor: not-allowed; }
+
+/* панель орбит — на уровне переключателя «Система · Земля · Карта · Шар» */
+.sat-panel { top: var(--row1); max-height: calc(100% - var(--row1) - 10px); }
+.card-cb { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; font-size: 11px; letter-spacing: .06em; text-transform: none; font-weight: 500; color: var(--muted); cursor: pointer; }
+.card-cb input { accent-color: var(--line); margin: 0; }
+.card-btn { margin-left: auto; opacity: .6; }
+.card-btn.active { opacity: 1; background: rgba(63, 210, 214, .22); border-color: var(--line); color: #fff; box-shadow: 0 0 10px rgba(63, 210, 214, .5); }
+
+/* ссылки внутри статей: читаемый бирюзовый вместо синего браузерного, без разрыва слов */
+.wmain a:not(.btn-link):not(.small-btn):not(.msec), .rich a, .vec-states a, .mt a, .lore-body a { color: var(--line); text-decoration: underline; text-decoration-color: rgba(63, 210, 214, .4); text-underline-offset: 3px; overflow-wrap: normal; word-break: normal; }
+.wmain a:not(.btn-link):not(.small-btn):not(.msec):hover, .rich a:hover, .vec-states a:hover, .mt a:hover { color: #fff; text-decoration-color: var(--line); }
+.mt td:first-child a, .rating-t td:nth-child(2) { min-width: 170px; }
+.vec-states a { white-space: nowrap; }
+body.is-gm .gm-note { border-left: 3px dashed var(--pink); padding-left: 10px; }
+/* перетаскивание разделов в дереве (режим правки) */
+.site-edit #wtreeNav .tn { cursor: grab; }
+#wtreeNav .tn.dragging { opacity: .4; }
+#wtreeNav .tn.drop-before { box-shadow: 0 -2px 0 var(--line); }
+#wtreeNav .tn.drop-after { box-shadow: 0 2px 0 var(--line); }
+.viewport, .moon-viewport, #mViewport { cursor: grab; }

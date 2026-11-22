@@ -14,8 +14,9 @@
   const SEL = "[data-edit],[data-edit-text]";
 
   const DEF_LORE = [
-    { id: "ideologies", title: "Идеологии 23-го века", sub: "Во что верят и за что воюют", html: "", special: "ideologies" },
+    { id: "ideologies", title: "Цивилизационные векторы", sub: "Во что верят и за что воюют", html: "", special: "ideologies" },
     { id: "corporations", title: "Корпорации", sub: "Кто владеет водой, орбитой и всем остальным", html: "", special: "corporations" },
+    { id: "rating", title: "Индекс национальной мощи", sub: "Рейтинг стран по экономике, армии, технологиям и населению", html: "", special: "rating" },
     { id: "chronology", title: "Хронология", sub: "От Великого Потопа до наших дней", html: "", special: "chronology" },
     { id: "states", title: "Государства", sub: "Страны, союзы и территории на карте", html: "", special: "states" },
     { id: "regions", title: "Регионы", sub: "Старый Свет, Африка, Азия, Америка и Океания", html: "", special: "regions" },
@@ -316,7 +317,7 @@
     s.setAttribute("class", "ico-svg"); s.setAttribute("aria-hidden", "true"); u.setAttribute("href", "#i-" + name); s.append(u);
     return s;
   }
-  const LORE_ICON = { ideologies: "ideologies", corporations: "corporations", chronology: "chronology", states: "states", regions: "regions", currencies: "currencies" };
+  const LORE_ICON = { rating: "states", ideologies: "ideologies", corporations: "corporations", chronology: "chronology", states: "states", regions: "regions", currencies: "currencies" };
 
   // ---------- обложки и баннеры Лора ----------
   // Картинка — texts["cover:<ключ>"] (при публикации уходит файлом в assets/site/), положение по вертикали —
@@ -401,13 +402,13 @@
   let countsP = null;
   function loreCounts() {
     if (!countsP) countsP = Promise.all([KG.lore(), fetch("data/ideologies.json", { cache: "no-cache" }).then(r => (r.ok ? r.json() : null)).catch(() => null), mapState()])
-      .then(([L, I, st]) => ({ ideologies: I && Array.isArray(I.list) ? I.list.length : null, states: L.states.length, regions: regionsOf(L).length,
+      .then(([L, I, st]) => ({ ideologies: I && Array.isArray(I.list) ? I.list.length : null, corporations: (L.corps || []).length, states: L.states.length, regions: regionsOf(L).length,
         currencies: Object.keys((st && st.currencies) || {}).length || null }));
     return countsP;
   }
 
   // ---------- Вики: события, лор ----------
-  const WIKI = { events: "wikiEvents", lore: "wikiLore", mech: "wikiMech" };
+  const WIKI = { events: "wikiEvents", lore: "wikiLore", mech: "wikiMech", calc: "wikiCalc", my: "wikiCalc" };
   let wikiSub = "events";
   document.querySelectorAll("#wikiNav button").forEach(b => b.addEventListener("click", () => KG.go("wiki/" + b.dataset.wiki)));
   window.addEventListener("routechange", e => {
@@ -417,7 +418,7 @@
     if (!WIKI[p[1]]) { KG.go("wiki/" + wikiSub, true); return; }
     wikiSub = p[1];
     document.querySelectorAll("#wikiNav button").forEach(b => b.classList.toggle("active", b.dataset.wiki === wikiSub));
-    for (const k in WIKI) $(WIKI[k]).classList.toggle("hidden", k !== wikiSub);
+    for (const id of new Set(Object.values(WIKI))) $(id).classList.toggle("hidden", id !== WIKI[wikiSub]);
     if (wikiSub === "events") renderEvents();
     if (wikiSub === "lore") { if (p[2]) renderLoreArticle(p[2], p[3]); else renderLoreGrid(); }
   });
@@ -507,9 +508,9 @@
     const k = f => "list:lore:" + a.id + ":" + f;
     art.append(hero("lore/" + a.id, { back: "wiki/lore", titleKey: k("title"), title: a.title || "", subKey: k("sub"), sub: a.sub || "" }),
       h("div", { class: "rich lore-text" + (specialOf(a) ? " special" : ""), "data-edit": k("html"), "data-placeholder": specialOf(a) ? "Вступление к разделу (необязательно)…" : "Раздел в разработке. Скоро здесь появятся статьи — а пока лор живёт в головах игроков и ГМа.", html: a.html || "" }));
-    if (a.special === "corporations" && window.KGMech) {
+    if (specialOf(a) === "corporations" && window.KGLoreExtra) {
       const body = h("div", { class: "lore-body" }); art.append(body);
-      Promise.resolve(window.KGMech.renderCorpLore(body)).then(() => applyTexts(body));
+      Promise.resolve(window.KGLoreExtra.renderCorpLore(body)).then(() => { applyTexts(body); refreshEditable(); });
     }
     if (specialOf(a) === "states") {
       const body = h("div", { class: "lore-body" }); art.append(body);
@@ -518,6 +519,10 @@
     if (specialOf(a) === "regions") {
       const body = h("div", { class: "lore-body" }); art.append(body);
       renderRegionsIndex(body);
+    }
+    if (specialOf(a) === "rating") {
+      const body = h("div", { class: "lore-body" }, h("div", { "data-calc": "rating" })); art.append(body);
+      window.dispatchEvent(new CustomEvent("kg:calc-hydrate", { detail: body }));
     }
     if (specialOf(a) === "currencies") {
       const body = h("div", { class: "lore-body" }); art.append(body);
@@ -530,9 +535,9 @@
         h("p", { class: "mech-note" }, h("span", { "data-edit-text": "lore.chron.note", text: "Летопись государств и союзов — в разделе " }), h("button", { class: "linkish", text: "«Государства»", onclick: () => KG.go("wiki/lore/states") }), "."));
         applyTexts(body); });
     }
-    if (specialOf(a) === "ideologies" && window.KGMech) {
+    if (specialOf(a) === "ideologies" && window.KGLoreExtra) {
       const body = h("div", { class: "lore-body" }); art.append(body);
-      Promise.resolve(window.KGMech.renderIdeoLore(body)).then(() => { applyTexts(body); refreshEditable(); });
+      Promise.resolve(window.KGLoreExtra.renderIdeoLore(body)).then(() => { applyTexts(body); refreshEditable(); });
     }
     refreshEditable();
   }
@@ -667,6 +672,7 @@
     }
     const s = L.byId[sub];
     if (!s) { KG.go("wiki/lore/states", true); return; }
+    await KG.loreHtml(s, "state"); // текст статьи — отдельным файлом
     const al = (C[s.map[0]] || {}).alliance, un = L.unions.find(x => x.id === al);
     const i = L.states.indexOf(s), prev = L.states[i - 1], next = L.states[i + 1];
     // паспорт, заголовок и статья правятся ГМом прямо на странице
@@ -675,7 +681,7 @@
         flags: h("span", { class: "hero-flags" }, s.map.map(bigFlag)), flagCover: (C[s.map[0]] || {}).flag }),
       h("div", { class: "ls-tools" }, s.map.map(onMap), un ? h("button", { class: "small-btn", "data-union": un.id, onclick: () => KG.go("wiki/lore/states/" + un.id) }, "Союз: " + tx(unionKey(un, "name"), un.name)) : null),
       h("div", { class: "lore-body ls-text" }, pas,
-        h("div", { class: "rich", "data-edit": stateKey(s, "html"), "data-placeholder": "Статья о государстве…", html: s.html.replace(/<div class="passport">[\s\S]*?<\/div>/, "") })));
+        h("div", { class: "rich", "data-edit": stateKey(s, "html"), "data-placeholder": "Статья о государстве…", html: (s.html || "").replace(/<div class="passport">[\s\S]*?<\/div>/, "") })));
     art.append(h("div", { class: "ls-pager" }, prev ? h("button", { class: "small-btn", onclick: () => KG.go("wiki/lore/states/" + prev.id) }, "← " + tx(stateKey(prev, "title"), prev.title)) : h("span"),
       next ? h("button", { class: "small-btn", onclick: () => KG.go("wiki/lore/states/" + next.id) }, tx(stateKey(next, "title"), next.title) + " →") : h("span")));
     applyTexts(art);
@@ -689,11 +695,12 @@
     const c = list.find(x => x.id === sub || (x.kids || []).includes(sub));
     if (!c) { KG.go("wiki/lore/corporations", true); return; }
     if (c.id !== sub) { KG.go("wiki/lore/corporations/" + c.id, true); return; }
+    await KG.loreHtml(c, "corp"); // текст статьи — отдельным файлом
     const i = list.indexOf(c), prev = list[i - 1], next = list[i + 1];
     const pas = h("div", { class: "rich ls-passport", "data-edit": corpKey(c, "passport"), "data-placeholder": "Паспорт корпорации…" }, Object.entries(c.passport || {}).map(([k, v]) => h("span", null, k + " ", h("b", { text: v }))));
     art.append(hero("corp/" + c.id, { back: "wiki/lore/corporations", titleKey: corpKey(c, "title"), title: c.title }),
       h("div", { class: "lore-body ls-text" }, pas,
-        h("div", { class: "rich", "data-edit": corpKey(c, "html"), "data-placeholder": "Статья о корпорации…", html: c.html.replace(/<div class="passport">[\s\S]*?<\/div>/, "") })));
+        h("div", { class: "rich", "data-edit": corpKey(c, "html"), "data-placeholder": "Статья о корпорации…", html: (c.html || "").replace(/<div class="passport">[\s\S]*?<\/div>/, "") })));
     art.append(h("div", { class: "ls-pager" }, prev ? h("button", { class: "small-btn", onclick: () => KG.go("wiki/lore/corporations/" + prev.id) }, "← " + tx(corpKey(prev, "title"), prev.title)) : h("span"),
       next ? h("button", { class: "small-btn", onclick: () => KG.go("wiki/lore/corporations/" + next.id) }, tx(corpKey(next, "title"), next.title) + " →") : h("span")));
     applyTexts(art); wikiToc(art);
@@ -1014,7 +1021,7 @@
   });
   load();
 
-  window.KGSite = { get data() { return site; }, applyTexts, sanitize, setEditing, get editing() { return editing; }, publish, imgSlot, IMG_W, IMG_H,
+  window.KGSite = { get data() { return site; }, setVal, applyTexts, sanitize, setEditing, get editing() { return editing; }, publish, imgSlot, IMG_W, IMG_H,
     // для дерева Вики и поиска (js/wiki-nav.js)
     tx, icon, specialOf, loreCounts, LORE_ICON, regionsOf, statesOf, livePassport,
     names: { region: r => tx(regionKey(r, "title"), r.title), state: s => tx(stateKey(s, "title"), s.title), union: u => tx(unionKey(u, "name"), u.name) } };

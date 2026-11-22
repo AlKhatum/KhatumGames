@@ -177,9 +177,10 @@
     wide,
     W: 0, H: 0, ids: null, land: null, bbox: [],
     async load(idsUrl, land) {
-      // растр id и маска суши грузятся одновременно; id — из компактного .ids или из PNG
+      // растр id и маска суши грузятся одновременно; id — из компактного .ids или из PNG.
+      // land == null — маску не грузим (карта Земли берёт её позже через loadLand: первому показу она не нужна)
       const compact = /\.ids(\?|$)/.test(idsUrl);
-      const [a, b] = await Promise.all([compact ? readIds(idsUrl, wide ? 2 : 1) : readPixels(idsUrl), land instanceof Uint8Array ? null : readPixels(land)]);
+      const [a, b] = await Promise.all([compact ? readIds(idsUrl, wide ? 2 : 1) : readPixels(idsUrl), land == null || land instanceof Uint8Array ? null : readPixels(land)]);
       T.W = a.w; T.H = a.h;
       const N = a.w * a.h;
       if (compact) T.ids = new Arr(a.buf.slice(IDS_HEAD, IDS_HEAD + N * Arr.BYTES_PER_ELEMENT));
@@ -189,13 +190,20 @@
         else for (let i = 0; i < N; i++) T.ids[i] = a.data[i * 4];
       }
       if (land instanceof Uint8Array) T.land = land; // общая маска суши
-      else {
+      else if (b) {
         T.land = new Uint8Array(N);
         if (b.w === a.w && b.h === a.h) for (let i = 0; i < N; i++) T.land[i] = b.data[i * 4 + 3] >= 128 ? 1 : 0;
-      }
+      } else T.land = null;
       T.mark = null; // метки мазка (4 байта на пиксель) — только когда ГМ рисует: у игроков не занимают память
       T.strokeNo = 0;
       T.computeBBoxes();
+    },
+    // маска суши отдельно от растра (растр уже загружен load)
+    async loadLand(url) {
+      const b = await readPixels(url), N = T.W * T.H, land = new Uint8Array(N);
+      if (b.w === T.W && b.h === T.H) for (let i = 0; i < N; i++) land[i] = b.data[i * 4 + 3] >= 128 ? 1 : 0;
+      T.land = land;
+      return land;
     },
     computeBBoxes() {
       const { W, H, ids } = T;
@@ -267,7 +275,7 @@
     },
     isLand(x, y) {
       x = Math.floor(x); y = Math.floor(y);
-      return x >= 0 && y >= 0 && x < T.W && y < T.H && T.land[y * T.W + x] === 1;
+      return !!T.land && x >= 0 && y >= 0 && x < T.W && y < T.H && T.land[y * T.W + x] === 1;
     },
 
     // ---------- рисование ----------
@@ -293,7 +301,7 @@
           const dx = x + 0.5 - cx;
           if (dx * dx + dy * dy > r2 && !(r < 0.8 && x === Math.floor(cx) && y === Math.floor(cy))) continue;
           const i = y * W + x;
-          if (opt.land && !land[i]) continue;
+          if (opt.land && (!land || !land[i])) continue; // «только по суше»: без маски (ещё грузится) не рисуем
           if (opt.keep && ids[i] !== 0 && ids[i] !== v) continue;
           if (opt.only != null && ids[i] !== opt.only) continue; // ластик «не трогать соседей»: только эта метка
           if (ids[i] !== v) { T._set(i, v, ch); if (onPixel) onPixel(x, y, v); }
@@ -312,7 +320,7 @@
       const start = sy * W + sx, target = ids[start];
       if (target === v) return 0;
       const needLand = opt.land || target === 0;
-      if (needLand && !land[start]) return 0;
+      if (needLand && (!land || !land[start])) return 0; // нет маски суши (ещё грузится) — заливку «по суше» не делаем
       const stack = new Int32Array(W * H);
       const seen = new Uint8Array(W * H);
       let sp = 0, n = 0;

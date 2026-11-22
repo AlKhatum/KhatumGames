@@ -3,5 +3,11 @@
     "owner": "AlKhatum",
     "name": "KhatumGames",
     "branch": "main"
-  }
+  },
+  "gm": {
+    "salt": "sAoikQU4JImoUr8Ak7OdgQ==",
+    "iter": 200000,
+    "hash": "J4qJ0SGGhq1sbBfJLGlfy6+S8vcgPUI6dd2e0EMryYI="
+  },
+  "localOnly": true
 }

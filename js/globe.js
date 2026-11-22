@@ -128,6 +128,10 @@ void main(){
     this.tex = {};
     ["ids", "land", "pal", "prov", "lines", "misc"].forEach(k => (this.tex[k] = gl.createTexture()));
     this.unit = { ids: 0, land: 1, pal: 2, prov: 3, lines: 4, misc: 5 };
+    // программу упаковки собираем сразу, пока в очереди видеокарты нет больших текстур: позже проверка её сборки
+    // ждала, пока видеокарта примет десятки мегабайт растров, — это было замирание ~0,2 с при открытии шара
+    this._packProgram();
+    gl.useProgram(pr);
     // пустые текстуры, пока данные не загружены
     for (const k of ["prov", "lines", "misc"]) this._upload(k, gl.LUMINANCE_ALPHA, 1, 1, new Uint8Array(2), gl.NEAREST);
     this.lat = 30 * D; this.lon = 40 * D; this.zoom = 1; this.sel = 0; this.selProv = 0;
@@ -192,14 +196,21 @@ void main(){
     const tmp = gl.createTexture();
     for (let i = 0; i < imgs.length; i++) {
       if (pause) await pause(); // отдаём страницу браузеру между картинками
+      // картинка или функция, которая её отдаёт (ImageBitmap раскодируется в фоне, пока рисуется предыдущая)
+      const img = typeof imgs[i] === "function" ? await imgs[i]() : imgs[i];
+      // пока ждали, шар мог перерисоваться: состояние упаковки ставим заново перед каждым рисунком
+      gl.useProgram(pk.p); gl.uniform1i(pk.t, 7); gl.bindFramebuffer(gl.FRAMEBUFFER, fb); gl.viewport(0, 0, w, h); gl.disable(gl.BLEND);
       gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D, tmp);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
       gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, imgs[i]);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+      if (img && img.close) img.close(); // ImageBitmap больше не нужен: память освобождаем сразу
       const c = chans[i];
       gl.colorMask(c === 0, c === 1, c === 2, c === 3);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      // и возвращаем состояние для отрисовки шара, прежде чем отдать страницу (иначе кадр шара рисовался бы в один канал)
+      gl.colorMask(true, true, true, true); gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.useProgram(this.pr);
     }
     gl.colorMask(true, true, true, true);
     gl.deleteTexture(tmp);
@@ -215,7 +226,21 @@ void main(){
     let d;
     if (LITTLE && ids instanceof Uint16Array) d = new Uint8Array(ids.buffer, ids.byteOffset, ids.byteLength); // те же байты (младший, старший) — без цикла по 14 млн пикселей
     else { d = new Uint8Array(w * h * 2); for (let i = 0; i < ids.length; i++) { const v = ids[i]; d[i * 2] = v & 255; d[i * 2 + 1] = v >> 8; } }
-    this._upload("prov", this.gl.LUMINANCE_ALPHA, w, h, d, this.gl.NEAREST);
+    // 29 МБ одним куском держали страницу ~80 мс прямо в кадре открытия шара: кладём полосами по 448 строк, по одной за задачу
+    const gl = this.gl, job = this._provJob = {}, ROWS = 448;
+    this._bind("prov", gl.NEAREST);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE_ALPHA, w, h, 0, gl.LUMINANCE_ALPHA, gl.UNSIGNED_BYTE, null);
+    let y = 0;
+    const step = () => {
+      if (this._provJob !== job) return; // пока клали, пришёл новый растр — его кладёт свой вызов
+      const n = Math.min(ROWS, h - y);
+      this._bind("prov", gl.NEAREST);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, y, w, n, gl.LUMINANCE_ALPHA, gl.UNSIGNED_BYTE, d.subarray(y * w * 2, (y + n) * w * 2));
+      y += n;
+      if (y < h) setTimeout(step, 0); else { this._provJob = null; this.texVer++; }
+    };
+    step();
   };
   Globe.prototype.setLines = function (rgba, w, h) { this._upload("lines", this.gl.RGBA, w, h, rgba, this.gl.LINEAR); };
   Globe.prototype.setMisc = function (la, w, h) { this._upload("misc", this.gl.LUMINANCE_ALPHA, w, h, la, this.gl.LINEAR); };
@@ -282,14 +307,14 @@ void main(){
 
   Globe.prototype.render = function () {
     const gl = this.gl; if (!gl) return;
-    const dpr = Math.min(2, window.devicePixelRatio || 1), now = performance.now(), R = this.radius();
+    const dpr = Math.min(1.5, window.devicePixelRatio || 1), now = performance.now(), R = this.radius();
     // Пока шар вращают или приближают (быстрее ~1,5 px за кадр), рисуем с пониженным разрешением на больших экранах;
     // через 0,18 с после остановки карта сама дорисовывается начисто (pending).
     const cam = this._cam;
     if (cam && R * Math.hypot(this.lat - cam[0], (this.lon - cam[1]) * Math.cos(this.lat)) + Math.abs(R - cam[2]) > 1.5) this.moveT = now;
     this._cam = [this.lat, this.lon, R];
     const area = this.cv.clientWidth * this.cv.clientHeight * dpr * dpr;
-    this.q = now - this.moveT < 180 && area > 900000 ? 0.7 : 1;
+    this.q = now - this.moveT < 180 && area > 500000 ? 0.55 : 1; // при вращении — ниже разрешение, после остановки дорисовывается начисто
     const rs = dpr * this.q;
     const w = Math.round(this.cv.clientWidth * rs), h = Math.round(this.cv.clientHeight * rs);
     // Шейдер тяжёлый (полноэкранный, ~10 чтений текстур на пиксель): рисуем его, только если изменилось то, от чего он зависит.
@@ -482,7 +507,7 @@ void main(){
       for (const it of S.items) {
         if (!it.on || it.dead) continue; // разрушенный спутник — уже облако обломков
         const sel = S.sel === it.s.id;
-        if (S.orbits && it.ring) {
+        if (it.ring) {
           // кольцо орбиты: передняя часть сплошная, задняя (за шаром) — пунктир.
           // Собираем две ломаные (видимую и скрытую) и рисуем их двумя вызовами вместо сотни отдельных отрезков на спутник.
           let prev = null, lastHid = null;

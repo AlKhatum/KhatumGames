@@ -35,7 +35,13 @@
     else location.hash = h;
   }
   const openTab = name => go(name);
-  tabs.forEach(b => b.addEventListener("click", () => go(b.dataset.tab)));
+  // вкладка «Карта» возвращает туда, где человек был в прошлый раз (схема системы, Земля или Луна, карта или шар — пишет js/map.js);
+  // при первом заходе — схема Солнечной системы, с неё открываются Земля и Луна (решение автора 2026-11-22)
+  function lastMap() {
+    try { const v = localStorage.getItem("kg-map-last"); if (v && /^map(\/(earth|moon)\/(flat|globe))?$/.test(v)) return v; } catch (e) { /* */ }
+    return "map";
+  }
+  tabs.forEach(b => b.addEventListener("click", () => go(b.dataset.tab === "map" ? lastMap() : b.dataset.tab)));
 
   // ---------- анимация появления ----------
   // Класс снимается по окончании: пока анимация transform действует, Chrome делает элемент контейнером
@@ -94,11 +100,16 @@
   // ---------- фон и музыка ----------
   // Фон: видео YouTube или картинка. Музыка: звук фонового видео, другое видео YouTube или свой файл (mp3/ogg).
   // Браузеры разрешают автозапуск только без звука, поэтому звук включается первым кликом или кнопкой «Звук».
+  // Видео подключается после загрузки файлов самого сайта, чтобы не отнимать у них канал. Карта, шар и Луна
+  // закрывают фон целиком, поэтому там видео стоит на паузе, если только его звук не играет как музыка.
   const yt = document.getElementById("yt");
   const bgBox = document.getElementById("bg-video");
   const soundBtn = document.getElementById("soundBtn");
-  const DEF_YT = "IisYtJGfVFU";
+  const DEF_YT = "daflmSy0NDE";
   let soundOn = false;
+  let bgWant = DEF_YT;                   // видео, которое нужно фону или музыке ("" — не нужно)
+  let siteLoaded = false;                // свои файлы сайта загружены — можно подключать YouTube
+  let coveredBg = route.tab === "map";   // фон закрыт картой
   const ytSrc = id => "https://www.youtube.com/embed/" + id + "?autoplay=1&mute=1&loop=1&playlist=" + id + "&controls=0&modestbranding=1&rel=0&playsinline=1&enablejsapi=1&iv_load_policy=3&disablekb=1";
   function ytCmd(frame, func, args) {
     try { frame.contentWindow.postMessage(JSON.stringify({ event: "command", func: func, args: args || [] }), "*"); } catch (e) { /* ignore */ }
@@ -119,6 +130,17 @@
   const bgPlayer = ytPlayer(yt);
   let player = bgPlayer, musicFrame = null, audio = null;
   function setFrame(frame, id) { const src = id ? ytSrc(id) : "about:blank"; if (frame.getAttribute("src") !== src) frame.setAttribute("src", src); }
+  // нужно ли сейчас играть фоновому видео: фон виден или его звук — включённая музыка
+  const bgNeeded = () => !!bgWant && (!coveredBg || (soundOn && player === bgPlayer));
+  const bgLoaded = () => /^https:/.test(yt.getAttribute("src") || "");
+  function syncBg() {
+    if (!bgWant) { setFrame(yt, ""); return; }
+    if (bgNeeded()) {
+      if (!siteLoaded) return;
+      if (yt.getAttribute("src") === ytSrc(bgWant)) ytCmd(yt, "playVideo");
+      else setFrame(yt, bgWant); // новый плеер начнёт играть сам (autoplay), звук включит обработчик load
+    } else if (bgLoaded()) ytCmd(yt, "pauseVideo");
+  }
   // media: { bg: { type: "video" | "image" | "none", yt, img }, music: { src: "video" | "yt" | "file" | "none", yt, file } }
   function setMedia(media) {
     media = media || {};
@@ -128,8 +150,8 @@
     if (src === "yt" && !ytId(mu.yt)) src = "video";
     if (src === "file" && !mu.file) src = "video";
     const old = player;
-    // фоновое видео нужно, если оно фон или источник музыки
-    setFrame(yt, bgType === "video" || src === "video" ? bgId : "");
+    // фоновое видео нужно, если оно фон или источник музыки; подключает и ставит на паузу syncBg
+    bgWant = bgType === "video" || src === "video" ? bgId : "";
     yt.classList.toggle("off", bgType !== "video");
     bgBox.style.backgroundImage = bgType === "image" && bg.img ? 'url("' + String(bg.img).replace(/"/g, "%22") + '")' : "";
     bgBox.classList.toggle("bg-image", bgType === "image");
@@ -156,6 +178,7 @@
     }
     if (old !== player) { old.off(); if (soundOn) player.on(volume); }
     if (player !== bgPlayer) bgPlayer.off(); // фоновое видео без звука, если музыка из другого источника
+    syncBg();
   }
   // громкость музыки (0–100) — ползунок рядом с кнопкой, запоминается в браузере
   const volEl = document.getElementById("volume");
@@ -165,6 +188,7 @@
   function setSound(on) {
     soundOn = on;
     if (on) { if (!volume) volume = 30; player.on(volume); } else player.off();
+    syncBg(); // под картой: со звуком из видео оно играет, без звука — на паузе
     soundBtn.classList.toggle("on", on);
     soundBtn.querySelector(".ico").textContent = on ? "🔊" : "🔇";
     if (volEl) { volEl.value = on ? volume : 0; volEl.style.setProperty("--v", (on ? volume : 0) + "%"); }
@@ -192,7 +216,28 @@
   }
   window.addEventListener("pointerdown", onFirstGesture, true);
   window.addEventListener("keydown", onFirstGesture, true);
-  yt.addEventListener("load", () => { ytCmd(yt, "playVideo"); if (soundOn && player === bgPlayer) player.on(volume); });
+  // плеер начнёт сообщать о себе (onReady, состояние) — см. обработчик message ниже; пока он грузится, просьба теряется, поэтому трижды
+  const ytListen = () => [0, 1000, 3000].forEach(ms => setTimeout(() => {
+    try { yt.contentWindow.postMessage(JSON.stringify({ event: "listening", id: 1, channel: "widget" }), "*"); } catch (e) { /* ignore */ }
+  }, ms));
+  yt.addEventListener("load", () => {
+    if (!bgLoaded()) return;
+    ytListen();
+    if (bgNeeded()) { ytCmd(yt, "playVideo"); if (soundOn && player === bgPlayer) player.on(volume); }
+    else ytCmd(yt, "pauseVideo");
+  });
+  // Команду, пришедшую до готовности плеера, YouTube теряет, а autoplay всё равно запускает видео:
+  // как только плеер готов или заиграл, а фон закрыт картой, ставим паузу ещё раз.
+  window.addEventListener("message", e => {
+    if (e.source !== yt.contentWindow || !/^https:\/\/www\.youtube(-nocookie)?\.com$/.test(e.origin)) return;
+    let d = null; try { d = JSON.parse(e.data); } catch (x) { return; }
+    if (d && (d.event === "onReady" || (d.info && d.info.playerState === 1)) && !bgNeeded()) ytCmd(yt, "pauseVideo");
+  });
+  window.addEventListener("tabchange", e => { coveredBg = e.detail === "map"; syncBg(); });
+  window.addEventListener("load", () => {
+    const go = () => { siteLoaded = true; syncBg(); };
+    if (window.requestIdleCallback) requestIdleCallback(go, { timeout: 2500 }); else setTimeout(go, 300);
+  }, { once: true });
 
   // ---------- toast ----------
   let toastTimer;
@@ -267,6 +312,23 @@
 
   // ---------- лор (data/lore.json): статьи о государствах из летописи, союзы, хронология ----------
   // Загружается один раз и нужен и Вики, и карте (ссылка «Статья в лоре» в карточке страны).
+  // В дубле lore.json — оглавление: тексты статей о государствах и корпорациях лежат отдельно (Лор/лор_дубля.py)
+  // и грузятся, когда статью открыли (loreHtml), а все сразу — только для поиска (loreText).
+  const artP = {};
+  function loreHtml(x, kind) {
+    if (!x) return Promise.resolve("");
+    if (x.html != null) return Promise.resolve(x.html); // полный lore.json (например, только что скопирован из оригинала)
+    const key = kind + "/" + x.id;
+    return artP[key] || (artP[key] = fetch("data/lore/" + kind + "/" + encodeURIComponent(x.id) + ".json", { cache: "no-cache" })
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(r.status))))
+      .then(j => (x.html = (j && j.html) || ""))
+      .catch(() => { delete artP[key]; return ""; }));
+  }
+  let loreTextP = null;
+  function loreText() {
+    return loreTextP || (loreTextP = fetch("data/lore_text.json", { cache: "no-cache" })
+      .then(r => (r.ok ? r.json() : {})).catch(() => ({})).then(t => Object.assign({ state: {} }, t)));
+  }
   let lorePromise = null;
   function lore() {
     if (!lorePromise) lorePromise = fetch("data/lore.json", { cache: "no-cache" })
@@ -281,6 +343,6 @@
   }
   // показать страну карты: Земля, плоская карта, выбрать и приблизить
   const showOnMap = id => go("map/earth/flat/" + encodeURIComponent(id));
-  window.KG = { toast, ask, openTab, go, get route() { return route; }, lines, setMedia, ytId, lore, showOnMap,
+  window.KG = { toast, ask, openTab, go, get route() { return route; }, lines, setMedia, ytId, lore, loreHtml, loreText, showOnMap,
     replay, stagger, showModal, hideModal, openDrawer, closeDrawers };
 })();
