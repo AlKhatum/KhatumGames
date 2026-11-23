@@ -4,8 +4,6 @@
   "use strict";
   const TOKEN_KEY = "kg-gh-token";
   const API = "https://api.github.com";
-  // в дубле публикация в репозиторий оригинала отключена: правки остаются черновиком в браузере
-  const LOCAL_ONLY = "В этой версии публикация отключена: правки хранятся черновиком в этом браузере.";
 
   function token() { try { return localStorage.getItem(TOKEN_KEY) || ""; } catch (e) { return ""; } }
   function setToken(t) { try { if (t) localStorage.setItem(TOKEN_KEY, t); else localStorage.removeItem(TOKEN_KEY); } catch (e) { /* */ } }
@@ -41,7 +39,6 @@
 
   // проверка: токен рабочий и может писать в репозиторий
   async function check(repo) {
-    throw new Error(LOCAL_ONLY);
     const r = await api("GET", `/repos/${repo.owner}/${repo.name}`);
     if (!r.permissions || !r.permissions.push) throw new Error("Токен видит репозиторий, но не может в него писать.");
     return r;
@@ -61,7 +58,6 @@
 
   // files: [{ path, content: string | Blob | Uint8Array }]
   async function commit(repo, files, message, onStep) {
-    throw new Error(LOCAL_ONLY);
     const step = onStep || (() => {});
     const base = `/repos/${repo.owner}/${repo.name}`;
     for (let attempt = 0; attempt < 3; attempt++) {
