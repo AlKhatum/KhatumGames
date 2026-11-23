@@ -926,8 +926,7 @@
     applyAll(); renderDesign();
   }
   async function ensureToken() {
-    if (GH.token()) return true;
-    const t = await ask("Токен GitHub для публикации", "", { password: true, note: "Fine-grained token с правом Contents: Read and write только для репозитория " + config.repo.owner + "/" + config.repo.name + ". Хранится только в этом браузере." });
+    const t = await ask("Перед публикацией введите токен GitHub", "", { password: true, note: "Fine-grained token с правом Contents: Read and write только для репозитория " + config.repo.owner + "/" + config.repo.name + ". Токен запрашивается перед каждой публикацией и хранится только в этом браузере." });
     if (!t) return false;
     GH.setToken(t);
     try { await GH.check(config.repo); toast("GitHub подключён"); return true; }
