@@ -1254,7 +1254,7 @@
     }
     await setupToken();
   };
-  async function ensureToken() { return GH.token() ? true : setupToken(); }
+  async function ensureToken() { return setupToken(); }
 
   // Готовые контуры стран, берега и провинций для data/paths.bin и data/paths_prov.bin (считаются в фоновом потоке, если в кэше браузера
   // их нет или растр уже изменён правками ГМа). Игроки читают эти файлы вместо расчёта. Формат — у decodePathsBin.
