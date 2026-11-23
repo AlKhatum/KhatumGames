@@ -859,8 +859,22 @@
   window.KG.lore().then(L => { loreIdx = L.byMap; if (sel && sel.col === "countries") renderStateCard(); });
   function loreLink(id) {
     const a = loreIdx && loreIdx[id];
-    return a ? `<a class="sc-lore" href="#wiki/lore/states/${esc(encodeURIComponent(a.id))}" title="Статья «${esc(a.title)}» в Вики">📖 Статья в лоре: ${esc(a.title)}</a>` : "";
+    if (!a) return "";
+    const title = window.KGSite ? window.KGSite.names.state(a) : a.title;
+    return `<div class="sc-lore-row"><a class="sc-lore" href="#wiki/lore/states/${esc(encodeURIComponent(a.id))}" title="Статья «${esc(title)}» в Вики">📖 Статья в лоре: ${esc(title)}</a>` +
+      (gm && window.KGSite ? `<button type="button" class="small-btn sc-lore-edit" title="Изменить название статьи и текст этой ссылки">✎</button>` : "") + `</div>`;
   }
+  $("stateCardBody").addEventListener("click", async e => {
+    const btn = e.target.closest(".sc-lore-edit");
+    if (!btn || !gm || !sel || sel.col !== "countries" || !window.KGSite) return;
+    const a = loreIdx && loreIdx[sel.id]; if (!a) return;
+    const before = window.KGSite.names.state(a);
+    const title = await ask("Название статьи в лоре", before, { note: "Изменятся заголовок статьи и текст ссылки в карточке. Сохранение — кнопка «Сайт»." });
+    if (!title || title === before) return;
+    window.KGSite.setVal("lore.state." + a.id + ".title", title);
+    renderStateCard();
+    toast("Название изменено. Опубликуйте сайт, чтобы сохранить его.");
+  });
   // строка «Союз» в карточке: ГМ выбирает из списка, остальные видят название (лидер помечен)
   function allyField(c) {
     const al = allyOf(c);
