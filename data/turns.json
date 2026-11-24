@@ -1,5 +1,4 @@
 {
- "v": 1,
  "start": {
   "year": 2200,
   "q": 1
@@ -8,5 +7,8 @@
  "log": [],
  "cur": {},
  "worldSnap": null,
- "stamp": 0
+ "stamp": 1795549465547,
+ "measures": [],
+ "pending": [],
+ "v": 1
 }
