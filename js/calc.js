@@ -703,6 +703,25 @@
     return rows.length ? T(["Страна", "Эффект", "Что даёт", "Срок"], rows) : NOTE("Сейчас общеизвестных особых эффектов нет.");
   }
   // ---------- государство и стабильность (блок результата) ----------
+  // повестка в виде раскрывающихся списков: с onchange — редактор ГМа, без — только просмотр (выбор откатывается)
+  function agendaGrid(c, onchange) {
+    const grid = h("div", "calc-grid");
+    const add = (key, title, options) => {
+      const label = h("label", "f-row"), select = h("select");
+      select.innerHTML = '<option value="">— Не указано в лоре —</option>' + options.map(v => '<option value="' + esc(v) + '">' + esc(v) + "</option>").join("");
+      select.value = (c.gov && c.gov[key]) || "";
+      select.onchange = () => {
+        if (!onchange) { select.value = (c.gov && c.gov[key]) || ""; if (window.KG && KG.toast) KG.toast("Только просмотр: повестку меняет администратор"); return; }
+        c.gov = c.gov || {};
+        if (select.value) c.gov[key] = select.value; else delete c.gov[key];
+        onchange();
+      };
+      label.append(h("span", null, title), select); grid.append(label);
+    };
+    add("vector", "Цивилизационный вектор", ["Превосходство", "Чистота", "Духовность", "Гармония", "Господство", "Ненасытность", "Равновесие"]);
+    for (const a of M.agendas) add(a.key, a.title, a.options);
+    return grid;
+  }
   function govBlock(c) {
     const g = c.gov || {}, rows = [["Цивилизационный вектор", esc(g.vector || "Не указано в лоре")]];
     for (const a of M.agendas) rows.push([esc(a.title), esc(g[a.key] || "Не указано в лоре")]);
@@ -802,7 +821,7 @@
       const c = D.countries[id], { ids, rs, ix } = results(), k = ids.indexOf(id), r = rs[k], rank = ix.map(x => x.total).sort((a, b) => b - a).indexOf(ix[k].total) + 1;
       let body = "";
       if (active === "overview") body = overviewCards(c, r, ix[k], rank, ids.length) + '<p class="mv-sub">Ход ' + TS.n + " · " + esc(turnNow()) + "</p>" + warnBlock(c, r);
-      else if (active === "state") body = "<h2>Государство и стабильность</h2>" + govBlock(c) + stabBlock(r, c, gm);
+      else if (active === "state") body = "<h2>Государство и стабильность</h2><h3>Политическая повестка</h3><div data-agenda></div>" + NOTE("Списки можно раскрывать и смотреть варианты; значения задаёт администратор, изменить их здесь нельзя.") + stabBlock(r, c, gm);
       else if (active === "economy") body = "<h2>Экономика</h2>" + ecoBlock(r, c, "main");
       else if (active === "army") body = "<h2>Армия</h2>" + forcesBlock(r, "land") + listTables(r, c, "army");
       else if (active === "fleet") body = "<h2>ВВС и флот</h2>" + forcesBlock(r, "fleet") + listTables(r, c, "fleet");
@@ -810,6 +829,7 @@
       else if (active === "effects") body = "<h2>Особые эффекты</h2>" + fxTable(c, gm ? "gm" : "player") + "<h2>Санкции и блокады</h2>" + measuresTable(id) + measureEffects(r, c) + "<h2>История ходов</h2>" + journalHtml(id) + NOTE("Только просмотр: значения меняет администратор.") + GMN("данные тестовые.");
       else body = "<h2>Страшные цифры</h2>" + NOTE("Подробные исходные значения и промежуточные расчёты. Основные итоги остаются в тематических вкладках.") + ecoBlock(r, c, "scary") + "<h3>Вооружённые силы: детальные числа</h3>" + forcesBlock(r, "details") + listTables(r, c, "details");
       out.innerHTML = (gm ? "" : '<p class="mv-sub">' + esc(c.name) + " · столица " + esc(c.capital || "—") + "</p>") + countryTabsHtml(active, body);
+      const av = out.querySelector("[data-agenda]"); if (av) av.append(agendaGrid(c, null));
       enhanceTips(out);
     }
     draw();
@@ -961,21 +981,7 @@
       return wrap;
     }
     function agendaEditor(c) {
-      const grid = h("div", "calc-grid");
-      const add = (key, title, options) => {
-        const label = h("label", "f-row"), select = h("select");
-        select.innerHTML = '<option value="">— Не указано в лоре —</option>' + options.map(v => '<option value="' + esc(v) + '">' + esc(v) + "</option>").join("");
-        select.value = (c.gov && c.gov[key]) || "";
-        select.onchange = () => {
-          c.gov = c.gov || {};
-          if (select.value) c.gov[key] = select.value; else delete c.gov[key];
-          change();
-        };
-        label.append(h("span", null, title), select); grid.append(label);
-      };
-      add("vector", "Цивилизационный вектор", ["Превосходство", "Чистота", "Духовность", "Гармония", "Господство", "Ненасытность", "Равновесие"]);
-      for (const a of M.agendas) add(a.key, a.title, a.options);
-      return grid;
+      return agendaGrid(c, change);
     }
     const STATE_GROUPS = ["Население и государство", "Стабильность и власть"], CORP_GROUPS = ["Корпорации, частный сектор, дань"];
     const ECO_GROUPS = FIELDS.map(x => x[0]).filter(n => !STATE_GROUPS.includes(n) && !CORP_GROUPS.includes(n));
