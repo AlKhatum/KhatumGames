@@ -1151,5 +1151,39 @@
   window.addEventListener("kg:auth", cabinet);
   window.addEventListener("gmchange", () => window.dispatchEvent(new Event("kg:auth")));
   bindPlayerLogin();
-  window.KGCalc = { allowed, load, hydrate, TECH };
+  // ---------- публикация данных калькулятора на сайт (кнопка «⇪ Ход» в верхней панели, только ГМу) ----------
+  // Одним коммитом кладёт data/calc.json (страны и правила из черновика) и data/turns.json (состояние хода) —
+  // заменяет ручную цепочку «Скачать журнал» → Лор/ход.py → git. Версия стартовых данных поднимается,
+  // чтобы черновики других версий больше не подмешивались (как при ручной правке calc.json).
+  async function publishState() {
+    await load();
+    if (!isGm()) { KG.toast("Опубликовать данные калькулятора может только администратор"); return; }
+    const GH = window.KGGitHub;
+    if (!GH) { KG.toast("Модуль GitHub не загружен"); return; }
+    let cfg;
+    try { cfg = await fetch("data/config.json", { cache: "no-cache" }).then(r => r.json()); }
+    catch (e) { KG.toast("Не удалось прочитать data/config.json"); return; }
+    const t = await KG.ask("Токен GitHub для публикации калькулятора", "", { password: true, note: "Fine-grained token с правом Contents: Read and write только для репозитория " + cfg.repo.owner + "/" + cfg.repo.name + ". Хранится только в этом браузере." });
+    if (!t) return;
+    GH.setToken(t);
+    try { await GH.check(cfg.repo); } catch (e) { GH.setToken(""); KG.toast(e.message); return; }
+    const d = new Date(), pad = x => String(x).padStart(2, "0");
+    D.ver = d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + "-" + pad(d.getHours()) + pad(d.getMinutes());
+    const clean = {};
+    for (const k of ["v", "ver", "note", "K", "divTypes", "privBase", "buildTypes", "products", "sectors", "trade", "loreMap", "aircraft", "ships", "shipClasses", "countries", "players"]) if (D[k] !== undefined) clean[k] = D[k];
+    clean.countries = {}; // cid — служебное поле сеанса, в файл не пишем
+    for (const id in D.countries) { const c = Object.assign({}, D.countries[id]); delete c.cid; clean.countries[id] = c; }
+    const btn = $("calcPublishBtn"); if (btn) btn.disabled = true;
+    try {
+      await GH.commit(cfg.repo, [
+        { path: "data/calc.json", content: JSON.stringify(clean, null, 1) },
+        { path: "data/turns.json", content: JSON.stringify(Object.assign({}, TS, { stamp: Date.now() }), null, 1) }
+      ], "Калькулятор: правки ГМа " + d.toLocaleString("ru-RU"), m => KG.toast(m));
+      TS.stamp = Date.now(); saveDraft();
+      KG.toast("Опубликовано: data/calc.json и data/turns.json. Изменения видны примерно через минуту.");
+    } catch (e) { KG.toast("Не удалось опубликовать: " + e.message); console.error(e); }
+    finally { if (btn) btn.disabled = false; }
+  }
+  const cpb = $("calcPublishBtn"); if (cpb) cpb.addEventListener("click", publishState);
+  window.KGCalc = { allowed, load, hydrate, TECH, publish: publishState };
 })();
