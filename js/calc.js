@@ -424,8 +424,9 @@
   }
   // ---------- государство и стабильность (блок результата) ----------
   function govBlock(c) {
-    const g = c.gov || {};
-    return kv([["Государственный режим", esc(g.regime || "—")], ["Форма правления", esc(g.form || "—")], ["Цивилизационный вектор", esc(g.vector || "—")], ["Экономическая модель", esc(g.econ || "—")], ["Торговая политика", esc(g.trade || "—")]]);
+    const g = c.gov || {}, rows = [["Цивилизационный вектор", esc(g.vector || "Не указано в лоре")]];
+    for (const a of M.agendas) rows.push([esc(a.title), esc(g[a.key] || "Не указано в лоре")]);
+    return "<h3>Политическая повестка</h3>" + kv(rows) + NOTE("«Не указано в лоре» — в статье страны нет прямого ответа; администратор может задать значение в калькуляторе.");
   }
   function stabBlock(r, c) {
     const st = Model.stability(D, c, r), o = st.out, sg = v => (v > 0 ? "+" : "") + num(v, 2), G = { eco: "Экономика", pol: "Политика и мир", fx: "Особые эффекты" };
@@ -672,6 +673,23 @@
       tb.append(body); const w = h("div", "mt-wrap"); w.append(tb); wrap.append(w, btn("+ Армия", () => { c.armies.push({ name: "Новая армия", div: {} }); build(); change(); }));
       return wrap;
     }
+    function agendaEditor(c) {
+      const grid = h("div", "calc-grid");
+      const add = (key, title, options) => {
+        const label = h("label", "f-row"), select = h("select");
+        select.innerHTML = '<option value="">— Не указано в лоре —</option>' + options.map(v => '<option value="' + esc(v) + '">' + esc(v) + "</option>").join("");
+        select.value = (c.gov && c.gov[key]) || "";
+        select.onchange = () => {
+          c.gov = c.gov || {};
+          if (select.value) c.gov[key] = select.value; else delete c.gov[key];
+          change();
+        };
+        label.append(h("span", null, title), select); grid.append(label);
+      };
+      add("vector", "Цивилизационный вектор", ["Превосходство", "Чистота", "Духовность", "Гармония", "Господство", "Ненасытность", "Равновесие"]);
+      for (const a of M.agendas) add(a.key, a.title, a.options);
+      return grid;
+    }
     function build() {
       const c = D.countries[id]; inp.replaceChildren();
       const g = h("div", "calc-grid");
@@ -681,7 +699,7 @@
       }
       g.append(h("h3", "calc-grp", "Бюджет"));
       for (const [k, label] of BUD) { const l = h("label", "f-row"), s = h("span", null, "Бюджет: " + label.toLowerCase() + " (доля)"); l.append(s, numIn(c.b[k], 0.01, v => { c.b[k] = v; })); g.append(l); }
-      inp.append(h("h2", null, "Исходные данные"), g, h("h2", null, "Армии"), armyEditor(c), h("h2", null, "Авиационные звенья"), mixEditor(c, D.aircraft, "flights", D.K.flight_max), h("h2", null, "Эскадры"), mixEditor(c, D.ships, "squadrons", D.K.squad_max), h("h2", null, "Особые эффекты"), fxEditor(c, full => { saveDraft(); if (full) drawMeas(); drawOut(); }));
+      inp.append(h("h2", null, "Политическая повестка"), agendaEditor(c), h("h2", null, "Исходные данные"), g, h("h2", null, "Армии"), armyEditor(c), h("h2", null, "Авиационные звенья"), mixEditor(c, D.aircraft, "flights", D.K.flight_max), h("h2", null, "Эскадры"), mixEditor(c, D.ships, "squadrons", D.K.squad_max), h("h2", null, "Особые эффекты"), fxEditor(c, full => { saveDraft(); if (full) drawMeas(); drawOut(); }));
       drawOut();
     }
     function drawOut() {

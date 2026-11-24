@@ -4,7 +4,7 @@
 .calc-in input, .calc-tab input, .calc-out input { background: var(--panel-solid); color: var(--text); border: 1px solid var(--line-dim); padding: 5px 7px; font: inherit; min-width: 0; }
 .calc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px 16px; margin: 8px 0 18px; }
 .calc-grid .f-row { display: flex; flex-direction: column; gap: 3px; font-size: 13px; color: var(--muted); }
-.calc-grid .f-row input { width: 100%; }
+.calc-grid .f-row input, .calc-grid .f-row select { width: 100%; }
 .calc-tab td { vertical-align: top; }
 .calc-tab .mixrow { display: flex; gap: 6px; margin-bottom: 4px; align-items: center; flex-wrap: wrap; }
 .calc-tab input[type=text], .calc-tab td:first-child input { width: 100%; min-width: 120px; }
