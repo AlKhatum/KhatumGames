@@ -66,5 +66,6 @@
 .calc-ok { border: 1px solid rgba(124, 207, 106, .5); background: rgba(124, 207, 106, .08); padding: 8px 14px; margin: 12px 0 18px; color: #cfeec8; }
 .mt a, .tcard a { color: var(--line); }
 .calc-grid .calc-grp { grid-column: 1 / -1; margin: 10px 0 0; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--line); font-family: var(--font-wide, inherit); }
+.calc-in:not(:empty) + .calc-res { margin-top: 14px; padding-top: 10px; border-top: 1px dashed var(--line-dim); }
 .calc-cues { margin: 4px 0 12px; padding-left: 18px; color: var(--muted); font-size: 13px; }
 .calc-cues li { margin: 3px 0; line-height: 1.5; }

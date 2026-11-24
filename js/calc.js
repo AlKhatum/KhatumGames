@@ -432,8 +432,12 @@
   }
 
   const COUNTRY_TABS = [["overview", "Обзор"], ["state", "Государство"], ["economy", "Экономика"], ["army", "Армия"], ["fleet", "ВВС и флот"], ["corp", "Корпорации"], ["effects", "Эффекты и заметки"], ["scary", "Страшные цифры"]];
-  function countryTabsHtml(active, body) {
-    return '<div class="country-tabs" role="tablist" aria-label="Разделы страны">' + COUNTRY_TABS.map(x => '<button type="button" role="tab" data-country-tab="' + x[0] + '" aria-selected="' + (x[0] === active) + '" class="' + (x[0] === active ? "active" : "") + '">' + x[1] + "</button>").join("") + '</div><div class="country-tab-panel" role="tabpanel">' + body + "</div>";
+  const GM_TABS = COUNTRY_TABS.concat([["turn", "Ход и журнал"], ["rules", "Правила"]]);
+  function tabsBarHtml(active, tabs) {
+    return '<div class="country-tabs" role="tablist" aria-label="Разделы страны">' + tabs.map(x => '<button type="button" role="tab" data-country-tab="' + x[0] + '" aria-selected="' + (x[0] === active) + '" class="' + (x[0] === active ? "active" : "") + '">' + x[1] + "</button>").join("") + "</div>";
+  }
+  function countryTabsHtml(active, body, tabs) {
+    return tabsBarHtml(active, tabs || COUNTRY_TABS) + '<div class="country-tab-panel" role="tabpanel">' + body + "</div>";
   }
   function bindCountryTabs(root, onTab) {
     root.addEventListener("click", e => { const b = e.target.closest("[data-country-tab]"); if (b && root.contains(b)) onTab(b.dataset.countryTab); });
@@ -773,7 +777,7 @@
     form.append(h("div", "calc-bar"), posBox);
     form.firstChild.append(tpl, nm, nt, h("span", "mech-note", "ходов (0 — бессрочно):"), turns, vis, go);
     drawPos(); draw();
-    wrap.append(list, h("h4", null, "Новый эффект"), form, NOTE("Разовые позиции (склад, казна, заводы, войска) применяются сразу при вводе. Срок истекает при проведении хода; откат журнала убирает эффекты, введённые после выбранного хода."));
+    wrap.append(list, h("h4", null, "Новый эффект"), form, h("p", "mech-note", "Разовые позиции (склад, казна, заводы, войска) применяются сразу при вводе. Срок истекает при проведении хода; откат журнала убирает эффекты, введённые после выбранного хода."));
     return wrap;
   }
 
@@ -853,8 +857,8 @@
   async function renderCalc(box) {
     await load();
     if (!orig) orig = clone(D.countries);
-    box.replaceChildren(h("h1", "mv-title", "Калькулятор"), h("p", "mv-sub", "Страна, исходные числа, армии, звенья и эскадры. Правки сохраняются черновиком в этом браузере."));
-    const bar1 = h("div", "calc-bar"), sel = h("select"), out = h("div", "calc-out"), inp = h("div", "calc-in");
+    box.replaceChildren(h("h1", "mv-title", "Калькулятор"), h("p", "mv-sub", "Ввод исходных данных и результат разбиты на разделы, как в «Моей стране». Правки сохраняются черновиком в этом браузере."));
+    const bar1 = h("div", "calc-bar"), sel = h("select"), out = h("div", "calc-out"), tabsEl = h("div"), inp = h("div", "calc-in"), res = h("div", "calc-res");
     sel.innerHTML = countryEntries().map(([k, name]) => '<option value="' + k + '">' + esc(name) + "</option>").join("");
     const combo = countryCombo(sel, false);
     let id = sel.value;
@@ -864,10 +868,10 @@
     function drawTurn() {
       turnBox.innerHTML = "";
       const head = h("div", "calc-bar", "<b>Ход " + TS.n + " · " + esc(turnNow()) + "</b>");
-      const go = btn("Провести ход", () => { const e = endTurn(); KG.toast("Ход " + e.n + " проведён: " + e.label); build(); drawTurn(); }, "accent");
+      const go = btn("Провести ход", () => { const e = endTurn(); KG.toast("Ход " + e.n + " проведён: " + e.label); build(); }, "accent");
       const rb = h("select"); rb.innerHTML = '<option value="">Откатить к началу хода…</option>' + TS.log.slice().reverse().filter(e => !e.noRollback).map(e => '<option value="' + e.n + '">ход ' + e.n + " (" + esc(e.label) + ")</option>").join("");
-      rb.onchange = async () => { const v = +rb.value; if (!v) return; if (await KG.ask("Откатить к началу хода " + v + "?", "", { confirm: true, note: "Ходы " + v + " – " + TS.n + " будут удалены из журнала, состояние стран вернётся." })) { rollbackTo(v); build(); drawTurn(); } else rb.value = ""; };
-      head.append(go, rb, btn("Скачать журнал", downloadJournal), btn("Очистить журнал", async () => { if (TS.log.some(e => e.noRollback)) { KG.toast("Журнал длиннее 12 ходов: откат к началу недоступен. Скачайте журнал."); return; } if (TS.log.length && await KG.ask("Очистить журнал и вернуть страны к началу первого хода?", "", { confirm: true })) { rollbackTo(TS.log[0].n); build(); drawTurn(); } }));
+      rb.onchange = async () => { const v = +rb.value; if (!v) return; if (await KG.ask("Откатить к началу хода " + v + "?", "", { confirm: true, note: "Ходы " + v + " – " + TS.n + " будут удалены из журнала, состояние стран вернётся." })) { rollbackTo(v); build(); } else rb.value = ""; };
+      head.append(go, rb, btn("Скачать журнал", downloadJournal), btn("Очистить журнал", async () => { if (TS.log.some(e => e.noRollback)) { KG.toast("Журнал длиннее 12 ходов: откат к началу недоступен. Скачайте журнал."); return; } if (TS.log.length && await KG.ask("Очистить журнал и вернуть страны к началу первого хода?", "", { confirm: true })) { rollbackTo(TS.log[0].n); build(); } }));
       const st = h("div", "calc-bar", "Старт кампании: год ");
       const y = h("input"); y.type = "number"; y.value = TS.start.year; y.style.width = "80px"; y.disabled = TS.n > 0;
       const q = h("select"); q.innerHTML = [1, 2, 3, 4].map(i => '<option value="' + i + '">' + i + " кв.</option>").join(""); q.value = TS.start.q; q.disabled = TS.n > 0;
@@ -904,9 +908,8 @@
       [...list.querySelectorAll("tbody tr")].forEach((tr, i) => { const m = TS.measures[i]; if (!m) return; const td = h("td"); td.append(btn("Снять", () => { TS.measures.splice(i, 1); (TS.pending = TS.pending || []).push({ t: "Снято: " + measureText(m), ids: [m.by, m.against] }); TS.stamp = Date.now(); syncMeasures(); saveDraft(); drawMeas(); drawOut(); }, "danger")); tr.append(td); });
       if (list.querySelector("thead tr")) list.querySelector("thead tr").append(h("th", null, ""));
     }
-    box.append(turnBox, bar1, inp, out, mbox, jr);
-    drawMeas();
-    drawTurn();
+    box.append(bar1, out);
+    out.append(tabsEl, inp, res);
     sel.onchange = () => { id = sel.value; combo.sync(); build(); };
 
     const numIn = (val, step, set, w) => { const i = h("input"); i.type = "number"; i.step = step; i.value = val; if (w) i.style.width = w; i.oninput = () => { set(i.value === "" ? 0 : +i.value); change(); }; return i; };
@@ -974,36 +977,58 @@
       for (const a of M.agendas) add(a.key, a.title, a.options);
       return grid;
     }
-    function build() {
-      const c = D.countries[id]; inp.replaceChildren();
+    const STATE_GROUPS = ["Население и государство", "Стабильность и власть"], CORP_GROUPS = ["Корпорации, частный сектор, дань"];
+    const ECO_GROUPS = FIELDS.map(x => x[0]).filter(n => !STATE_GROUPS.includes(n) && !CORP_GROUPS.includes(n));
+    function fieldsGrid(c, names, withBudget) {
       const g = h("div", "calc-grid");
       for (const [grp, list] of FIELDS) {
+        if (!names.includes(grp)) continue;
         g.append(h("h3", "calc-grp", grp));
         for (const [k, label, step] of list) { const l = h("label", "f-row"), s = h("span", null, label), cur = getP(c, k); l.append(s, numIn(cur == null ? (k.startsWith("lore.") ? 1 : 0) : cur, step, v => { setP(c, k, v); })); g.append(l); }
       }
-      g.append(h("h3", "calc-grp", "Бюджет"));
-      for (const [k, label] of BUD) { const l = h("label", "f-row"), s = h("span", null, "Бюджет: " + label.toLowerCase() + " (доля)"); l.append(s, numIn(c.b[k], 0.01, v => { c.b[k] = v; })); g.append(l); }
-      inp.append(h("h2", null, "Политическая повестка"), agendaEditor(c), h("h2", null, "Исходные данные"), g, h("h2", null, "Армии"), armyEditor(c), h("h2", null, "Авиационные звенья"), mixEditor(c, D.aircraft, "flights", D.K.flight_max), h("h2", null, "Эскадры"), mixEditor(c, D.ships, "squadrons", D.K.squad_max), h("h2", null, "Особые эффекты"), fxEditor(c, full => { saveDraft(); if (full) drawMeas(); drawOut(); }));
+      if (withBudget) {
+        g.append(h("h3", "calc-grp", "Бюджет"));
+        for (const [k, label] of BUD) { const l = h("label", "f-row"), s = h("span", null, "Бюджет: " + label.toLowerCase() + " (доля)"); l.append(s, numIn(c.b[k], 0.01, v => { c.b[k] = v; })); g.append(l); }
+      }
+      return g;
+    }
+    const rulesWrap = h("div", "mt-wrap");
+    rulesWrap.innerHTML = '<table class="mt"><thead><tr><th>Правило</th><th>Значение</th><th>Источник</th></tr></thead><tbody>' + RULES.map(r => "<tr><td>" + r[1] + "</td><td>" + D.K[r[0]] + "</td><td>" + (r[2] === "док." ? "документы" : r[2] === "решение" ? "решение автора" : '<span class="prop">предложено</span>') + "</td></tr>").join("") + "</tbody></table>";
+    function editorNodes(c, tab) {
+      if (tab === "state") return [h("h2", null, "Политическая повестка"), agendaEditor(c), h("h2", null, "Исходные данные"), fieldsGrid(c, STATE_GROUPS)];
+      if (tab === "economy") return [h("h2", null, "Исходные данные"), fieldsGrid(c, ECO_GROUPS, true)];
+      if (tab === "army") return [h("h2", null, "Армии"), armyEditor(c)];
+      if (tab === "fleet") return [h("h2", null, "Авиационные звенья"), mixEditor(c, D.aircraft, "flights", D.K.flight_max), h("h2", null, "Эскадры"), mixEditor(c, D.ships, "squadrons", D.K.squad_max)];
+      if (tab === "corp") return [h("h2", null, "Исходные данные"), fieldsGrid(c, CORP_GROUPS)];
+      if (tab === "effects") return [h("h2", null, "Особые эффекты"), fxEditor(c, full => { saveDraft(); if (full) drawMeas(); drawOut(); }), mbox];
+      if (tab === "turn") return [turnBox, jr];
+      if (tab === "rules") return [rulesWrap];
+      return [];
+    }
+    function build() {
+      const c = D.countries[id];
+      tabsEl.innerHTML = tabsBarHtml(active, GM_TABS);
+      inp.replaceChildren(...editorNodes(c, active));
+      if (active === "effects") drawMeas();
+      if (active === "turn") drawTurn();
       drawOut();
     }
     let active = "overview";
-    bindCountryTabs(out, tab => { active = tab; drawOut(); });
+    bindCountryTabs(out, tab => { active = tab; build(); });
     function drawOut() {
       const c = D.countries[id], { ids, rs, ix } = results(), k = ids.indexOf(id), r = rs[k], rank = ix.map(x => x.total).sort((a, b) => b - a).indexOf(ix[k].total) + 1;
       let body = "";
       if (active === "overview") body = overviewCards(c, r, ix[k], rank, ids.length) + warnBlock(c, r) + "<h3>Рейтинг ИНМ</h3>" + T(["Страна", "ИНМ", "Экономика", "Армия", "Технологии", "Население"], ids.map((i, j) => [esc(D.countries[i].name), num(ix[j].total, 1), num(ix[j].eco, 0), num(ix[j].army, 0), num(ix[j].tech, 0), num(ix[j].pop, 0)]));
-      else if (active === "state") body = "<h3>Государство и стабильность</h3>" + govBlock(c) + stabBlock(r, c, true);
-      else if (active === "economy") body = "<h3>Экономика</h3>" + ecoBlock(r, c, "main");
-      else if (active === "army") body = "<h3>Армия</h3>" + forcesBlock(r, "land") + listTables(r, c, "army");
-      else if (active === "fleet") body = "<h3>ВВС и флот</h3>" + forcesBlock(r, "fleet") + listTables(r, c, "fleet");
-      else if (active === "corp") body = "<h3>Корпорации и зарплаты</h3>" + ecoBlock(r, c, "corp");
-      else if (active === "effects") body = "<h3>Особые эффекты</h3>" + fxTable(c, "gm") + "<h3>Санкции и блокады</h3>" + measureEffects(r, c);
-      else body = "<h3>Страшные цифры</h3>" + NOTE("Подробные исходные значения и промежуточные расчёты. Основные итоги остаются в тематических вкладках.") + ecoBlock(r, c, "scary") + "<h3>Вооружённые силы: детальные числа</h3>" + forcesBlock(r, "details") + listTables(r, c, "details");
-      out.innerHTML = '<h2>Результат: ' + esc(c.name) + '</h2>' + countryTabsHtml(active, body);
+      else if (active === "state") body = "<h3>Результат: государство и стабильность</h3>" + govBlock(c) + stabBlock(r, c, true);
+      else if (active === "economy") body = "<h3>Результат: экономика</h3>" + ecoBlock(r, c, "main");
+      else if (active === "army") body = "<h3>Результат: армия</h3>" + forcesBlock(r, "land") + listTables(r, c, "army");
+      else if (active === "fleet") body = "<h3>Результат: ВВС и флот</h3>" + forcesBlock(r, "fleet") + listTables(r, c, "fleet");
+      else if (active === "corp") body = "<h3>Результат: корпорации и зарплаты</h3>" + ecoBlock(r, c, "corp");
+      else if (active === "effects") body = "<h3>Результат: эффекты и меры</h3>" + fxTable(c, "gm") + "<h3>Санкции и блокады</h3>" + measureEffects(r, c);
+      else if (active === "scary") body = "<h3>Страшные цифры</h3>" + NOTE("Подробные исходные значения и промежуточные расчёты. Основные итоги остаются в тематических вкладках.") + ecoBlock(r, c, "scary") + "<h3>Вооружённые силы: детальные числа</h3>" + forcesBlock(r, "details") + listTables(r, c, "details");
+      res.innerHTML = body;
       enhanceTips(out);
     }
-    const rulesWrap = h("div", "mt-wrap"); box.append(h("h2", null, "Правила калькулятора"), rulesWrap);
-    rulesWrap.innerHTML = '<table class="mt"><thead><tr><th>Правило</th><th>Значение</th><th>Источник</th></tr></thead><tbody>' + RULES.map(r => "<tr><td>" + r[1] + "</td><td>" + D.K[r[0]] + "</td><td>" + (r[2] === "док." ? "документы" : r[2] === "решение" ? "решение автора" : '<span class="prop">предложено</span>') + "</td></tr>").join("") + "</tbody></table>";
     build();
   }
 
