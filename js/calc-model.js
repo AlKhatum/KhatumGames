@@ -27,7 +27,12 @@
     st_pol_lo: 6, st_pol: 0.5, st_out: 0.5, st_cover: 2, st_tax_floor: 0.8, st_os_floor: 0.85, st_att_floor: 0.8, st_gr_base: 0.5, st_gr_out: 20,
     st_av_floor: 0.7, st_av_w: 0.6, st_mor_floor: 0.9, st_mor_w: 0.2, st_sup: 0.1, st_fall: 1.5, av_base: 10,
     soc_ruin2: 15, soc_ruin: 30, soc_weak: 45, soc_firm: 65, soc_recent: 4, soc_stag1: 4, soc_stag2: 12,
-    cons_div: 5, home_max: 0.4, rn_turns: 8
+    cons_div: 5, home_max: 0.4, rn_turns: 8,
+    // орбитальная группировка (все — «предложено»): пределы бонусов и шаг за аппарат, мощь «Стержней», престиж станций, сход с орбиты, содержание (млрд кр./год)
+    sat_sci_cap: 0.25, sat_sci_per: 0.05, sat_come_cap: 0.2, sat_come_per: 0.04, sat_navt_cap: 0.25, sat_navt_per: 0.05,
+    sat_c2_cap: 0.15, sat_c2_per: 0.04, sat_navm_cap: 0.1, sat_navm_per: 0.03, sat_recon_cap: 0.15, sat_recon_per: 0.05,
+    sat_rod_power: 40, sat_station_att: 0.03, sat_station_sup: 0.2, sat_decay: 0.125,
+    sat_upk_sci: 0.2, sat_upk_nav: 0.15, sat_upk_comm: 0.12, sat_upk_mil: 0.3, sat_upk_rod: 1.5, sat_upk_asat: 0.2, sat_upk_station: 1
   };
   function rules(D) { const K = D.K; if (!K.__def) { for (const k in DEF_K) if (K[k] == null) K[k] = DEF_K[k]; Object.defineProperty(K, "__def", { value: true }); } return K; }
 
@@ -50,6 +55,27 @@
     return s;
   }
   const fxMul = (D, c, t, p) => Math.max(0, 1 + fxSum(D, c, t, "pct", p) / 100);
+
+  // ---------- орбитальная группировка ----------
+  // Спутники и станции страны (c.sat = { sci, nav, comm, mil, rod, asat, station }). Содержание оплачивается из бюджета «Космос»:
+  // покрытие (cov) масштабирует все эффекты, а при недофинансировании аппараты сходят с орбиты (advance).
+  // Навигационные дают точность только в связке со спутниками связи (считаются пары), станции — престиж: привлекательность и поддержка власти.
+  const SAT_TYPES = [["sci", "Научные"], ["nav", "Навигационные"], ["comm", "Связи"], ["mil", "Военные"], ["rod", "«Стержни Бога»"], ["asat", "Противоспутниковые"], ["station", "Станции"]];
+  function satellites(D, c) {
+    const K = rules(D), upk = { sci: K.sat_upk_sci, nav: K.sat_upk_nav, comm: K.sat_upk_comm, mil: K.sat_upk_mil, rod: K.sat_upk_rod, asat: K.sat_upk_asat, station: K.sat_upk_station };
+    const n = {}; let total = 0, upkeep = 0;
+    for (const [id] of SAT_TYPES) { n[id] = n0(c.sat && c.sat[id], 0); total += n[id]; upkeep += n[id] * upk[id]; }
+    const gain = (cnt, cap, per) => (cap > 0 ? cap * (1 - Math.exp(-cnt * per / cap)) : 0); // бонус с убывающей отдачей
+    const effects = cov => ({
+      sci: gain(n.sci, K.sat_sci_cap, K.sat_sci_per) * cov,                    // научные → НИП
+      commEco: gain(n.comm, K.sat_come_cap, K.sat_come_per) * cov,             // связь → ВВП
+      navTrade: gain(n.nav, K.sat_navt_cap, K.sat_navt_per) * cov,             // навигация → объём внешней торговли
+      c2: gain(n.comm, K.sat_c2_cap, K.sat_c2_per) * cov,                      // связь → управление войсками
+      navMil: gain(Math.min(n.nav, n.comm), K.sat_navm_cap, K.sat_navm_per) * cov, // точность навигации: пары «навигационный + связи»
+      recon: gain(n.mil, K.sat_recon_cap, K.sat_recon_per) * cov               // военные → разведка и бонус ПВО
+    });
+    return { n, total, upkeep, upkeepTurn: upkeep / K.turns_year, effects };
+  }
 
   // ---------- экономика ----------
   // территория: площадь застройки и средний КУТ провинций (доли пригодной, затопленной и заражённой земли)
@@ -253,7 +279,7 @@
   }
 
   // частный сектор по экономической модели страны (повестка «Экономическая модель»)
-  function economy(D, c, mil) {
+  function economy(D, c, mil, satFx) {
     const K = D.K, pop = c.pop, workers = pop * c.work, S = n0(c.stab, 50);   // млн работников; S — стабильность этого хода
     const fac = c.ind ? sum(Object.values(c.ind)) : n0(c.factories, 0), energy = c.en ? sum(Object.values(c.en)) : n0(c.energy, 0);
     const corp = c.corp || {};
@@ -273,8 +299,8 @@
     const priv = clamp(n0(c.priv_base, 0.35) + K.priv_infl * n0(corp.infl, 0), 0, 0.95);
     const gdpBase = (K.gdp_labor_share * labor0 + (1 - K.gdp_labor_share) * made) * (1 + n0(corp.gdp, 0)) * n0(c.lore && c.lore.gdp, 1) * polK * fxMul(D, c, "gdp"); // кредитов в ход (кредит = 1 млрд)
     const wages = corporations(D, c, gdpBase, workers, priv, te, kte);
-    const attEff = wages.avgAtt * attS * fxMul(D, c, "att");
-    const gdpTurn = gdpBase * (1 - priv + priv * attEff);                  // привлекательность корпораций множит их выпуск
+    const attEff = wages.avgAtt * attS * fxMul(D, c, "att") * n0(satFx && satFx.att, 1);
+    const gdpTurn = gdpBase * (1 - priv + priv * attEff) * n0(satFx && satFx.gdp, 1); // привлекательность корпораций множит их выпуск; спутники связи добавляют ВВП
     const wage = te * K.wage_te + kte * K.wage_kte;
     const epp = K.epp_fact * fac + K.epp_en * energy;
     const os = epp * K.os_per_epp * osS * fxMul(D, c, "os"), res = resources(D, c, os, mil);
@@ -284,7 +310,7 @@
     const E = { workers, te, kte, skilled: q, prod, stab, taxS, osS, attS, attEff, gdpTurn, gdpYear: gdpTurn * K.turns_year, wage, epp, os, osEff: os * res.supply, res, terr, priv, tribute, factories: fac, energy, budget, polK,
       def: budget * c.b.def, space: budget * c.b.space, sci, soc: budget * c.b.soc, infra: budget * c.b.infra,
       perCapita: pop ? gdpTurn * K.turns_year / pop : 0 };
-    E.nip = (sci * K.eni_bn + terr.meg * K.eni_meg + n0(c.ind && c.ind.hitech, 0) * K.nip_hitech) * fxMul(D, c, "nip") + fxSum(D, c, "nip", "add"); // НИП за ход
+    E.nip = (sci * K.eni_bn + terr.meg * K.eni_meg + n0(c.ind && c.ind.hitech, 0) * K.nip_hitech) * fxMul(D, c, "nip") * n0(satFx && satFx.nip, 1) + fxSum(D, c, "nip", "add"); // НИП за ход (научные спутники ускоряют)
     E.eni = E.nip;
     E.labor = labor(D, c, E, mil); E.eco = ecology(D, c, E); E.wages = wages; E.gdpBase = gdpBase; E.expand = expansion(D, c, E);
     return E;
@@ -359,7 +385,7 @@
     const K = D.K, P = (D.products || []).filter(p => p.cat === "prod" || p.id === "dep" || p.id === "rock" || p.id === "ore");
     const ms = activeMeasures(D), pair = new Map(); for (const t of D.trade || []) { pair.set(t.a + "|" + t.b, t); pair.set(t.b + "|" + t.a, t); }
     const out = ids.map(() => ({ rows: {}, exp: 0, imp: 0, tariff: 0, balance: 0, supplyTrade: null }));
-    const tk = ids.map(id => fxMul(D, D.countries[id], "trade"));
+    const tk = ids.map((id, k) => fxMul(D, D.countries[id], "trade") * (rs[k] && rs[k].sat && rs[k].sat.fx ? 1 + rs[k].sat.fx.navTrade : 1)); // навигационные спутники расширяют торговлю
     for (const p of P) {
       const X = rs.map(r => { const x = r.eco.res.rows.find(y => y.id === p.id); return x ? x.surplus : 0; });
       const M = rs.map((r, j) => { const x = r.eco.res.rows.find(y => y.id === p.id); return x ? Math.max(0, (x.dem.pop + x.dem.fac + x.dem.army + x.dem.build) - x.left) * (1 - n0(D.countries[ids[j]].protect, 0)) * tk[j] : 0; });
@@ -448,7 +474,7 @@
     add("cover", "pol", "Содержание войск оплачено на " + pc(clamp(r.cover, 0, 1)), -K.st_cover * (1 - clamp(r.cover, 0, 1)));
     add("fx", "fx", "Особые эффекты", fxSum(D, c, "stab", "add"));
     const delta = sum(f, x => x.v), next = clamp(S + delta, 0, 100);
-    const sup = n0(c.support, 50), supNext = clamp(sup + K.st_sup * (S - sup) + fxSum(D, c, "support", "add"), 0, 100);
+    const sup = n0(c.support, 50), supNext = clamp(sup + K.st_sup * (S - sup) + fxSum(D, c, "support", "add") + (r.sat ? r.sat.n.station * K.sat_station_sup * r.sat.cov : 0), 0, 100); // орбитальные станции — престиж, растёт поддержка власти
     const eff = n0(r.stabAdj, S), soc2 = society(D, c, eff);
     return { S, eff, instant: eff - S, f, delta, next, base, vec, society: soc2, support: sup, supNext,
       out: { gdp: K.stab_floor + K.stab_w * eff / 100, tax: K.st_tax_floor + (1 - K.st_tax_floor) * eff / 100, os: K.st_os_floor + (1 - K.st_os_floor) * eff / 100,
@@ -456,7 +482,7 @@
   }
 
   // ---------- ход ----------
-  const TURN_FIELDS = ["ind", "en", "build", "stock", "rn", "pop", "work", "pol", "depl", "dev", "treasury", "outbreaks", "priceSnap", "stab", "support"];
+  const TURN_FIELDS = ["ind", "en", "build", "stock", "rn", "pop", "work", "pol", "depl", "dev", "treasury", "outbreaks", "priceSnap", "stab", "support", "sat"];
   const ROMAN = ["I", "II", "III", "IV"];
   const turnLabel = (start, n) => { const q = (n0(start && start.q, 1) - 1) + n; return (n0(start && start.year, 2200) + Math.floor(q / 4)) + ", " + ROMAN[((q % 4) + 4) % 4] + " кв."; };
   function rng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
@@ -481,8 +507,17 @@
       const unalloc = E.budget * Math.max(0, 1 - Object.values(c.b || {}).reduce((a, b) => a + (+b || 0), 0));
       const treasury = n0(c.treasury, 0) + unalloc + mk.balance + fxSum(D, c, "treasury", "add"); // казна: нераспределённая часть бюджета, торговый баланс и эффекты (недобор на армию уже снижает мощь)
       const priceSnap = updPrices ? Object.fromEntries(R.rows.filter(x => x.base > 0).map(x => [x.id, Math.round(x.priceLive * 1000) / 1000])) : c.priceSnap;
+      let satNext; // недофинансированная группировка сходит с орбиты: все аппараты редеют на долю (1 − покрытие) × sat_decay, какие именно — решает ГМ
+      if (r.sat && r.sat.upkeepTurn > 0 && r.sat.cov < 1) {
+        const dec = (1 - r.sat.cov) * K.sat_decay, cur = c.sat || {}, nx = {};
+        let lost = 0;
+        for (const [id] of SAT_TYPES) { const v = n0(cur[id], 0), nv = Math.round(v * (1 - dec) * 100) / 100; nx[id] = nv; lost += v - nv; }
+        satNext = nx;
+        if (lost >= 0.25) ev.push("Орбитальная группировка недофинансирована (покрытие " + Math.round(r.sat.cov * 100) + "%): сходят с орбиты ≈" + (Math.round(lost * 10) / 10) + " аппарат(ов). Какие именно — решает ГМ.");
+      }
       const p = { stock, rn: Math.round(L.rnNext * 100) / 100, pop: Math.round(pop * 1000) / 1000, work: Math.round(work * 10000) / 10000, pol: Math.round(pol * 1000) / 1000, depl, dev: clamp(n0(c.dev, 0.6) + K.dev_grow * (1 + 10 * n0(c.b && c.b.infra, 0)), 0, 1), treasury: Math.round(treasury * 100) / 100, outbreaks,
         stab: Math.round(stab * 100) / 100, support: Math.round(st.supNext * 100) / 100 };
+      if (satNext) p.sat = satNext;
       if (priceSnap) p.priceSnap = priceSnap;
       const ind = clone(c.ind || {}), enb = clone(c.en || {}), build = {}, built = [];
       for (const x of E.expand.rows) { (x.group === "ind" ? ind : enb)[x.id] = Math.round((n0((x.group === "ind" ? ind : enb)[x.id], 0) + x.built) * 100) / 100; build[x.id] = Math.round(x.progNext * 100) / 100; if (x.built > 0) built.push(x.name.toLowerCase() + " +" + x.built); }
@@ -550,15 +585,24 @@
       cons: sum(squads, f => f.cons || 0), consShips: sum(squads, f => f.N * (f.cons || 0)) };
     const land = { n: sum(armies, a => a.N), power: sum(armies, a => a.power), sup: sum(armies, a => a.sup), upkeep: sum(armies, a => a.upkeep), pers: sum(armies, a => a.pers), sep: sum(armies.filter(a => a.sep), a => a.N) };
     const morale = (K.st_mor_floor + K.st_mor_w * S / 100) * fxMul(D, c, "morale");
-    const power = (K.w_land * land.power * fxMul(D, c, "pow_land") + K.w_air * air.power * fxMul(D, c, "pow_air") + K.w_navy * navy.power * fxMul(D, c, "pow_navy")) * morale * (1 - K.blk_power * ms0.blockShare);
     const upkeepYear = (land.upkeep + air.upkeep + navy.upkeep) * K.upkeep_mult * fxMul(D, c, "upkeep");   // млрд кредитов в год (как в старой версии)
     const upkeepBase = upkeepYear / K.turns_year, blkCost = Math.min(1, ms0.byBlk) * K.blk_upkeep * upkeepBase, upkeepTurn = upkeepBase + blkCost; // блокада стоит доли содержания войск
-    const eco = economy(D, c, { upkeep: upkeepTurn, pers: land.pers + air.pers + navy.pers });
+    const mil0 = { upkeep: upkeepTurn, pers: land.pers + air.pers + navy.pers };
+    const sat = satellites(D, c);
+    let eco = economy(D, c, mil0);
+    const satCov = sat.upkeepTurn > 0 ? Math.min(1, eco.space / sat.upkeepTurn) : 1; // финансирование группировки из бюджета «Космос»
+    const sfx = sat.effects(satCov);
+    if (sat.total > 0) eco = economy(D, c, mil0, { gdp: 1 + sfx.commEco, att: 1 + sat.n.station * K.sat_station_att * satCov, nip: 1 + sfx.sci }); // второй проход со спутниковыми множителями
+    Object.assign(sat, { cov: satCov, fx: sfx });
     const cover = upkeepTurn > 0 ? Math.min(1, eco.def / upkeepTurn) : 1;     // покрытие содержания оборонным бюджетом
     const regime = (c.gov && c.gov.regime) || "", compat = clamp(n0(c.compat, 1), 0.6, 1.4);
     const av = K.av_base * n0(REG_AV[regime], 1) * compat * (K.st_av_floor + K.st_av_w * S / 100) * fxMul(D, c, "av") + fxSum(D, c, "av", "add"); // запас АВ на ход
-    return { ms: ms0, blkCost, stabAdj, eco, armies, flights, squads, land, air, navy, power, morale, upkeepTurn, cover, supply: land.sup + air.sup + navy.sup,
-      pers: land.pers + air.pers + navy.pers, wh: air.wh + navy.wh, tech: c.tech, pop: c.pop, av, regime, compat };
+    const rodPower = sat.n.rod * K.sat_rod_power * techMult(K, c.tech) * satCov; // «Стержни Бога» — стратегический потенциал
+    sat.rodPower = rodPower;
+    const powerSat = 1 + sfx.c2 + sfx.navMil + sfx.recon;                    // управление, точность и разведка с орбиты
+    const power2 = (K.w_land * land.power * fxMul(D, c, "pow_land") + K.w_air * air.power * fxMul(D, c, "pow_air") + K.w_navy * navy.power * fxMul(D, c, "pow_navy")) * morale * powerSat * (1 - K.blk_power * ms0.blockShare) + rodPower;
+    return { ms: ms0, blkCost, stabAdj, eco, armies, flights, squads, land, air, navy, power: power2, morale, upkeepTurn, cover, supply: land.sup + air.sup + navy.sup,
+      pers: land.pers + air.pers + navy.pers, wh: air.wh + navy.wh, tech: c.tech, pop: c.pop, av, regime, compat, sat };
   }
 
   // ---------- Индекс национальной мощи ----------
@@ -608,6 +652,9 @@
     if (pSum <= -K.st_fall || st.delta <= -2 * K.st_fall) { const worst = probs.sort((a, b) => a.v - b.v)[0]; w.push("Стабильность падает на " + Math.abs(st.delta).toFixed(1) + " за ход" + (worst ? ": главная причина — " + worst.name.charAt(0).toLowerCase() + worst.name.slice(1) : "") + "."); }
     if (c.support < 35) w.push("Низкая поддержка власти (" + Math.round(c.support) + "%).");
     if (r.upkeepTurn > 0 && r.cover < 1) w.push("Оборонный бюджет покрывает содержание войск на " + pc(r.cover) + ": мощь в рейтинге снижена.");
+    if (r.sat && r.sat.upkeepTurn > 0 && r.sat.cov < 1) w.push("Космический бюджет покрывает содержание орбитальной группировки на " + pc(r.sat.cov) + ": аппараты сходят с орбиты (" + pc((1 - r.sat.cov) * K.sat_decay) + " за ход).");
+    if (r.sat && r.sat.n.nav > r.sat.n.comm) w.push("Навигационных спутников (" + r.sat.n.nav + ") больше, чем спутников связи (" + r.sat.n.comm + "): точность навигации ограничена — аппараты работают в парах «навигация + связь».");
+    if (r.sat && r.sat.n.rod > 0) w.push("На орбите «Стержни Бога» (" + r.sat.n.rod + "): владение стратегическим оружием — повод для коалиций против страны.");
     const share = r.pers / 1000 / Math.max(0.001, r.eco.workers);
     if (share > 0.1) w.push("Под ружьём " + pc(share) + " работающих: экономика теряет рабочие руки.");
     const total = r.land.n, byType = {};
@@ -630,6 +677,6 @@
   }
 
   const API = { activeMeasures, measuresOf, flowRule, advance, turnLabel, TURN_FIELDS, market, corporations, warnings, wmedian, techMult, economy, terrain, resources, labor, ecology, BUILD_ORDER, formation, army, flight, squadron, country, inm,
-    stability, society, SOCIETY, VEC_BASE, REG_AV, FX_TARGETS, fxSum, fxMul, fxOn, rules, DEF_K, growthK };
+    stability, society, SOCIETY, VEC_BASE, REG_AV, FX_TARGETS, fxSum, fxMul, fxOn, rules, DEF_K, growthK, satellites, SAT_TYPES };
   if (typeof module !== "undefined" && module.exports) module.exports = API; else root.KGCalcModel = API;
 })(typeof window !== "undefined" ? window : globalThis);
