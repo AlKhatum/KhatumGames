@@ -38,6 +38,16 @@
   // ================= ОБЗОР =================
   PAGES.push({
     id: "intro", title: "Обзор", sub: "Из чего состоят механики и как их читать", sections: [
+      { id: "key-numbers", title: "Ключевые показатели", html:
+        '<div class="calc-cards mech-rule-cards">' +
+        '<a class="calc-card mech-rule-card" href="#wiki/mech/state"><small>Государство</small><b>21</b><span>категория повесток</span></a>' +
+        '<a class="calc-card mech-rule-card" href="#wiki/mech/state/groups"><small>Общество</small><b>12</b><span>групп населения</span></a>' +
+        '<a class="calc-card mech-rule-card" href="#wiki/mech/stability"><small>Стабильность</small><b>0–100</b><span>шкала состояния страны</span></a>' +
+        '<a class="calc-card mech-rule-card" href="#wiki/mech/economy/os"><small>Строительство</small><b>30 ОС</b><span>1 ЕПП + оплата труда</span></a>' +
+        '<a class="calc-card mech-rule-card" href="#wiki/mech/economy/buildings"><small>Сооружения</small><b>5</b><span>категорий масштаба</span></a>' +
+        '<a class="calc-card mech-rule-card" href="#wiki/mech/resources/products"><small>Ресурсы</small><b>16</b><span>3 природных + 13 продуктов</span></a>' +
+        '<a class="calc-card mech-rule-card" href="#wiki/mech/army/divisions"><small>Армия</small><b>5</b><span>типов дивизий</span></a>' +
+        '<a class="calc-card mech-rule-card" href="#wiki/mech/diplomacy/balance"><small>Внешняя политика</small><b>4</b><span>фазы конфронтации</span></a></div>' },
       { id: "about", title: "О чём этот раздел", html:
         "<p>Механики описывают, как устроено государство и как оно строит, производит и торгует. Раздел разбит на пять статей: <a href=\"#wiki/mech/state\">«Государство»</a> (власть, общество, выборы, повестки, реформы), <a href=\"#wiki/mech/stability\">«Стабильность»</a> (что её меняет и на что она влияет, особые эффекты), <a href=\"#wiki/mech/economy\">«Экономика»</a> (строительство, методы, корпорации, госзаказы) , <a href=\"#wiki/mech/army\">«Армия»</a> (дивизии, эскадры, авиационные звенья, приказы, снабжение) и <a href=\"#wiki/mech/diplomacy\">«Внешняя политика»</a> (конфронтации, договоры, переговоры). Отдельные таблицы собраны на странице <a href=\"#wiki/mech/tables\">«Справочные таблицы»</a>.</p>" +
         WORLD("Великая ошибка (около 2080 года) началась с индо-пакистанской войны и ядерных ударов, затем океан поднялся почти на пятьдесят метров, а Тёмные века продлились около восьми десятилетий. К 2200 году уцелевшие государства держатся за стенами мегаполисов, а за стенами лежат пустоши, затопленные равнины и полудикие земли. Все правила ниже написаны для этого мира.") +
