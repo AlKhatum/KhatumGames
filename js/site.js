@@ -972,13 +972,16 @@
       const files = [];
       await extractFiles(out, files);
       files.push({ path: "data/site.json", content: JSON.stringify(out, null, 1) });
+      let calcPub = null; // данные калькулятора (страны, правила, состояние хода) — тем же коммитом
+      if (window.KGCalc && KGCalc.stateFiles) { try { calcPub = await KGCalc.stateFiles(); files.push(...calcPub.files); } catch (e) { console.error(e); } }
       await GH.commit(config.repo, files, "Сайт: правки ГМа " + new Date().toLocaleString("ru-RU"), m => toast(m));
+      if (calcPub && calcPub.after) calcPub.after();
       pub = clone(out);
       site.updated = out.updated; // на странице остаются встроенные копии файлов, пока GitHub Pages обновляется
       dirty = false; $("siteDirty").classList.add("hidden");
       try { localStorage.removeItem(DRAFT_KEY); } catch (e) { /* */ }
       if (!$("siteDesign").classList.contains("hidden")) renderDesign();
-      toast("Сайт опубликован (" + files.length + " файл.). Посетители увидят изменения примерно через минуту.");
+      toast("Сайт опубликован (" + files.length + " файл.)" + (calcPub && calcPub.files.length ? ", включая данные калькулятора" : "") + ". Посетители увидят изменения примерно через минуту.");
     } catch (e) { toast("Не удалось опубликовать сайт: " + e.message); console.error(e); }
     finally { btn.disabled = false; }
   }

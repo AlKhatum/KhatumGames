@@ -75,10 +75,13 @@
   // ---------- данные и черновик ГМа ----------
   const clone = o => JSON.parse(JSON.stringify(o));
   let TS = { start: { year: 2200, q: 1 }, n: 0, log: [], cur: {}, worldSnap: null, stamp: 0, measures: [], pending: [] }; // состояние хода и журнал
+  let rawText = { calc: "", turns: null }; // исходные тексты файлов с сайта: публикуем в «⇪ Сайт» только изменившееся
   function load() {
     if (!loading) loading = Promise.all([
-      fetch("data/calc.json", { cache: "no-cache" }).then(r => { if (!r.ok) throw new Error("calc.json: " + r.status); return r.json(); }),
-      fetch("data/turns.json", { cache: "no-cache" }).then(r => (r.ok ? r.json() : null)).catch(() => null)]).then(([d, t]) => {
+      fetch("data/calc.json", { cache: "no-cache" }).then(r => { if (!r.ok) throw new Error("calc.json: " + r.status); return r.text(); }),
+      fetch("data/turns.json", { cache: "no-cache" }).then(r => (r.ok ? r.text() : null)).catch(() => null)]).then(([ct, tt]) => {
+      rawText = { calc: ct, turns: tt };
+      const d = JSON.parse(ct), t = tt ? JSON.parse(tt) : null;
       D = d;
       if (t && t.log) TS = Object.assign(TS, t);
       for (const id in TS.cur || {}) if (D.countries[id]) Object.assign(D.countries[id], TS.cur[id]); // состояние кампании поверх стартовых данных
@@ -923,7 +926,7 @@
       y.oninput = q.onchange = () => { TS.start = { year: +y.value || 2200, q: +q.value || 1 }; TS.stamp = Date.now(); saveDraft(); head.firstChild.innerHTML = "Ход " + TS.n + " · " + esc(turnNow()); };
       st.append(y, q, h("span", "mech-note", TS.n > 0 ? "Старт можно менять, пока не проведён первый ход." : "Ход = квартал, год = " + D.K.turns_year + " хода. Цены пересчитываются раз в " + D.K.price_turns + " хода."));
       turnBox.append(head, st);
-      jr.innerHTML = "<h2>Журнал ходов</h2>" + journalHtml(null) + NOTE("Чтобы закрепить состояние в данных сайта, скачайте журнал и положите файл как data/turns.json (команда: python Лор/ход.py путь_к_файлу).");
+      jr.innerHTML = "<h2>Журнал ходов</h2>" + journalHtml(null) + NOTE("Закрепить состояние в данных сайта — кнопка «⇪ Сайт» в верхней панели (публикует и данные калькулятора, и состояние хода одним коммитом). Вручную: скачайте журнал и положите файл как data/turns.json (команда: python Лор/ход.py путь_к_файлу).");
     }
     const mbox = h("div", "calc-meas panel");
     function drawMeas() {
@@ -1151,39 +1154,31 @@
   window.addEventListener("kg:auth", cabinet);
   window.addEventListener("gmchange", () => window.dispatchEvent(new Event("kg:auth")));
   bindPlayerLogin();
-  // ---------- публикация данных калькулятора на сайт (кнопка «⇪ Ход» в верхней панели, только ГМу) ----------
-  // Одним коммитом кладёт data/calc.json (страны и правила из черновика) и data/turns.json (состояние хода) —
-  // заменяет ручную цепочку «Скачать журнал» → Лор/ход.py → git. Версия стартовых данных поднимается,
-  // чтобы черновики других версий больше не подмешивались (как при ручной правке calc.json).
-  async function publishState() {
-    await load();
-    if (!isGm()) { KG.toast("Опубликовать данные калькулятора может только администратор"); return; }
-    const GH = window.KGGitHub;
-    if (!GH) { KG.toast("Модуль GitHub не загружен"); return; }
-    let cfg;
-    try { cfg = await fetch("data/config.json", { cache: "no-cache" }).then(r => r.json()); }
-    catch (e) { KG.toast("Не удалось прочитать data/config.json"); return; }
-    const t = await KG.ask("Токен GitHub для публикации калькулятора", "", { password: true, note: "Fine-grained token с правом Contents: Read and write только для репозитория " + cfg.repo.owner + "/" + cfg.repo.name + ". Хранится только в этом браузере." });
-    if (!t) return;
-    GH.setToken(t);
-    try { await GH.check(cfg.repo); } catch (e) { GH.setToken(""); KG.toast(e.message); return; }
-    const d = new Date(), pad = x => String(x).padStart(2, "0");
-    D.ver = d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + "-" + pad(d.getHours()) + pad(d.getMinutes());
+  // ---------- публикация данных калькулятора общей кнопкой «⇪ Сайт» ----------
+  // Отдаёт файлы для коммита кнопки «⇪ Сайт» (site.js): data/calc.json — страны и правила из черновика
+  // (показатели государства, армия, ВВС и флот, корпорации, эффекты, спутники — всё, что правит ГМ в калькуляторе),
+  // data/turns.json — состояние хода. Файл попадает в коммит, только если изменился относительно версии с сайта.
+  function calcClean() {
     const clean = {};
     for (const k of ["v", "ver", "note", "K", "divTypes", "privBase", "buildTypes", "products", "sectors", "trade", "loreMap", "aircraft", "ships", "shipClasses", "countries", "players"]) if (D[k] !== undefined) clean[k] = D[k];
     clean.countries = {}; // cid — служебное поле сеанса, в файл не пишем
     for (const id in D.countries) { const c = Object.assign({}, D.countries[id]); delete c.cid; clean.countries[id] = c; }
-    const btn = $("calcPublishBtn"); if (btn) btn.disabled = true;
-    try {
-      await GH.commit(cfg.repo, [
-        { path: "data/calc.json", content: JSON.stringify(clean, null, 1) },
-        { path: "data/turns.json", content: JSON.stringify(Object.assign({}, TS, { stamp: Date.now() }), null, 1) }
-      ], "Калькулятор: правки ГМа " + d.toLocaleString("ru-RU"), m => KG.toast(m));
-      TS.stamp = Date.now(); saveDraft();
-      KG.toast("Опубликовано: data/calc.json и data/turns.json. Изменения видны примерно через минуту.");
-    } catch (e) { KG.toast("Не удалось опубликовать: " + e.message); console.error(e); }
-    finally { if (btn) btn.disabled = false; }
+    return clean;
   }
-  const cpb = $("calcPublishBtn"); if (cpb) cpb.addEventListener("click", publishState);
-  window.KGCalc = { allowed, load, hydrate, TECH, publish: publishState };
+  async function stateFiles() {
+    await load();
+    if (!isGm()) return { files: [], after: () => {} };
+    const calcText = JSON.stringify(calcClean());
+    const files = [];
+    if (calcText !== rawText.calc) files.push({ path: "data/calc.json", content: calcText });
+    let turnText = null;
+    if (TS.stamp) { // в этом сеансе были ходы, откаты или меры
+      const t = Object.assign({}, TS, { stamp: Date.now() });
+      const bare = o => { const c = Object.assign({}, o); delete c.stamp; return JSON.stringify(c); };
+      if (!rawText.turns || bare(t) !== bare(JSON.parse(rawText.turns))) turnText = JSON.stringify(t);
+      if (turnText) files.push({ path: "data/turns.json", content: turnText });
+    }
+    return { files, after: () => { rawText.calc = calcText; if (turnText) rawText.turns = turnText; saveDraft(); } };
+  }
+  window.KGCalc = { allowed, load, hydrate, TECH, stateFiles };
 })();
